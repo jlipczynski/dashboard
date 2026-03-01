@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { pillars, monthlyGoals, sportAreas, weeklyTasks, type Task } from "@/lib/data";
+import { pillars, monthlyGoals, sportAreas } from "@/lib/data";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { PillarCard } from "@/components/dashboard/pillar-card";
 import { useLocalStorage, useGarminSync } from "@/lib/storage";
@@ -19,8 +19,6 @@ export default function Home() {
   });
   const [gymMonthlyDone] = useLocalStorage("dashboard_gym_monthly_done", sportAreas[0].current);
   const [gymMonthlyGoal] = useLocalStorage("dashboard_gym_monthly_goal", sportAreas[0].monthlyGoal);
-  const [tasks] = useLocalStorage<Task[]>("dashboard_tasks", weeklyTasks);
-
   // Garmin cached data
   const garmin = useGarminSync();
 
@@ -31,7 +29,7 @@ export default function Home() {
   }, []);
 
   // Calculate dynamic pillar scores
-  const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal, tasks);
+  const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal);
 
   // Apply scores to pillars
   const dynamicPillars = pillars.map((p) => {

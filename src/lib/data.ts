@@ -28,18 +28,6 @@ export type WorkProject = {
   wig: string;
 };
 
-export type Task = {
-  id: string;
-  title: string;
-  pillar: string;
-  project?: string;
-  priority: "frog" | "important" | "nice";
-  day: string;
-  points: number;
-  done: boolean;
-  delegatedTo?: string;
-};
-
 export const pillars: Pillar[] = [
   {
     id: "zdrowie",
@@ -149,71 +137,3 @@ export const workProjects: WorkProject[] = [
   },
 ];
 
-export const weeklyTasks: Task[] = [
-  {
-    id: "1",
-    title: "Przedstawić pierwszą koncepcję celów dla firmy",
-    pillar: "praca",
-    project: "owoc",
-    priority: "frog",
-    day: "poniedziałek",
-    points: 15,
-    done: false,
-  },
-  {
-    id: "2",
-    title: "Przygotować prezentację: dlaczego takie cele",
-    pillar: "praca",
-    project: "owoc",
-    priority: "frog",
-    day: "poniedziałek",
-    points: 12,
-    done: false,
-  },
-  {
-    id: "3",
-    title: "Dokończyć procedurę gospodarki magazynowej",
-    pillar: "praca",
-    project: "owoc",
-    priority: "frog",
-    day: "wtorek",
-    points: 15,
-    done: false,
-  },
-  {
-    id: "4",
-    title: "Przeprowadzić dyskusję z zespołem o celach",
-    pillar: "praca",
-    project: "owoc",
-    priority: "important",
-    day: "poniedziałek",
-    points: 8,
-    done: false,
-  },
-  {
-    id: "5",
-    title: "Rozliczyć ludzi z celów na farmie",
-    pillar: "praca",
-    project: "gr",
-    priority: "important",
-    day: "środa",
-    points: 10,
-    done: false,
-  },
-];
-
-export const days = [
-  "poniedziałek",
-  "wtorek",
-  "środa",
-  "czwartek",
-  "piątek",
-  "sobota",
-  "niedziela",
-];
-
-export const priorityConfig = {
-  frog: { label: "🐸 Żaba", color: "#ef4444", bg: "#fef2f2" },
-  important: { label: "⚡ Ważne", color: "#f59e0b", bg: "#fffbeb" },
-  nice: { label: "✨ Miłe", color: "#8b5cf6", bg: "#f5f3ff" },
-};
