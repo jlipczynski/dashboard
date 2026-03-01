@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { pillars, monthlyGoals, sportAreas, weeklyTasks, type Task } from "@/lib/data";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { PillarCard } from "@/components/dashboard/pillar-card";
@@ -106,6 +107,21 @@ export default function Home() {
             )}
           </div>
         )}
+
+        {/* Weekly Planner link */}
+        <Link
+          href="/weekly"
+          className="mt-6 flex items-center justify-between rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:shadow-md hover:border-primary/20"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">📋</span>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Weekly Planner</p>
+              <p className="text-xs text-muted-foreground">Zaplanuj zadania na ten tydzien</p>
+            </div>
+          </div>
+          <span className="text-muted-foreground">→</span>
+        </Link>
 
         {/* Pillar cards */}
         <div className="mt-8 grid gap-6 sm:grid-cols-2">
