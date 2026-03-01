@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { weeklyTasks, days, priorityConfig, pillars, type Task } from "@/lib/data";
+import { useLocalStorage } from "@/lib/storage";
 
 function TaskRow({ task, onToggle }: { task: Task; onToggle: () => void }) {
   const p = priorityConfig[task.priority];
@@ -55,8 +55,8 @@ function TaskRow({ task, onToggle }: { task: Task; onToggle: () => void }) {
 }
 
 export default function PlanPage() {
-  const [tasks, setTasks] = useState<Task[]>(weeklyTasks);
-  const [selectedDay, setSelectedDay] = useState<string>("wszystkie");
+  const [tasks, setTasks] = useLocalStorage<Task[]>("dashboard_tasks", weeklyTasks);
+  const [selectedDay, setSelectedDay] = useLocalStorage("dashboard_plan_day", "wszystkie");
 
   const toggleTask = (id: string) => {
     setTasks((prev) =>
@@ -69,7 +69,6 @@ export default function PlanPage() {
       ? tasks
       : tasks.filter((t) => t.day === selectedDay);
 
-  // Sort: frogs first, then important, then nice. Done at the bottom.
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     const order = { frog: 0, important: 1, nice: 2 };
@@ -91,7 +90,7 @@ export default function PlanPage() {
           <span className="text-3xl">🐸</span>
           <div>
             <h1 className="text-2xl font-bold text-foreground">Plan Tygodnia</h1>
-            <p className="text-muted-foreground">Framework &ldquo;Zjedz tę żabę&rdquo; — najtrudniejsze najpierw</p>
+            <p className="text-muted-foreground">Framework &ldquo;Zjedz te zabe&rdquo; — najtrudniejsze najpierw</p>
           </div>
         </div>
 
@@ -103,11 +102,11 @@ export default function PlanPage() {
           </div>
           <div className="rounded-xl border border-border bg-card p-3 text-center shadow-sm">
             <p className="text-2xl font-bold text-red-500">🐸 {frogsEaten}/{totalFrogs}</p>
-            <p className="text-xs text-muted-foreground">Żaby zjedzone</p>
+            <p className="text-xs text-muted-foreground">Zaby zjedzone</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-3 text-center shadow-sm">
             <p className="text-2xl font-bold text-green-500">{completedCount}/{tasks.length}</p>
-            <p className="text-xs text-muted-foreground">Ukończone</p>
+            <p className="text-xs text-muted-foreground">Ukonczone</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-3 text-center shadow-sm">
             <p className="text-2xl font-bold text-foreground">
@@ -148,7 +147,7 @@ export default function PlanPage() {
         <div className="mt-4 space-y-2">
           {sortedTasks.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center">
-              <p className="text-muted-foreground">Brak zadań na ten dzień</p>
+              <p className="text-muted-foreground">Brak zadan na ten dzien</p>
             </div>
           ) : (
             sortedTasks.map((task) => (
@@ -159,9 +158,9 @@ export default function PlanPage() {
 
         {/* Legend */}
         <div className="mt-6 flex flex-wrap gap-4 text-xs text-muted-foreground">
-          <span>🐸 Żaba = najtrudniejsze, zrób NAJPIERW</span>
-          <span>⚡ Ważne = priorytet B</span>
-          <span>✨ Miłe = priorytet C</span>
+          <span>🐸 Zaba = najtrudniejsze, zrob NAJPIERW</span>
+          <span>⚡ Wazne = priorytet B</span>
+          <span>✨ Mile = priorytet C</span>
         </div>
       </div>
     </div>

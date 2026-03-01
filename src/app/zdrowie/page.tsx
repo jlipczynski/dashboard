@@ -1,26 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { monthlyGoals, sportAreas } from "@/lib/data";
-
-type GarminSummary = {
-  month: {
-    cyclingKm: number;
-    cyclingHours: number;
-    runningKm: number;
-    activeCalories: number;
-    gymSessions: number;
-  };
-  week: {
-    cyclingKm: number;
-    runningKm: number;
-    activeCalories: number;
-    gymSessions: number;
-    dailyRunning: number[];
-    dailyCycling: number[];
-  };
-};
+import { useLocalStorage, useGarminSync } from "@/lib/storage";
 
 type GarminActivity = {
   id: number;
@@ -33,11 +16,12 @@ type GarminActivity = {
   avgHR?: number;
 };
 
-type GarminResponse = {
-  summary: GarminSummary;
-  activities: GarminActivity[];
-  syncedAt: string;
-  error?: string;
+type WellnessData = {
+  steps: number | null;
+  restingHR: number | null;
+  sleepHours: number | null;
+  weightKg: number | null;
+  hydrationMl: number | null;
 };
 
 /* ── Editable number field ──────────────────────────────────── */
@@ -92,7 +76,7 @@ function EditableNumber({
         setEditing(true);
       }}
       className={`group inline-flex items-baseline gap-1 rounded px-1 py-0.5 hover:bg-muted/60 ${className}`}
-      title="Kliknij, aby edytować"
+      title="Kliknij, aby edytowac"
     >
       <span className="font-bold">{value}</span>
       <span className="text-xs text-muted-foreground">{unit}</span>
@@ -148,7 +132,7 @@ function EditableText({
         setEditing(true);
       }}
       className={`group inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-muted/60 ${className}`}
-      title="Kliknij, aby edytować"
+      title="Kliknij, aby edytowac"
     >
       <span>{value}</span>
       <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
@@ -253,7 +237,6 @@ function MountainProgress({
 
   const targetY = padding.top + chartH - (target / maxY) * chartH;
 
-  // Build area path (filled below line)
   const areaPath =
     points.length > 0
       ? `M${padding.left},${padding.top + chartH} ` +
@@ -274,7 +257,6 @@ function MountainProgress({
       </div>
 
       <svg viewBox={`0 0 ${w} ${h}`} className="mt-3 w-full" style={{ maxWidth: w }}>
-        {/* Grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
           const y = padding.top + chartH - frac * chartH;
           return (
@@ -287,7 +269,6 @@ function MountainProgress({
           );
         })}
 
-        {/* Target line */}
         <line
           x1={padding.left}
           y1={targetY}
@@ -302,18 +283,11 @@ function MountainProgress({
           cel
         </text>
 
-        {/* Area fill */}
         {areaPath && <path d={areaPath} fill={color} opacity={0.15} />}
-
-        {/* Line */}
         {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
-
-        {/* Data points */}
         {points.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r={3} fill={color} />
         ))}
-
-        {/* X-axis labels */}
         {dayLabels.map((label, i) => {
           const x = padding.left + (i / 6) * chartW;
           return (
@@ -409,7 +383,6 @@ function GymTracker({
         <ProgressRing value={monthlyDone} max={monthlyGoal} color="#22c55e" />
       </div>
 
-      {/* Weekly grid */}
       <div className="mt-4 flex gap-1.5">
         {dayLabels.map((label, i) => (
           <button
@@ -436,7 +409,6 @@ function GymTracker({
         </div>
       </div>
 
-      {/* Monthly bar */}
       <div className="mt-3">
         <ProgressBar value={monthlyDone} max={monthlyGoal} color="#22c55e" />
       </div>
@@ -509,10 +481,42 @@ function CompetitionCard({
   );
 }
 
+/* ── Wellness widget ────────────────────────────────────────── */
+function WellnessWidget({ data }: { data: WellnessData }) {
+  const items = [
+    { icon: "👣", label: "Kroki", value: data.steps, format: (v: number) => v.toLocaleString("pl-PL") },
+    { icon: "❤️", label: "Tetno spoczynkowe", value: data.restingHR, format: (v: number) => `${v} bpm` },
+    { icon: "😴", label: "Sen", value: data.sleepHours, format: (v: number) => `${v}h` },
+    { icon: "⚖️", label: "Waga", value: data.weightKg, format: (v: number) => `${v} kg` },
+    { icon: "💧", label: "Nawodnienie", value: data.hydrationMl, format: (v: number) => `${v} ml` },
+  ].filter((item) => item.value !== null);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+      <h4 className="flex items-center gap-2 font-semibold text-foreground">
+        📊 Dzisiejszy stan (Garmin)
+      </h4>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {items.map((item) => (
+          <div key={item.label} className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+            <span className="text-xl">{item.icon}</span>
+            <span className="mt-1 text-lg font-bold text-foreground">
+              {item.format(item.value!)}
+            </span>
+            <span className="text-[10px] text-muted-foreground">{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main page ──────────────────────────────────────────────── */
 export default function ZdrowiePage() {
-  // Monthly goals state
-  const [goals, setGoals] = useState({
+  // Monthly goals state — persisted in localStorage
+  const [goals, setGoals] = useLocalStorage("dashboard_goals", {
     activeCalories: { ...monthlyGoals.activeCalories },
     cycling: { ...monthlyGoals.cycling },
     cyclingHours: { ...monthlyGoals.cyclingHours },
@@ -520,39 +524,45 @@ export default function ZdrowiePage() {
     competition: { ...monthlyGoals.competition },
   });
 
-  // Gym state
-  const [gymDays, setGymDays] = useState(sportAreas[0].weekDays);
-  const [gymWeeklyGoal, setGymWeeklyGoal] = useState(sportAreas[0].weeklyGoal);
-  const [gymMonthlyGoal, setGymMonthlyGoal] = useState(sportAreas[0].monthlyGoal);
-  const [gymMonthlyDone, setGymMonthlyDone] = useState(sportAreas[0].current);
+  // Gym state — persisted
+  const [gymDays, setGymDays] = useLocalStorage("dashboard_gym_days", sportAreas[0].weekDays);
+  const [gymWeeklyGoal, setGymWeeklyGoal] = useLocalStorage("dashboard_gym_weekly_goal", sportAreas[0].weeklyGoal);
+  const [gymMonthlyGoal, setGymMonthlyGoal] = useLocalStorage("dashboard_gym_monthly_goal", sportAreas[0].monthlyGoal);
+  const [gymMonthlyDone, setGymMonthlyDone] = useLocalStorage("dashboard_gym_monthly_done", sportAreas[0].current);
 
-  // Running weekly entries (editable per day)
-  const [runEntries, setRunEntries] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
-  const [runWeeklyGoal, setRunWeeklyGoal] = useState(sportAreas[1].weeklyGoal);
-  const [runMonthlyGoal, setRunMonthlyGoal] = useState(sportAreas[1].monthlyGoal);
+  // Running weekly entries — persisted
+  const [runEntries, setRunEntries] = useLocalStorage<number[]>("dashboard_run_entries", [0, 0, 0, 0, 0, 0, 0]);
+  const [runWeeklyGoal, setRunWeeklyGoal] = useLocalStorage("dashboard_run_weekly_goal", sportAreas[1].weeklyGoal);
+  const [runMonthlyGoal, setRunMonthlyGoal] = useLocalStorage("dashboard_run_monthly_goal", sportAreas[1].monthlyGoal);
 
-  // Cycling weekly entries
-  const [bikeEntries, setBikeEntries] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
-  const [bikeWeeklyGoal, setBikeWeeklyGoal] = useState(sportAreas[2].weeklyGoal);
-  const [bikeMonthlyGoal, setBikeMonthlyGoal] = useState(sportAreas[2].monthlyGoal);
+  // Cycling weekly entries — persisted
+  const [bikeEntries, setBikeEntries] = useLocalStorage<number[]>("dashboard_bike_entries", [0, 0, 0, 0, 0, 0, 0]);
+  const [bikeWeeklyGoal, setBikeWeeklyGoal] = useLocalStorage("dashboard_bike_weekly_goal", sportAreas[2].weeklyGoal);
+  const [bikeMonthlyGoal, setBikeMonthlyGoal] = useLocalStorage("dashboard_bike_monthly_goal", sportAreas[2].monthlyGoal);
 
-  // Garmin sync
-  const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [lastSync, setLastSync] = useState<string | null>(null);
-  const [recentActivities, setRecentActivities] = useState<GarminActivity[]>([]);
+  // Garmin sync (with caching)
+  const garmin = useGarminSync();
+  const [recentActivities, setRecentActivities] = useLocalStorage<GarminActivity[]>("dashboard_recent_activities", []);
+
+  // Wellness data
+  const [wellness, setWellness] = useState<WellnessData>({
+    steps: null,
+    restingHR: null,
+    sleepHours: null,
+    weightKg: null,
+    hydrationMl: null,
+  });
+
+  // Load cached activities on mount
+  useEffect(() => {
+    if (garmin.data) {
+      setRecentActivities(garmin.data.activities);
+    }
+  }, [garmin.data, setRecentActivities]);
 
   const syncGarmin = useCallback(async () => {
-    setSyncing(true);
-    setSyncError(null);
-    try {
-      const res = await fetch("/api/garmin");
-      const data: GarminResponse = await res.json();
-      if (data.error) {
-        setSyncError(data.error);
-        return;
-      }
-
+    const data = await garmin.sync(true);
+    if (data) {
       // Update monthly goals with Garmin data
       setGoals((prev) => ({
         ...prev,
@@ -562,21 +572,32 @@ export default function ZdrowiePage() {
         running: { ...prev.running, current: data.summary.month.runningKm },
       }));
 
-      // Update weekly entries from Garmin
+      // Update weekly entries
       setRunEntries(data.summary.week.dailyRunning);
       setBikeEntries(data.summary.week.dailyCycling);
 
       // Update gym
       setGymMonthlyDone(data.summary.month.gymSessions);
-
       setRecentActivities(data.activities);
-      setLastSync(new Date(data.syncedAt).toLocaleTimeString("pl-PL"));
-    } catch {
-      setSyncError("Nie udalo sie polaczyc z Garmin");
-    } finally {
-      setSyncing(false);
     }
-  }, []);
+
+    // Also fetch wellness data
+    try {
+      const wellnessRes = await fetch("/api/garmin/wellness");
+      const wellnessData = await wellnessRes.json();
+      if (!wellnessData.error) {
+        setWellness({
+          steps: wellnessData.today.steps,
+          restingHR: wellnessData.today.restingHR,
+          sleepHours: wellnessData.today.sleepHours,
+          weightKg: wellnessData.today.weightKg,
+          hydrationMl: wellnessData.today.hydrationMl,
+        });
+      }
+    } catch {
+      // wellness is optional
+    }
+  }, [garmin, setGoals, setRunEntries, setBikeEntries, setGymMonthlyDone, setRecentActivities]);
 
   const runWeekTotal = runEntries.reduce((a, b) => a + b, 0);
   const bikeWeekTotal = bikeEntries.reduce((a, b) => a + b, 0);
@@ -591,6 +612,10 @@ export default function ZdrowiePage() {
       [key]: { ...prev[key], [field]: value },
     }));
   };
+
+  const lastSyncTime = garmin.data
+    ? new Date(garmin.data.syncedAt).toLocaleTimeString("pl-PL")
+    : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -611,10 +636,10 @@ export default function ZdrowiePage() {
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <button
             onClick={syncGarmin}
-            disabled={syncing}
+            disabled={garmin.syncing}
             className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-green-700 disabled:opacity-50"
           >
-            {syncing ? (
+            {garmin.syncing ? (
               <>
                 <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                 Synchronizuje...
@@ -626,15 +651,22 @@ export default function ZdrowiePage() {
               </>
             )}
           </button>
-          {lastSync && (
+          {lastSyncTime && (
             <span className="text-xs text-muted-foreground">
-              Ostatnia synchronizacja: {lastSync}
+              Ostatnia synchronizacja: {lastSyncTime}
             </span>
           )}
-          {syncError && (
-            <span className="text-xs text-red-500">{syncError}</span>
+          {garmin.error && (
+            <span className="text-xs text-red-500">{garmin.error}</span>
           )}
         </div>
+
+        {/* ── Wellness widget (from Garmin) ──────────────────── */}
+        {(wellness.steps !== null || wellness.restingHR !== null) && (
+          <div className="mt-4">
+            <WellnessWidget data={wellness} />
+          </div>
+        )}
 
         {/* ── Monthly goals (editable) ─────────────────────────── */}
         <h3 className="mt-8 text-lg font-semibold text-foreground">🎯 Cele Miesieczne</h3>
@@ -731,7 +763,6 @@ export default function ZdrowiePage() {
               <ProgressRing value={goals.running.current} max={goals.running.target} color="#22c55e" />
             </div>
 
-            {/* Daily entries */}
             <div className="mt-4 flex gap-1">
               {["Pn", "Wt", "Sr", "Cz", "Pt", "Sb", "Nd"].map((day, i) => (
                 <div key={day} className="flex flex-1 flex-col items-center gap-1">
@@ -756,7 +787,6 @@ export default function ZdrowiePage() {
               Tydzien: {runWeekTotal.toFixed(1)} / {runWeeklyGoal} km
             </p>
 
-            {/* Mountain chart */}
             <MountainProgress
               current={runWeekTotal}
               target={runWeeklyGoal}
@@ -782,15 +812,9 @@ export default function ZdrowiePage() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">
-                  Garmin (wkrotce)
-                </span>
-                <ProgressRing value={goals.cycling.current} max={goals.cycling.target} color="#3b82f6" />
-              </div>
+              <ProgressRing value={goals.cycling.current} max={goals.cycling.target} color="#3b82f6" />
             </div>
 
-            {/* Daily entries */}
             <div className="mt-4 flex gap-1">
               {["Pn", "Wt", "Sr", "Cz", "Pt", "Sb", "Nd"].map((day, i) => (
                 <div key={day} className="flex flex-1 flex-col items-center gap-1">
@@ -815,7 +839,6 @@ export default function ZdrowiePage() {
               Tydzien: {bikeWeekTotal.toFixed(1)} / {bikeWeeklyGoal} km
             </p>
 
-            {/* Mountain chart */}
             <MountainProgress
               current={bikeWeekTotal}
               target={bikeWeeklyGoal}
