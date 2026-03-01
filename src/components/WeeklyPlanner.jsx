@@ -72,15 +72,33 @@ const mapFromDb = (rows) =>
 export default function WeeklyPlanner() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState([]);
+  const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [newTask, setNewTask] = useState({ task: "", project: "Ovoc Malinovi", priority: "A", wig: "", deadline: "", person: "" });
   const [expandedTask, setExpandedTask] = useState(null);
+  const [showAddGoal, setShowAddGoal] = useState(false);
+  const [newGoal, setNewGoal] = useState({ goal: "", project: "Ovoc Malinovi" });
 
   const week = getWeekDates(currentDate);
   const weekNum = getWeekNumber(week.start);
   const weekStart = toDateStr(week.start);
+
+  const fetchGoals = useCallback(async (ws) => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from("weekly_goals")
+      .select("*")
+      .eq("week_start", ws)
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.error("Goals fetch error:", error);
+      setGoals([]);
+    } else {
+      setGoals(data || []);
+    }
+  }, []);
 
   const fetchTasks = useCallback(async (ws) => {
     if (!supabase) { setLoading(false); return; }
@@ -102,7 +120,41 @@ export default function WeeklyPlanner() {
 
   useEffect(() => {
     fetchTasks(weekStart);
-  }, [weekStart, fetchTasks]);
+    fetchGoals(weekStart);
+  }, [weekStart, fetchTasks, fetchGoals]);
+
+  const addGoal = async () => {
+    if (!newGoal.goal.trim() || !supabase) return;
+    const { data, error } = await supabase
+      .from("weekly_goals")
+      .insert({ goal: newGoal.goal, project: newGoal.project, week_start: weekStart })
+      .select()
+      .single();
+    if (error) { console.error("Goal insert error:", error); return; }
+    if (data) setGoals((prev) => [...prev, data]);
+    setNewGoal({ goal: "", project: "Ovoc Malinovi" });
+    setShowAddGoal(false);
+  };
+
+  const toggleGoal = async (id) => {
+    const goal = goals.find((g) => g.id === id);
+    if (!goal) return;
+    const newStatus = goal.status === "completed" ? "active" : "completed";
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, status: newStatus } : g)));
+    if (supabase) {
+      await supabase
+        .from("weekly_goals")
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq("id", id);
+    }
+  };
+
+  const deleteGoal = async (id) => {
+    setGoals((prev) => prev.filter((g) => g.id !== id));
+    if (supabase) {
+      await supabase.from("weekly_goals").delete().eq("id", id);
+    }
+  };
 
   const navigateWeek = (dir) => {
     const d = new Date(currentDate);
@@ -258,6 +310,54 @@ export default function WeeklyPlanner() {
       <div style={{ padding: "0 36px 40px", display: "flex", gap: 28 }}>
         {/* TASK LIST */}
         <div style={{ flex: 1 }}>
+          {/* WEEKLY GOALS */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 7, background: "#F0FDF4", border: "1.5px solid #BBF7D0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{"\u{1F3AF}"}</div>
+              <span style={{ fontSize: 12, color: "#A3A3A3", fontFamily: "'Space Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Cele tygodnia</span>
+              <div style={{ flex: 1, height: 1, background: "#EDEDED" }} />
+              <span style={{ fontSize: 11, color: "#C4C4C4", fontFamily: "'Space Mono', monospace" }}>
+                {goals.filter((g) => g.status === "completed").length}/{goals.length}
+              </span>
+            </div>
+
+            {goals.map((g) => {
+              const pillar = PILLARS[g.project];
+              const isDone = g.status === "completed";
+              return (
+                <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: isDone ? "#F7FDF7" : "#FFFFFF", borderRadius: 12, border: "1px solid #EDEDED", marginBottom: 4, opacity: isDone ? 0.55 : 1, transition: "all 0.15s" }}>
+                  <div onClick={() => toggleGoal(g.id)} style={{ width: 20, height: 20, borderRadius: 6, border: isDone ? "none" : "2px solid #BBF7D0", background: isDone ? "#16A34A" : "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.2s" }}>
+                    {isDone && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>}
+                  </div>
+                  <div style={{ flex: 1, fontSize: 14, fontWeight: 500, textDecoration: isDone ? "line-through" : "none", color: isDone ? "#A3A3A3" : "#262626" }}>{g.goal}</div>
+                  {pillar && (
+                    <div style={{ padding: "3px 10px", borderRadius: 6, background: `${pillar.color}0C`, color: pillar.color, fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>
+                      {pillar.icon} {g.project}
+                    </div>
+                  )}
+                  <button onClick={() => deleteGoal(g.id)} style={{ background: "none", border: "none", color: "#D4D4D4", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }} title="Usu\u0144">{"\u00D7"}</button>
+                </div>
+              );
+            })}
+
+            {!showAddGoal ? (
+              <button onClick={() => setShowAddGoal(true)} style={{ width: "100%", padding: "10px", background: "#FFFFFF", border: "1.5px dashed #BBF7D0", borderRadius: 10, color: "#86EFAC", fontSize: 13, cursor: "pointer", transition: "all 0.2s" }}>+ Dodaj cel</button>
+            ) : (
+              <div style={{ padding: 16, background: "#FFFFFF", borderRadius: 12, border: "1px solid #E5E5E5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                <input value={newGoal.goal} onChange={(e) => setNewGoal({ ...newGoal, goal: e.target.value })} placeholder="Cel na ten tydzie\u0144..." style={inputStyle} autoFocus onKeyDown={(e) => e.key === "Enter" && addGoal()} />
+                <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+                  <select value={newGoal.project} onChange={(e) => setNewGoal({ ...newGoal, project: e.target.value })} style={selectStyle}>
+                    {Object.keys(PILLARS).map((p) => <option key={p} value={p}>{PILLARS[p].icon} {p}</option>)}
+                  </select>
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                    <button onClick={addGoal} style={{ ...primaryBtnStyle, padding: "7px 18px", fontSize: 12 }}>Dodaj</button>
+                    <button onClick={() => setShowAddGoal(false)} style={{ ...secondaryBtnStyle, padding: "7px 18px", fontSize: 12 }}>Anuluj</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {loading ? (
             <div style={{ textAlign: "center", padding: 40, color: "#A3A3A3", fontSize: 14 }}>
               \u0141adowanie zada\u0144...
@@ -360,6 +460,30 @@ export default function WeeklyPlanner() {
               })}
             </div>
           </div>
+
+          {/* GOALS SIDEBAR */}
+          {goals.length > 0 && (
+            <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 20, border: "1px solid #E5E5E5", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 10 }}>{"\u{1F3AF}"} Cele</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <span style={{ fontSize: 28, fontWeight: 700, color: "#16A34A", fontFamily: "'Space Mono', monospace" }}>
+                  {goals.filter((g) => g.status === "completed").length}/{goals.length}
+                </span>
+                <span style={{ fontSize: 12, color: "#A3A3A3" }}>osi\u0105gni\u0119tych</span>
+              </div>
+              <div style={{ marginTop: 10, height: 4, background: "#DCFCE7", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${goals.length > 0 ? Math.round((goals.filter((g) => g.status === "completed").length / goals.length) * 100) : 0}%`, background: "#16A34A", borderRadius: 2, transition: "width 0.4s ease" }} />
+              </div>
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                {goals.map((g) => (
+                  <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                    <span style={{ color: g.status === "completed" ? "#16A34A" : "#D4D4D4" }}>{g.status === "completed" ? "\u2713" : "\u25CB"}</span>
+                    <span style={{ color: g.status === "completed" ? "#A3A3A3" : "#525252", textDecoration: g.status === "completed" ? "line-through" : "none", flex: 1 }}>{g.goal}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 20, border: "1px solid #E5E5E5", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
             <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 10 }}>WIG Impact</div>
