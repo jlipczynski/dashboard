@@ -92,7 +92,7 @@ export const monthlyGoals = {
   cycling: { target: 0, current: 0, unit: "km" },
   cyclingHours: { target: 0, current: 0, unit: "h" },
   running: { target: 0, current: 0, unit: "km" },
-  competition: { name: "", date: "" },
+  competition: { name: "", date: "", type: "running" as "running" | "cycling", distance: 0 },
 };
 
 export const sportAreas: SportArea[] = [
