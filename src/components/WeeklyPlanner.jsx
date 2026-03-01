@@ -363,9 +363,19 @@ export default function WeeklyPlanner() {
             )}
           </div>
 
+          {!supabase && (
+            <div style={{ padding: "14px 18px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>{"⚠️"}</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#DC2626" }}>Supabase nie jest podłączony</div>
+                <div style={{ fontSize: 12, color: "#737373", marginTop: 2 }}>Dodaj NEXT_PUBLIC_SUPABASE_URL i NEXT_PUBLIC_SUPABASE_ANON_KEY w Vercel Settings {">"} Environment Variables, potem redeploy.</div>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <div style={{ textAlign: "center", padding: 40, color: "#A3A3A3", fontSize: 14 }}>
-              \u0141adowanie zada\u0144...
+              Ładowanie zadań...
             </div>
           ) : (
             <>
