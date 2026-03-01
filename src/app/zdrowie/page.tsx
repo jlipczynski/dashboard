@@ -893,6 +893,79 @@ export default function ZdrowiePage() {
           />
         </div>
 
+        {/* ── Weekly goals (auto-calculated) ─────────────────────── */}
+        <h3 className="mt-8 text-lg font-semibold text-foreground">📅 Cele Tygodniowe</h3>
+        <div className="mt-3 grid gap-4 sm:grid-cols-3">
+          {/* Running weekly */}
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🏃</span>
+                <span className="text-sm font-medium text-foreground">Bieganie</span>
+              </div>
+              <ProgressRing value={runWeekTotal} max={runWeeklyGoal} color="#22c55e" size={56} />
+            </div>
+            <div className="mt-3">
+              <ProgressBar value={runWeekTotal} max={runWeeklyGoal} color="#22c55e" />
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="font-semibold text-foreground">
+                  {runWeekTotal.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">km</span>
+                </span>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <span>cel:</span>
+                  <EditableNumber value={runWeeklyGoal} onSave={setRunWeeklyGoal} unit="km" className="text-xs" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Cycling weekly */}
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🚴</span>
+                <span className="text-sm font-medium text-foreground">Rower</span>
+              </div>
+              <ProgressRing value={bikeWeekTotal} max={bikeWeeklyGoal} color="#3b82f6" size={56} />
+            </div>
+            <div className="mt-3">
+              <ProgressBar value={bikeWeekTotal} max={bikeWeeklyGoal} color="#3b82f6" />
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="font-semibold text-foreground">
+                  {bikeWeekTotal.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">km</span>
+                </span>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <span>cel:</span>
+                  <EditableNumber value={bikeWeeklyGoal} onSave={setBikeWeeklyGoal} unit="km" className="text-xs" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Gym weekly */}
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🏋️</span>
+                <span className="text-sm font-medium text-foreground">Silownia</span>
+              </div>
+              <ProgressRing value={gymDays.filter(Boolean).length} max={gymWeeklyGoal} color="#a855f7" size={56} />
+            </div>
+            <div className="mt-3">
+              <ProgressBar value={gymDays.filter(Boolean).length} max={gymWeeklyGoal} color="#a855f7" />
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="font-semibold text-foreground">
+                  {gymDays.filter(Boolean).length} <span className="text-xs font-normal text-muted-foreground">treningow</span>
+                </span>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <span>cel:</span>
+                  <EditableNumber value={gymWeeklyGoal} onSave={setGymWeeklyGoal} unit="x" className="text-xs" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* ── Competition (editable) ───────────────────────────── */}
         <div className="mt-4">
           <CompetitionCard
