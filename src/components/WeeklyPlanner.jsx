@@ -14,11 +14,11 @@ const PILLARS = {
 };
 
 const PRIORITY_META = {
-  A: { label: "A", desc: "Must do", pts: 4, color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
-  B: { label: "B", desc: "Should do", pts: 3, color: "#D97706", bg: "#FFFBEB", border: "#FDE68A" },
-  C: { label: "C", desc: "Nice to do", pts: 2, color: "#2563EB", bg: "#EFF6FF", border: "#BFDBFE" },
-  D: { label: "D", desc: "Delegate", pts: 1, color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE" },
-  E: { label: "E", desc: "Eliminate", pts: 0, color: "#94A3B8", bg: "#F8FAFC", border: "#E2E8F0" },
+  A: { label: "A", desc: "Musisz zrobić", pts: 4, color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
+  B: { label: "B", desc: "Powinieneś zrobić", pts: 3, color: "#D97706", bg: "#FFFBEB", border: "#FDE68A" },
+  C: { label: "C", desc: "Miło by było", pts: 2, color: "#2563EB", bg: "#EFF6FF", border: "#BFDBFE" },
+  D: { label: "D", desc: "Deleguj", pts: 1, color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE" },
+  E: { label: "E", desc: "Eliminuj", pts: 0, color: "#94A3B8", bg: "#F8FAFC", border: "#E2E8F0" },
 };
 
 const SAMPLE_WIGS = [
