@@ -29,24 +29,32 @@ function formatDate(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
-export async function GET() {
-  const email = process.env.GARMIN_EMAIL;
-  const password = process.env.GARMIN_PASSWORD;
+async function getGarminClient(): Promise<GarminConnect> {
+  const tokenB64 = process.env.GARMIN_TOKEN;
 
-  if (!email || !password) {
-    return NextResponse.json(
-      { error: "Brak GARMIN_EMAIL lub GARMIN_PASSWORD w zmiennych srodowiskowych" },
-      { status: 500 }
-    );
+  if (tokenB64) {
+    const tokenData = JSON.parse(Buffer.from(tokenB64, "base64").toString());
+    const client = new GarminConnect({
+      username: process.env.GARMIN_EMAIL || "token-auth",
+      password: process.env.GARMIN_PASSWORD || "token-auth",
+    });
+    client.loadToken(tokenData.oauth1, tokenData.oauth2);
+    return client;
   }
 
-  try {
-    const client = new GarminConnect({
-      username: email,
-      password: password,
-    });
+  const email = process.env.GARMIN_EMAIL;
+  const password = process.env.GARMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error("Brak GARMIN_TOKEN ani GARMIN_EMAIL/GARMIN_PASSWORD");
+  }
+  const client = new GarminConnect({ username: email, password });
+  await client.login();
+  return client;
+}
 
-    await client.login();
+export async function GET() {
+  try {
+    const client = await getGarminClient();
 
     const today = new Date();
     const dateStr = formatDate(today);
