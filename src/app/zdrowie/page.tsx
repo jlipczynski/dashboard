@@ -17,11 +17,15 @@ type GarminActivity = {
 };
 
 type WellnessData = {
+  activeCalories: number | null;
+  totalCalories: number | null;
   steps: number | null;
   restingHR: number | null;
   sleepHours: number | null;
   weightKg: number | null;
-  hydrationMl: number | null;
+  bodyBattery: number | null;
+  stressLevel: number | null;
+  distanceKm: number | null;
 };
 
 /* ── Editable number field ──────────────────────────────────── */
@@ -484,11 +488,14 @@ function CompetitionCard({
 /* ── Wellness widget ────────────────────────────────────────── */
 function WellnessWidget({ data }: { data: WellnessData }) {
   const items = [
+    { icon: "🔥", label: "Akt. kalorie", value: data.activeCalories, format: (v: number) => `${v} kcal` },
+    { icon: "📊", label: "Kalorie total", value: data.totalCalories, format: (v: number) => `${v} kcal` },
     { icon: "👣", label: "Kroki", value: data.steps, format: (v: number) => v.toLocaleString("pl-PL") },
-    { icon: "❤️", label: "Tetno spoczynkowe", value: data.restingHR, format: (v: number) => `${v} bpm` },
+    { icon: "📏", label: "Dystans", value: data.distanceKm, format: (v: number) => `${v} km` },
+    { icon: "❤️", label: "Tetno spocz.", value: data.restingHR, format: (v: number) => `${v} bpm` },
     { icon: "😴", label: "Sen", value: data.sleepHours, format: (v: number) => `${v}h` },
+    { icon: "🔋", label: "Body Battery", value: data.bodyBattery, format: (v: number) => `${v}` },
     { icon: "⚖️", label: "Waga", value: data.weightKg, format: (v: number) => `${v} kg` },
-    { icon: "💧", label: "Nawodnienie", value: data.hydrationMl, format: (v: number) => `${v} ml` },
   ].filter((item) => item.value !== null);
 
   if (items.length === 0) return null;
@@ -498,7 +505,7 @@ function WellnessWidget({ data }: { data: WellnessData }) {
       <h4 className="flex items-center gap-2 font-semibold text-foreground">
         📊 Dzisiejszy stan (Garmin)
       </h4>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {items.map((item) => (
           <div key={item.label} className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
             <span className="text-xl">{item.icon}</span>
@@ -546,11 +553,15 @@ export default function ZdrowiePage() {
 
   // Wellness data
   const [wellness, setWellness] = useState<WellnessData>({
+    activeCalories: null,
+    totalCalories: null,
     steps: null,
     restingHR: null,
     sleepHours: null,
     weightKg: null,
-    hydrationMl: null,
+    bodyBattery: null,
+    stressLevel: null,
+    distanceKm: null,
   });
 
   // Load cached activities on mount
@@ -587,11 +598,15 @@ export default function ZdrowiePage() {
       const wellnessData = await wellnessRes.json();
       if (!wellnessData.error) {
         setWellness({
+          activeCalories: wellnessData.today.activeCalories,
+          totalCalories: wellnessData.today.totalCalories,
           steps: wellnessData.today.steps,
           restingHR: wellnessData.today.restingHR,
           sleepHours: wellnessData.today.sleepHours,
           weightKg: wellnessData.today.weightKg,
-          hydrationMl: wellnessData.today.hydrationMl,
+          bodyBattery: wellnessData.today.bodyBattery,
+          stressLevel: wellnessData.today.stressLevel,
+          distanceKm: wellnessData.today.distanceKm,
         });
       }
     } catch {
