@@ -1,8 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { monthlyGoals, sportAreas } from "@/lib/data";
+
+type GarminSummary = {
+  month: {
+    cyclingKm: number;
+    cyclingHours: number;
+    runningKm: number;
+    activeCalories: number;
+    gymSessions: number;
+  };
+  week: {
+    cyclingKm: number;
+    runningKm: number;
+    activeCalories: number;
+    gymSessions: number;
+    dailyRunning: number[];
+    dailyCycling: number[];
+  };
+};
+
+type GarminActivity = {
+  id: number;
+  name: string;
+  type: string;
+  distanceKm: number;
+  durationMin: number;
+  calories: number;
+  date: string;
+  avgHR?: number;
+};
+
+type GarminResponse = {
+  summary: GarminSummary;
+  activities: GarminActivity[];
+  syncedAt: string;
+  error?: string;
+};
 
 /* ── Editable number field ──────────────────────────────────── */
 function EditableNumber({
@@ -500,6 +536,48 @@ export default function ZdrowiePage() {
   const [bikeWeeklyGoal, setBikeWeeklyGoal] = useState(sportAreas[2].weeklyGoal);
   const [bikeMonthlyGoal, setBikeMonthlyGoal] = useState(sportAreas[2].monthlyGoal);
 
+  // Garmin sync
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [recentActivities, setRecentActivities] = useState<GarminActivity[]>([]);
+
+  const syncGarmin = useCallback(async () => {
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      const res = await fetch("/api/garmin");
+      const data: GarminResponse = await res.json();
+      if (data.error) {
+        setSyncError(data.error);
+        return;
+      }
+
+      // Update monthly goals with Garmin data
+      setGoals((prev) => ({
+        ...prev,
+        activeCalories: { ...prev.activeCalories, current: data.summary.month.activeCalories },
+        cycling: { ...prev.cycling, current: data.summary.month.cyclingKm },
+        cyclingHours: { ...prev.cyclingHours, current: data.summary.month.cyclingHours },
+        running: { ...prev.running, current: data.summary.month.runningKm },
+      }));
+
+      // Update weekly entries from Garmin
+      setRunEntries(data.summary.week.dailyRunning);
+      setBikeEntries(data.summary.week.dailyCycling);
+
+      // Update gym
+      setGymMonthlyDone(data.summary.month.gymSessions);
+
+      setRecentActivities(data.activities);
+      setLastSync(new Date(data.syncedAt).toLocaleTimeString("pl-PL"));
+    } catch {
+      setSyncError("Nie udalo sie polaczyc z Garmin");
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
   const runWeekTotal = runEntries.reduce((a, b) => a + b, 0);
   const bikeWeekTotal = bikeEntries.reduce((a, b) => a + b, 0);
 
@@ -527,6 +605,35 @@ export default function ZdrowiePage() {
               Marzec 2026 — kliknij wartosci, aby edytowac
             </p>
           </div>
+        </div>
+
+        {/* ── Garmin sync ──────────────────────────────────────── */}
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button
+            onClick={syncGarmin}
+            disabled={syncing}
+            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-green-700 disabled:opacity-50"
+          >
+            {syncing ? (
+              <>
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Synchronizuje...
+              </>
+            ) : (
+              <>
+                <span>&#9889;</span>
+                Synchronizuj z Garmin
+              </>
+            )}
+          </button>
+          {lastSync && (
+            <span className="text-xs text-muted-foreground">
+              Ostatnia synchronizacja: {lastSync}
+            </span>
+          )}
+          {syncError && (
+            <span className="text-xs text-red-500">{syncError}</span>
+          )}
         </div>
 
         {/* ── Monthly goals (editable) ─────────────────────────── */}
@@ -719,6 +826,48 @@ export default function ZdrowiePage() {
             />
           </div>
         </div>
+
+        {/* ── Recent Garmin activities ─────────────────────────── */}
+        {recentActivities.length > 0 && (
+          <>
+            <h3 className="mt-8 text-lg font-semibold text-foreground">📋 Ostatnie aktywnosci (Garmin)</h3>
+            <div className="mt-3 space-y-2">
+              {recentActivities.slice(0, 10).map((a) => {
+                const typeIcon =
+                  a.type.includes("cycling") ? "🚴" :
+                  a.type.includes("running") ? "🏃" :
+                  a.type.includes("strength") || a.type.includes("training") ? "🏋️" :
+                  "🏅";
+                return (
+                  <div
+                    key={a.id}
+                    className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg">{typeIcon}</span>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{a.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(a.date).toLocaleDateString("pl-PL", {
+                            weekday: "short",
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      {a.distanceKm > 0 && <span>{a.distanceKm} km</span>}
+                      <span>{a.durationMin} min</span>
+                      <span>{a.calories} kcal</span>
+                      {a.avgHR && <span>&#10084; {a.avgHR}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
