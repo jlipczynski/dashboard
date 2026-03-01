@@ -4,13 +4,13 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
 const PILLARS = {
-  "Ovoc Malinovi": { color: "#DC2626", icon: "\u{1FAD0}", type: "praca" },
-  "Plantacja": { color: "#16A34A", icon: "\u{1F33F}", type: "praca" },
-  "Inne": { color: "#7C3AED", icon: "\u{1F4C1}", type: "praca" },
-  "Zdrowie": { color: "#EA580C", icon: "\u{1F4AA}", type: "\u017Cycie" },
-  "Rozw\u00F3j": { color: "#2563EB", icon: "\u{1F4DA}", type: "\u017Cycie" },
-  "Relacje": { color: "#DB2777", icon: "\u2764\uFE0F", type: "\u017Cycie" },
-  "Duchowo\u015B\u0107": { color: "#059669", icon: "\u{1F9D8}", type: "\u017Cycie" },
+  "Ovoc Malinovi": { color: "#DC2626", icon: "🫐", type: "praca" },
+  "Plantacja": { color: "#16A34A", icon: "🌿", type: "praca" },
+  "Inne": { color: "#7C3AED", icon: "📁", type: "praca" },
+  "Zdrowie": { color: "#EA580C", icon: "💪", type: "życie" },
+  "Rozwój": { color: "#2563EB", icon: "📚", type: "życie" },
+  "Relacje": { color: "#DB2777", icon: "❤️", type: "życie" },
+  "Duchowość": { color: "#059669", icon: "🧘", type: "życie" },
 };
 
 const PRIORITY_META = {
@@ -299,7 +299,7 @@ export default function WeeklyPlanner() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#737373" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
           </button>
           {!isCurrentWeek() && (
-            <button onClick={() => setCurrentDate(new Date())} style={{ ...navBtnStyle, padding: "6px 14px", width: "auto", fontSize: 11, fontFamily: "'Space Mono', monospace", color: "#16A34A", borderColor: "#BBF7D0", background: "#F0FDF4" }}>Dzi\u015B</button>
+            <button onClick={() => setCurrentDate(new Date())} style={{ ...navBtnStyle, padding: "6px 14px", width: "auto", fontSize: 11, fontFamily: "'Space Mono', monospace", color: "#16A34A", borderColor: "#BBF7D0", background: "#F0FDF4" }}>{"Dziś"}</button>
           )}
         </div>
 
@@ -325,7 +325,7 @@ export default function WeeklyPlanner() {
           {/* WEEKLY GOALS */}
           <div style={{ marginBottom: 28 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 7, background: "#F0FDF4", border: "1.5px solid #BBF7D0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{"\u{1F3AF}"}</div>
+              <div style={{ width: 28, height: 28, borderRadius: 7, background: "#F0FDF4", border: "1.5px solid #BBF7D0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{"🎯"}</div>
               <span style={{ fontSize: 12, color: "#A3A3A3", fontFamily: "'Space Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Cele tygodnia</span>
               <div style={{ flex: 1, height: 1, background: "#EDEDED" }} />
               <span style={{ fontSize: 11, color: "#C4C4C4", fontFamily: "'Space Mono', monospace" }}>
@@ -347,7 +347,7 @@ export default function WeeklyPlanner() {
                       {pillar.icon} {g.project}
                     </div>
                   )}
-                  <button onClick={() => deleteGoal(g.id)} style={{ background: "none", border: "none", color: "#D4D4D4", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }} title="Usu\u0144">{"\u00D7"}</button>
+                  <button onClick={() => deleteGoal(g.id)} style={{ background: "none", border: "none", color: "#D4D4D4", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }} title="Usuń">{"\u00D7"}</button>
                 </div>
               );
             })}
@@ -356,7 +356,7 @@ export default function WeeklyPlanner() {
               <button onClick={() => setShowAddGoal(true)} style={{ width: "100%", padding: "10px", background: "#FFFFFF", border: "1.5px dashed #BBF7D0", borderRadius: 10, color: "#86EFAC", fontSize: 13, cursor: "pointer", transition: "all 0.2s" }}>+ Dodaj cel</button>
             ) : (
               <div style={{ padding: 16, background: "#FFFFFF", borderRadius: 12, border: "1px solid #E5E5E5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-                <input value={newGoal.goal} onChange={(e) => setNewGoal({ ...newGoal, goal: e.target.value })} placeholder="Cel na ten tydzie\u0144..." style={inputStyle} autoFocus onKeyDown={(e) => e.key === "Enter" && addGoal()} />
+                <input value={newGoal.goal} onChange={(e) => setNewGoal({ ...newGoal, goal: e.target.value })} placeholder="Cel na ten tydzień..." style={inputStyle} autoFocus onKeyDown={(e) => e.key === "Enter" && addGoal()} />
                 <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
                   <select value={newGoal.project} onChange={(e) => setNewGoal({ ...newGoal, project: e.target.value })} style={selectStyle}>
                     {Object.keys(PILLARS).map((p) => <option key={p} value={p}>{PILLARS[p].icon} {p}</option>)}
@@ -406,7 +406,7 @@ export default function WeeklyPlanner() {
 
               {filteredTasks.length === 0 && !loading && (
                 <div style={{ textAlign: "center", padding: 40, color: "#C4C4C4", fontSize: 14 }}>
-                  Brak zada\u0144 na ten tydzie\u0144. Dodaj pierwsze!
+                  {"Brak zadań na ten tydzień. Dodaj pierwsze!"}
                 </div>
               )}
             </>
@@ -447,7 +447,7 @@ export default function WeeklyPlanner() {
               <span style={{ fontSize: 44, fontWeight: 700, color: "#171717", lineHeight: 1, fontFamily: "'Space Mono', monospace" }}>{stats.done}</span>
               <span style={{ fontSize: 20, color: "#D4D4D4", fontFamily: "'Space Mono', monospace" }}>/ {stats.total}</span>
             </div>
-            <div style={{ fontSize: 12, color: "#A3A3A3", marginTop: 2 }}>punkt\u00F3w zdobytych</div>
+            <div style={{ fontSize: 12, color: "#A3A3A3", marginTop: 2 }}>{"punktów zdobytych"}</div>
 
             <div style={{ display: "flex", justifyContent: "center", margin: "20px 0 16px" }}>
               <svg width="110" height="110" viewBox="0 0 110 110">
@@ -485,12 +485,12 @@ export default function WeeklyPlanner() {
           {/* GOALS SIDEBAR */}
           {goals.length > 0 && (
             <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 20, border: "1px solid #E5E5E5", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 10 }}>{"\u{1F3AF}"} Cele</div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 10 }}>{"🎯"} Cele</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                 <span style={{ fontSize: 28, fontWeight: 700, color: "#16A34A", fontFamily: "'Space Mono', monospace" }}>
                   {goals.filter((g) => g.status === "completed").length}/{goals.length}
                 </span>
-                <span style={{ fontSize: 12, color: "#A3A3A3" }}>osi\u0105gni\u0119tych</span>
+                <span style={{ fontSize: 12, color: "#A3A3A3" }}>{"osiągniętych"}</span>
               </div>
               <div style={{ marginTop: 10, height: 4, background: "#DCFCE7", borderRadius: 2, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${goals.length > 0 ? Math.round((goals.filter((g) => g.status === "completed").length / goals.length) * 100) : 0}%`, background: "#16A34A", borderRadius: 2, transition: "width 0.4s ease" }} />
@@ -518,7 +518,7 @@ export default function WeeklyPlanner() {
               <div style={{ height: "100%", width: `${stats.taskCount > 0 ? Math.round((stats.wigTasks / stats.taskCount) * 100) : 0}%`, background: "#D97706", borderRadius: 2, transition: "width 0.4s ease" }} />
             </div>
             <div style={{ fontSize: 11, color: "#C4C4C4", marginTop: 8, lineHeight: 1.5 }}>
-              {stats.wigTasks > 0 ? `${stats.wigTasks} z ${stats.taskCount} zada\u0144 na WIG-ach. Reszta = whirlwind.` : "Brak zada\u0144 powi\u0105zanych z WIG-ami."}
+              {stats.wigTasks > 0 ? `${stats.wigTasks} z ${stats.taskCount} zadań na WIG-ach. Reszta = whirlwind.` : "Brak zadań powiązanych z WIG-ami."}
             </div>
           </div>
 
@@ -581,7 +581,7 @@ function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete }) {
           {task.deadline && <DetailChip label="Deadline" value={new Date(task.deadline).toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} color="#DC2626" />}
           {task.person && <DetailChip label="Osoba" value={task.person} color="#2563EB" />}
           <div style={{ marginLeft: "auto" }}>
-            <button onClick={(e) => { e.stopPropagation(); onDelete(); }} style={{ padding: "5px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, color: "#DC2626", fontSize: 11, cursor: "pointer", fontFamily: "'Space Mono', monospace" }}>Usu\u0144</button>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(); }} style={{ padding: "5px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, color: "#DC2626", fontSize: 11, cursor: "pointer", fontFamily: "'Space Mono', monospace" }}>Usuń</button>
           </div>
         </div>
       )}
