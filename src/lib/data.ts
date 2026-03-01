@@ -88,19 +88,19 @@ export const pillars: Pillar[] = [
 ];
 
 export const monthlyGoals = {
-  activeCalories: { target: 15000, current: 0, unit: "kcal" },
-  cycling: { target: 800, current: 0, unit: "km" },
-  cyclingHours: { target: 80, current: 0, unit: "h" },
-  running: { target: 80, current: 0, unit: "km" },
-  competition: { name: "Półmaraton Poznań", date: "2026-05-10" },
+  activeCalories: { target: 0, current: 0, unit: "kcal" },
+  cycling: { target: 0, current: 0, unit: "km" },
+  cyclingHours: { target: 0, current: 0, unit: "h" },
+  running: { target: 0, current: 0, unit: "km" },
+  competition: { name: "", date: "" },
 };
 
 export const sportAreas: SportArea[] = [
   {
     name: "Siłownia",
     icon: "🏋️",
-    weeklyGoal: 3,
-    monthlyGoal: 12,
+    weeklyGoal: 0,
+    monthlyGoal: 0,
     unit: "treningi",
     current: 0,
     weekDays: [false, false, false, false, false, false, false],
@@ -108,8 +108,8 @@ export const sportAreas: SportArea[] = [
   {
     name: "Bieganie",
     icon: "🏃",
-    weeklyGoal: 20,
-    monthlyGoal: 80,
+    weeklyGoal: 0,
+    monthlyGoal: 0,
     unit: "km",
     current: 0,
     weekDays: [false, false, false, false, false, false, false],
@@ -117,8 +117,8 @@ export const sportAreas: SportArea[] = [
   {
     name: "Rower",
     icon: "🚴",
-    weeklyGoal: 200,
-    monthlyGoal: 800,
+    weeklyGoal: 0,
+    monthlyGoal: 0,
     unit: "km",
     current: 0,
     weekDays: [false, false, false, false, false, false, false],

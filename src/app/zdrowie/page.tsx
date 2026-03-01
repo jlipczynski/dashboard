@@ -624,6 +624,7 @@ export default function ZdrowiePage() {
     }
   }, [garmin.data, setRecentActivities]);
 
+
   const syncGarmin = useCallback(async () => {
     const data = await garmin.sync(true);
     if (data) {
@@ -668,6 +669,16 @@ export default function ZdrowiePage() {
     }
   }, [garmin, setGoals, setRunEntries, setBikeEntries, setGymMonthlyDone, setRecentActivities]);
 
+  // Auto-sync with Garmin on page load
+  const [autoSynced, setAutoSynced] = useState(false);
+  useEffect(() => {
+    if (!autoSynced) {
+      setAutoSynced(true);
+      syncGarmin();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSynced]);
+
   const runWeekTotal = runEntries.reduce((a, b) => a + b, 0);
   const bikeWeekTotal = bikeEntries.reduce((a, b) => a + b, 0);
 
@@ -696,7 +707,7 @@ export default function ZdrowiePage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Zdrowie i Fitness</h1>
             <p className="text-muted-foreground">
-              Marzec 2026 — kliknij wartosci, aby edytowac
+              Kliknij wartosci celow, aby je ustawic
             </p>
           </div>
         </div>
