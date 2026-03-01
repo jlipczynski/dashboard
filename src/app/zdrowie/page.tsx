@@ -376,15 +376,23 @@ function MonthlyGoalCard({
                 step="any"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => {
-                  const n = parseFloat(draft);
-                  if (!isNaN(n) && n > 0) onTargetChange(n);
-                  setEditingTarget(false);
-                }}
                 placeholder="cel"
                 className="w-20 rounded border border-border bg-background px-2 py-1 text-xs text-right"
               />
               <span className="text-xs text-muted-foreground">{unit}</span>
+              <button
+                type="submit"
+                className="ml-1 rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 transition-colors"
+              >
+                Zapisz
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingTarget(false)}
+                className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground hover:bg-muted/80 transition-colors"
+              >
+                Anuluj
+              </button>
             </form>
           ) : (
             <button
@@ -837,7 +845,7 @@ export default function ZdrowiePage() {
 
         {/* ── Monthly goals (editable) ─────────────────────────── */}
         <h3 className="mt-8 text-lg font-semibold text-foreground">🎯 Cele Miesieczne</h3>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <MonthlyGoalCard
             icon="🔥"
             label="Aktywne kalorie"
@@ -873,6 +881,15 @@ export default function ZdrowiePage() {
             unit="km"
             color="#22c55e"
             onTargetChange={(v) => updateGoal("running", "target", v)}
+          />
+          <MonthlyGoalCard
+            icon="🏋️"
+            label="Silownia"
+            current={gymMonthlyDone}
+            target={gymMonthlyGoal}
+            unit="treningow"
+            color="#a855f7"
+            onTargetChange={setGymMonthlyGoal}
           />
         </div>
 
