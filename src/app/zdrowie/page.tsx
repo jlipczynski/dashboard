@@ -573,7 +573,39 @@ function WellnessWidget({ data }: { data: WellnessData }) {
 }
 
 /* ── Main page ──────────────────────────────────────────────── */
+// One-time migration: clear old mock data from localStorage
+function clearOldMockData() {
+  if (typeof window === "undefined") return;
+  const migrated = localStorage.getItem("dashboard_v2_migrated");
+  if (migrated) return;
+  // Remove old cached values that had fake targets
+  const keysToRemove = [
+    "dashboard_goals",
+    "dashboard_gym_days",
+    "dashboard_gym_weekly_goal",
+    "dashboard_gym_monthly_goal",
+    "dashboard_gym_monthly_done",
+    "dashboard_run_entries",
+    "dashboard_run_weekly_goal",
+    "dashboard_run_monthly_goal",
+    "dashboard_bike_entries",
+    "dashboard_bike_weekly_goal",
+    "dashboard_bike_monthly_goal",
+    "dashboard_recent_activities",
+    "dashboard_garmin_cache",
+  ];
+  for (const key of keysToRemove) {
+    localStorage.removeItem(key);
+  }
+  localStorage.setItem("dashboard_v2_migrated", "1");
+}
+
 export default function ZdrowiePage() {
+  // Clear old mock data on first load after update
+  useEffect(() => {
+    clearOldMockData();
+  }, []);
+
   // Monthly goals state — persisted in localStorage
   const [goals, setGoals] = useLocalStorage("dashboard_goals", {
     activeCalories: { ...monthlyGoals.activeCalories },
