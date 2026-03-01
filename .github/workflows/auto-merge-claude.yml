@@ -1,0 +1,28 @@
+name: Auto-merge Claude branches
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create and merge PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create \
+            --title "Auto-merge: ${GITHUB_REF_NAME}" \
+            --body "Automated merge from Claude branch" \
+            --base main \
+            --head "${GITHUB_REF_NAME}" || true
+          gh pr merge "${GITHUB_REF_NAME}" --merge --delete-branch
