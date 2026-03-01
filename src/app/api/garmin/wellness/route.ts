@@ -113,6 +113,40 @@ export async function GET() {
       // optional
     }
 
+    // ── 6. Today's activities (running, cycling, gym etc.) ──
+    type ActivityEntry = {
+      activityName: string;
+      activityType: string;
+      calories: number;
+      duration: string;
+      distance: string | null;
+      startTime: string;
+      averageHR: number | null;
+    };
+    let activities: ActivityEntry[] = [];
+    try {
+      const allActivities = await client.getActivities(0, 20);
+      const todayActivities = allActivities.filter((a) => {
+        const actDate = (a.startTimeLocal ?? "").slice(0, 10);
+        return actDate === dateStr;
+      });
+      activities = todayActivities.map((a) => ({
+        activityName: a.activityName ?? "Aktywnosc",
+        activityType: a.activityType?.typeKey ?? "unknown",
+        calories: a.calories ?? 0,
+        duration: a.duration
+          ? `${Math.floor(a.duration / 60)}min`
+          : "—",
+        distance: a.distance
+          ? `${(a.distance / 1000).toFixed(2)} km`
+          : null,
+        startTime: a.startTimeLocal ?? "",
+        averageHR: a.averageHR ?? null,
+      }));
+    } catch {
+      // activities unavailable
+    }
+
     return NextResponse.json({
       today: {
         date: dateStr,
@@ -138,6 +172,7 @@ export async function GET() {
           : null,
         floorsClimbed: dailySummary?.floorsAscended ?? null,
       },
+      activities,
       syncedAt: new Date().toISOString(),
     });
   } catch (err) {

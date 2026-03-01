@@ -16,6 +16,16 @@ type GarminActivity = {
   avgHR?: number;
 };
 
+type TodayActivity = {
+  activityName: string;
+  activityType: string;
+  calories: number;
+  duration: string;
+  distance: string | null;
+  startTime: string;
+  averageHR: number | null;
+};
+
 type WellnessData = {
   activeCalories: number | null;
   totalCalories: number | null;
@@ -26,6 +36,7 @@ type WellnessData = {
   bodyBattery: number | null;
   stressLevel: number | null;
   distanceKm: number | null;
+  activities: TodayActivity[];
 };
 
 /* ── Editable number field ──────────────────────────────────── */
@@ -498,24 +509,65 @@ function WellnessWidget({ data }: { data: WellnessData }) {
     { icon: "⚖️", label: "Waga", value: data.weightKg, format: (v: number) => `${v} kg` },
   ].filter((item) => item.value !== null);
 
-  if (items.length === 0) return null;
+  const activityIcon = (type: string) =>
+    type.includes("cycling") || type.includes("biking") ? "🚴" :
+    type.includes("running") ? "🏃" :
+    type.includes("strength") || type.includes("training") ? "🏋️" :
+    type.includes("swimming") ? "🏊" :
+    type.includes("walking") || type.includes("hiking") ? "🚶" :
+    "🏅";
+
+  if (items.length === 0 && data.activities.length === 0) return null;
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
       <h4 className="flex items-center gap-2 font-semibold text-foreground">
         📊 Dzisiejszy stan (Garmin)
       </h4>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {items.map((item) => (
-          <div key={item.label} className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-            <span className="text-xl">{item.icon}</span>
-            <span className="mt-1 text-lg font-bold text-foreground">
-              {item.format(item.value!)}
-            </span>
-            <span className="text-[10px] text-muted-foreground">{item.label}</span>
+
+      {items.length > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {items.map((item) => (
+            <div key={item.label} className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+              <span className="text-xl">{item.icon}</span>
+              <span className="mt-1 text-lg font-bold text-foreground">
+                {item.format(item.value!)}
+              </span>
+              <span className="text-[10px] text-muted-foreground">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.activities.length > 0 && (
+        <div className="mt-4">
+          <h5 className="text-sm font-medium text-muted-foreground">Dzisiejsze aktywnosci</h5>
+          <div className="mt-2 space-y-2">
+            {data.activities.map((a, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">{activityIcon(a.activityType)}</span>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{a.activityName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {a.startTime.slice(11, 16)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  {a.distance && <span>{a.distance}</span>}
+                  <span>{a.duration}</span>
+                  <span className="font-semibold text-orange-500">{a.calories} kcal</span>
+                  {a.averageHR && <span>&#10084; {a.averageHR}</span>}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -562,6 +614,7 @@ export default function ZdrowiePage() {
     bodyBattery: null,
     stressLevel: null,
     distanceKm: null,
+    activities: [],
   });
 
   // Load cached activities on mount
@@ -607,6 +660,7 @@ export default function ZdrowiePage() {
           bodyBattery: wellnessData.today.bodyBattery,
           stressLevel: wellnessData.today.stressLevel,
           distanceKm: wellnessData.today.distanceKm,
+          activities: wellnessData.activities ?? [],
         });
       }
     } catch {
@@ -677,7 +731,7 @@ export default function ZdrowiePage() {
         </div>
 
         {/* ── Wellness widget (from Garmin) ──────────────────── */}
-        {(wellness.steps !== null || wellness.restingHR !== null) && (
+        {(wellness.steps !== null || wellness.restingHR !== null || wellness.activities.length > 0) && (
           <div className="mt-4">
             <WellnessWidget data={wellness} />
           </div>
