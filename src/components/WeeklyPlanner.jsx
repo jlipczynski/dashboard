@@ -80,20 +80,22 @@ export default function WeeklyPlanner() {
   const [expandedTask, setExpandedTask] = useState(null);
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [newGoal, setNewGoal] = useState({ goal: "", project: "Ovoc Malinovi" });
+  const [error, setError] = useState(null);
 
   const week = getWeekDates(currentDate);
   const weekNum = getWeekNumber(week.start);
   const weekStart = toDateStr(week.start);
 
   const fetchGoals = useCallback(async (ws) => {
-    if (!supabase) return;
-    const { data, error } = await supabase
+    if (!supabase) { setError("Supabase nie jest podłączony — brak NEXT_PUBLIC_SUPABASE_URL lub NEXT_PUBLIC_SUPABASE_ANON_KEY"); return; }
+    const { data, error: err } = await supabase
       .from("weekly_goals")
       .select("*")
       .eq("week_start", ws)
       .order("created_at", { ascending: true });
-    if (error) {
-      console.error("Goals fetch error:", error);
+    if (err) {
+      console.error("Goals fetch error:", err);
+      setError(`Błąd ładowania celów: ${err.message} (${err.code})`);
       setGoals([]);
     } else {
       setGoals(data || []);
@@ -101,16 +103,18 @@ export default function WeeklyPlanner() {
   }, []);
 
   const fetchTasks = useCallback(async (ws) => {
-    if (!supabase) { setLoading(false); return; }
+    if (!supabase) { setLoading(false); setError("Supabase nie jest podłączony — brak NEXT_PUBLIC_SUPABASE_URL lub NEXT_PUBLIC_SUPABASE_ANON_KEY"); return; }
     setLoading(true);
-    const { data, error } = await supabase
+    setError(null);
+    const { data, error: err } = await supabase
       .from("weekly_tasks")
       .select("*")
       .eq("week_start", ws)
       .order("priority", { ascending: true })
       .order("sub_priority", { ascending: true });
-    if (error) {
-      console.error("Supabase fetch error:", error);
+    if (err) {
+      console.error("Supabase fetch error:", err);
+      setError(`Błąd ładowania zadań: ${err.message} (${err.code})`);
       setTasks([]);
     } else {
       setTasks(mapFromDb(data || []));
@@ -124,13 +128,15 @@ export default function WeeklyPlanner() {
   }, [weekStart, fetchTasks, fetchGoals]);
 
   const addGoal = async () => {
-    if (!newGoal.goal.trim() || !supabase) return;
+    if (!newGoal.goal.trim()) return;
+    if (!supabase) { setError("Supabase nie jest podłączony"); return; }
+    setError(null);
     const { data, error } = await supabase
       .from("weekly_goals")
       .insert({ goal: newGoal.goal, project: newGoal.project, week_start: weekStart })
       .select()
       .single();
-    if (error) { console.error("Goal insert error:", error); return; }
+    if (error) { setError(`Błąd dodawania celu: ${error.message}`); return; }
     if (data) setGoals((prev) => [...prev, data]);
     setNewGoal({ goal: "", project: "Ovoc Malinovi" });
     setShowAddGoal(false);
@@ -211,7 +217,8 @@ export default function WeeklyPlanner() {
 
   const addTask = async () => {
     if (!newTask.task.trim()) return;
-    if (!supabase) return;
+    if (!supabase) { setError("Supabase nie jest podłączony"); return; }
+    setError(null);
     const sameP = tasks.filter((t) => t.priority === newTask.priority);
     const pts = PRIORITY_META[newTask.priority].pts + (newTask.wig ? 2 : 0);
 
@@ -233,7 +240,7 @@ export default function WeeklyPlanner() {
       .single();
 
     if (error) {
-      console.error("Supabase insert error:", error);
+      setError(`Błąd dodawania zadania: ${error.message}`);
       return;
     }
     if (data) {
@@ -363,13 +370,12 @@ export default function WeeklyPlanner() {
             )}
           </div>
 
-          {!supabase && (
+          {error && (
             <div style={{ padding: "14px 18px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 18 }}>{"⚠️"}</span>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#DC2626" }}>Supabase nie jest podłączony</div>
-                <div style={{ fontSize: 12, color: "#737373", marginTop: 2 }}>Dodaj NEXT_PUBLIC_SUPABASE_URL i NEXT_PUBLIC_SUPABASE_ANON_KEY w Vercel Settings {">"} Environment Variables, potem redeploy.</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#DC2626" }}>{error}</div>
               </div>
+              <button onClick={() => setError(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "#DC2626", cursor: "pointer", fontSize: 16 }}>{"×"}</button>
             </div>
           )}
 
