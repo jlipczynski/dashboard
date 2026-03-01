@@ -258,9 +258,14 @@ export default function WeeklyPlanner() {
 
       {/* HEADER */}
       <div style={{ padding: "24px 36px 20px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-        <div>
-          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 3, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 6 }}>Panel \u017Bycia</div>
-          <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.8, color: "#171717" }}>Weekly Planner</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <a href="/" style={{ width: 34, height: 34, borderRadius: 8, border: "1px solid #E5E5E5", background: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", cursor: "pointer" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#737373" strokeWidth="2.5" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </a>
+          <div>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 3, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 6 }}>Panel życia</div>
+            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.8, color: "#171717" }}>Weekly Planner</div>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 12 }}>
           <StatPill label="Punkty" value={`${stats.done}/${stats.total}`} accent="#16A34A" />
