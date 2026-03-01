@@ -82,11 +82,28 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Garmin status */}
+        {/* Garmin status + quick stats */}
         {garmin.data && (
-          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-            Garmin zsynchronizowany: {new Date(garmin.data.syncedAt).toLocaleString("pl-PL")}
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+              Garmin zsynchronizowany: {new Date(garmin.data.syncedAt).toLocaleString("pl-PL")}
+            </span>
+            {garmin.data.summary.month.runningKm > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-green-700">
+                🏃 {garmin.data.summary.month.runningKm} km
+              </span>
+            )}
+            {garmin.data.summary.month.cyclingKm > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">
+                🚴 {garmin.data.summary.month.cyclingKm} km
+              </span>
+            )}
+            {garmin.data.summary.month.gymSessions > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-purple-700">
+                🏋️ {garmin.data.summary.month.gymSessions}x
+              </span>
+            )}
           </div>
         )}
 
