@@ -14,11 +14,11 @@ const PILLARS = {
 };
 
 const PRIORITY_META = {
-  A: { label: "A", desc: "Musisz zrobić", pts: 4, color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
-  B: { label: "B", desc: "Powinieneś zrobić", pts: 3, color: "#D97706", bg: "#FFFBEB", border: "#FDE68A" },
-  C: { label: "C", desc: "Miło by było", pts: 2, color: "#2563EB", bg: "#EFF6FF", border: "#BFDBFE" },
-  D: { label: "D", desc: "Deleguj", pts: 1, color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE" },
-  E: { label: "E", desc: "Eliminuj", pts: 0, color: "#94A3B8", bg: "#F8FAFC", border: "#E2E8F0" },
+  A: { label: "A", desc: "Musisz zrobić", sub: "Poważne konsekwencje", pts: 4, color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
+  B: { label: "B", desc: "Powinieneś zrobić", sub: "Łagodne konsekwencje", pts: 3, color: "#D97706", bg: "#FFFBEB", border: "#FDE68A" },
+  C: { label: "C", desc: "Fajnie byłoby", sub: "Zero konsekwencji", pts: 2, color: "#2563EB", bg: "#EFF6FF", border: "#BFDBFE" },
+  D: { label: "D", desc: "Deleguj", sub: "Oddaj komuś", pts: 0, color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE" },
+  E: { label: "E", desc: "Eliminuj", sub: "W ogóle nie rób", pts: 0, color: "#94A3B8", bg: "#F8FAFC", border: "#E2E8F0" },
 };
 
 const SAMPLE_WIGS = [
@@ -190,8 +190,10 @@ export default function WeeklyPlanner() {
     const total = tasks.reduce((s, t) => s + PRIORITY_META[t.priority].pts + (t.wig ? 2 : 0), 0);
     const done = tasks.filter((t) => t.status === "done").reduce((s, t) => s + PRIORITY_META[t.priority].pts + (t.wig ? 2 : 0), 0);
     const wigTasks = tasks.filter((t) => t.wig).length;
+    const wigDone = tasks.filter((t) => t.wig && t.status === "done").length;
+    const wigPts = tasks.filter((t) => t.wig && t.status === "done").reduce((s, t) => s + PRIORITY_META[t.priority].pts + 2, 0);
     const doneCount = tasks.filter((t) => t.status === "done").length;
-    return { total, done, wigTasks, doneCount, taskCount: tasks.length };
+    return { total, done, wigTasks, wigDone, wigPts, doneCount, taskCount: tasks.length };
   }, [tasks]);
 
   const toggleStatus = async (id) => {
@@ -398,7 +400,7 @@ export default function WeeklyPlanner() {
                       <span style={{ fontSize: 11, color: "#C4C4C4", fontFamily: "'Space Mono', monospace" }}>{meta.pts} pkt</span>
                     </div>
                     {groupTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} meta={meta} onToggle={() => toggleStatus(t.id)} expanded={expandedTask === t.id} onExpand={() => setExpandedTask(expandedTask === t.id ? null : t.id)} onDelete={() => deleteTask(t.id)} />
+                      <TaskRow key={t.id} task={t} meta={meta} isFrog={t.priority === "A" && t.subPriority === 1} onToggle={() => toggleStatus(t.id)} expanded={expandedTask === t.id} onExpand={() => setExpandedTask(expandedTask === t.id ? null : t.id)} onDelete={() => deleteTask(t.id)} />
                     ))}
                   </div>
                 );
@@ -447,7 +449,7 @@ export default function WeeklyPlanner() {
               <span style={{ fontSize: 44, fontWeight: 700, color: "#171717", lineHeight: 1, fontFamily: "'Space Mono', monospace" }}>{stats.done}</span>
               <span style={{ fontSize: 20, color: "#D4D4D4", fontFamily: "'Space Mono', monospace" }}>/ {stats.total}</span>
             </div>
-            <div style={{ fontSize: 12, color: "#A3A3A3", marginTop: 2 }}>{"punktów zdobytych"}</div>
+            <div style={{ fontSize: 12, color: "#A3A3A3", marginTop: 2 }}>punktów zdobytych{stats.wigPts > 0 ? `, z czego ${stats.wigPts} na WIG-ach` : ""}</div>
 
             <div style={{ display: "flex", justifyContent: "center", margin: "20px 0 16px" }}>
               <svg width="110" height="110" viewBox="0 0 110 110">
@@ -525,16 +527,28 @@ export default function WeeklyPlanner() {
           <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 20, border: "1px solid #E5E5E5", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
             <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 12 }}>Scoring</div>
             {Object.entries(PRIORITY_META).map(([k, v]) => (
-              <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, background: v.bg, border: `1.5px solid ${v.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: v.color, fontFamily: "'Space Mono', monospace" }}>{k}</div>
-                <span style={{ fontSize: 12, color: "#737373" }}>{v.desc}</span>
-                <span style={{ fontSize: 11, color: "#C4C4C4", marginLeft: "auto", fontFamily: "'Space Mono', monospace" }}>{v.pts}p</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: "#737373" }}>{v.desc}</div>
+                  <div style={{ fontSize: 10, color: "#C4C4C4" }}>{v.sub}</div>
+                </div>
+                <span style={{ fontSize: 11, color: "#C4C4C4", fontFamily: "'Space Mono', monospace" }}>{v.pts}p</span>
               </div>
             ))}
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #F3F3F3", display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 22, height: 22, borderRadius: 6, background: "#FFFBEB", border: "1.5px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#D97706" }}>{"\u25C6"}</div>
-              <span style={{ fontSize: 12, color: "#737373" }}>WIG bonus</span>
-              <span style={{ fontSize: 11, color: "#C4C4C4", marginLeft: "auto", fontFamily: "'Space Mono', monospace" }}>+2p</span>
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #F3F3F3", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, background: "#FFFBEB", border: "1.5px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#D97706" }}>{"\u25C6"}</div>
+                <span style={{ fontSize: 12, color: "#737373" }}>WIG bonus</span>
+                <span style={{ fontSize: 11, color: "#C4C4C4", marginLeft: "auto", fontFamily: "'Space Mono', monospace" }}>+2p</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, background: "#FFFBEB", border: "1.5px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>🐸</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: "#737373" }}>A-1 = Twoja żaba</div>
+                  <div style={{ fontSize: 10, color: "#C4C4C4" }}>Zrób to PIERWSZE rano</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -543,20 +557,22 @@ export default function WeeklyPlanner() {
   );
 }
 
-function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete }) {
+function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog }) {
   const pillar = PILLARS[task.project];
   const wig = SAMPLE_WIGS.find((w) => w.id === task.wig);
   const pts = PRIORITY_META[task.priority].pts + (task.wig ? 2 : 0);
   const isDone = task.status === "done";
+  const frogStyle = isFrog && !isDone ? { background: "#FFFBEB", border: "1.5px solid #FDE68A" } : {};
 
   return (
     <div style={{ marginBottom: 4 }}>
-      <div onClick={onExpand} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", background: isDone ? "#F7FDF7" : "#FFFFFF", borderRadius: expanded ? "12px 12px 0 0" : 12, cursor: "pointer", border: `1px solid ${expanded ? "#D4D4D4" : "#EDEDED"}`, transition: "all 0.15s", opacity: isDone ? 0.5 : 1 }}>
+      <div onClick={onExpand} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", background: isDone ? "#F7FDF7" : "#FFFFFF", borderRadius: expanded ? "12px 12px 0 0" : 12, cursor: "pointer", border: `1px solid ${expanded ? "#D4D4D4" : "#EDEDED"}`, transition: "all 0.15s", opacity: isDone ? 0.5 : 1, ...frogStyle }}>
         <div onClick={(e) => { e.stopPropagation(); onToggle(); }} style={{ width: 20, height: 20, borderRadius: 6, border: isDone ? "none" : `2px solid ${meta.border}`, background: isDone ? meta.color : "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.2s" }}>
           {isDone && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>}
         </div>
 
-        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, color: meta.color, minWidth: 26 }}>
+        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, color: meta.color, minWidth: 26, display: "flex", alignItems: "center", gap: 4 }}>
+          {isFrog && !isDone && <span title="Eat That Frog! Zrób to PIERWSZE rano.">🐸</span>}
           {task.priority}{task.subPriority ? `-${task.subPriority}` : ""}
         </div>
 
