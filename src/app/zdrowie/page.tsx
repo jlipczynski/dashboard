@@ -487,30 +487,54 @@ function GymTracker({
 function CompetitionCard({
   name,
   date,
+  type,
+  distance,
   onNameChange,
   onDateChange,
+  onTypeChange,
+  onDistanceChange,
 }: {
   name: string;
   date: string;
+  type: "running" | "cycling";
+  distance: number;
   onNameChange: (v: string) => void;
   onDateChange: (v: string) => void;
+  onTypeChange: (v: "running" | "cycling") => void;
+  onDistanceChange: (v: number) => void;
 }) {
   const [editingDate, setEditingDate] = useState(false);
   const [draftDate, setDraftDate] = useState(date);
 
   const today = new Date();
   const compDate = new Date(date);
-  const diffDays = Math.ceil((compDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const diffDays = date ? Math.ceil((compDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+  const typeIcon = type === "cycling" ? "🚴" : "🏃";
+
+  const hasData = name || date;
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
       <div className="flex items-center gap-3">
         <span className="text-2xl">🏆</span>
-        <div className="flex-1">
-          <h4 className="font-semibold text-foreground">Najblizsze zawody</h4>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <EditableText value={name} onSave={onNameChange} className="text-sm text-muted-foreground" />
-            <span className="text-muted-foreground">|</span>
+        <h4 className="font-semibold text-foreground">Najblizsze zawody</h4>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {/* Name */}
+        <div>
+          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Nazwa</label>
+          <EditableText
+            value={name || "Wpisz nazwe..."}
+            onSave={onNameChange}
+            className="mt-0.5 block text-sm text-foreground"
+          />
+        </div>
+
+        {/* Date */}
+        <div>
+          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Data</label>
+          <div className="mt-0.5">
             {editingDate ? (
               <input
                 autoFocus
@@ -525,25 +549,70 @@ function CompetitionCard({
               />
             ) : (
               <button
-                onClick={() => {
-                  setDraftDate(date);
-                  setEditingDate(true);
-                }}
-                className="group inline-flex items-center gap-1 rounded px-1 py-0.5 text-sm text-muted-foreground hover:bg-muted/60"
+                onClick={() => { setDraftDate(date); setEditingDate(true); }}
+                className="group inline-flex items-center gap-1 rounded px-1 py-0.5 text-sm text-foreground hover:bg-muted/60"
               >
-                {date}
-                <span className="text-xs opacity-0 transition-opacity group-hover:opacity-100">&#9998;</span>
+                {date || "Wybierz date..."}
+                <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">&#9998;</span>
               </button>
             )}
           </div>
         </div>
-        {diffDays > 0 && (
-          <div className="flex flex-col items-center rounded-lg bg-muted px-3 py-2">
-            <span className="text-lg font-bold text-foreground">{diffDays}</span>
-            <span className="text-[10px] text-muted-foreground">dni</span>
+
+        {/* Type toggle */}
+        <div>
+          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Typ</label>
+          <div className="mt-1 flex gap-1">
+            <button
+              onClick={() => onTypeChange("running")}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                type === "running"
+                  ? "bg-green-500 text-white shadow-sm"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              🏃 Bieg
+            </button>
+            <button
+              onClick={() => onTypeChange("cycling")}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                type === "cycling"
+                  ? "bg-blue-500 text-white shadow-sm"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              🚴 Rower
+            </button>
           </div>
-        )}
+        </div>
+
+        {/* Distance */}
+        <div>
+          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Dystans</label>
+          <div className="mt-0.5">
+            <EditableNumber value={distance} onSave={onDistanceChange} unit="km" className="text-sm" />
+          </div>
+        </div>
       </div>
+
+      {/* Summary bar */}
+      {hasData && (
+        <div className="mt-4 flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-lg">{typeIcon}</span>
+            <span className="font-medium text-foreground">{name}</span>
+            {distance > 0 && (
+              <span className="rounded-full bg-background px-2 py-0.5 text-xs text-muted-foreground">{distance} km</span>
+            )}
+          </div>
+          {diffDays > 0 && (
+            <div className="flex flex-col items-center rounded-lg bg-background px-3 py-1.5">
+              <span className="text-lg font-bold text-foreground">{diffDays}</span>
+              <span className="text-[10px] text-muted-foreground">dni</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -971,11 +1040,19 @@ export default function ZdrowiePage() {
           <CompetitionCard
             name={goals.competition.name}
             date={goals.competition.date}
+            type={goals.competition.type ?? "running"}
+            distance={goals.competition.distance ?? 0}
             onNameChange={(v) =>
               setGoals((prev) => ({ ...prev, competition: { ...prev.competition, name: v } }))
             }
             onDateChange={(v) =>
               setGoals((prev) => ({ ...prev, competition: { ...prev.competition, date: v } }))
+            }
+            onTypeChange={(v) =>
+              setGoals((prev) => ({ ...prev, competition: { ...prev.competition, type: v } }))
+            }
+            onDistanceChange={(v) =>
+              setGoals((prev) => ({ ...prev, competition: { ...prev.competition, distance: v } }))
             }
           />
         </div>
