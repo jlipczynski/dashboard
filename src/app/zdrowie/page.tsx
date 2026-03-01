@@ -542,11 +542,22 @@ function CompetitionCard({
 
 /* ── Wellness widget ────────────────────────────────────────── */
 function WellnessWidget({ data }: { data: WellnessData }) {
+  // Calculate per-type distances from today's activities
+  const cyclingKm = data.activities
+    .filter((a) => a.activityType.includes("cycling") || a.activityType.includes("biking"))
+    .reduce((sum, a) => sum + (a.distance ? parseFloat(a.distance) : 0), 0);
+  const runningKm = data.activities
+    .filter((a) => a.activityType.includes("running"))
+    .reduce((sum, a) => sum + (a.distance ? parseFloat(a.distance) : 0), 0);
+  const otherKm = (data.distanceKm ?? 0) - cyclingKm - runningKm;
+
   const items = [
     { icon: "🔥", label: "Akt. kalorie", value: data.activeCalories, format: (v: number) => `${v} kcal` },
     { icon: "📊", label: "Kalorie total", value: data.totalCalories, format: (v: number) => `${v} kcal` },
     { icon: "👣", label: "Kroki", value: data.steps, format: (v: number) => v.toLocaleString("pl-PL") },
-    { icon: "📏", label: "Dystans", value: data.distanceKm, format: (v: number) => `${v} km` },
+    { icon: "🚴", label: "Rower", value: cyclingKm > 0 ? cyclingKm : null, format: (v: number) => `${v.toFixed(1)} km` },
+    { icon: "🏃", label: "Bieg", value: runningKm > 0 ? runningKm : null, format: (v: number) => `${v.toFixed(1)} km` },
+    { icon: "🚶", label: "Inne km", value: otherKm > 0.5 ? otherKm : null, format: (v: number) => `${v.toFixed(1)} km` },
     { icon: "❤️", label: "Tetno spocz.", value: data.restingHR, format: (v: number) => `${v} bpm` },
     { icon: "😴", label: "Sen", value: data.sleepHours, format: (v: number) => `${v}h` },
     { icon: "🔋", label: "Body Battery", value: data.bodyBattery, format: (v: number) => `${v}` },
