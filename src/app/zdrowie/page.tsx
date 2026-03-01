@@ -324,7 +324,6 @@ function MonthlyGoalCard({
   target,
   unit,
   color,
-  onCurrentChange,
   onTargetChange,
 }: {
   icon: string;
@@ -333,9 +332,11 @@ function MonthlyGoalCard({
   target: number;
   unit: string;
   color: string;
-  onCurrentChange: (v: number) => void;
   onTargetChange: (v: number) => void;
 }) {
+  const [editingTarget, setEditingTarget] = useState(false);
+  const [draft, setDraft] = useState(String(target));
+
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
@@ -347,10 +348,53 @@ function MonthlyGoalCard({
       </div>
       <div className="mt-3">
         <ProgressBar value={current} max={target} color={color} />
-        <div className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
-          <EditableNumber value={current} onSave={onCurrentChange} unit="" className="text-xs" />
-          <span>/</span>
-          <EditableNumber value={target} onSave={onTargetChange} unit={unit} className="text-xs" />
+        <div className="mt-2 flex items-center justify-between text-sm">
+          <span className="font-semibold text-foreground">
+            {current > 0 ? current : 0} <span className="text-xs font-normal text-muted-foreground">{unit}</span>
+          </span>
+          {target === 0 && !editingTarget ? (
+            <button
+              onClick={() => { setDraft(""); setEditingTarget(true); }}
+              className="rounded-md bg-muted px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors"
+            >
+              Ustaw cel
+            </button>
+          ) : editingTarget ? (
+            <form
+              className="inline-flex items-center gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const n = parseFloat(draft);
+                if (!isNaN(n) && n > 0) onTargetChange(n);
+                setEditingTarget(false);
+              }}
+            >
+              <input
+                autoFocus
+                type="number"
+                min={1}
+                step="any"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => {
+                  const n = parseFloat(draft);
+                  if (!isNaN(n) && n > 0) onTargetChange(n);
+                  setEditingTarget(false);
+                }}
+                placeholder="cel"
+                className="w-20 rounded border border-border bg-background px-2 py-1 text-xs text-right"
+              />
+              <span className="text-xs text-muted-foreground">{unit}</span>
+            </form>
+          ) : (
+            <button
+              onClick={() => { setDraft(String(target)); setEditingTarget(true); }}
+              className="group inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-muted/60"
+            >
+              cel: {target} {unit}
+              <span className="opacity-0 group-hover:opacity-100 transition-opacity">&#9998;</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -790,7 +834,6 @@ export default function ZdrowiePage() {
             target={goals.activeCalories.target}
             unit="kcal"
             color="#ef4444"
-            onCurrentChange={(v) => updateGoal("activeCalories", "current", v)}
             onTargetChange={(v) => updateGoal("activeCalories", "target", v)}
           />
           <MonthlyGoalCard
@@ -800,7 +843,6 @@ export default function ZdrowiePage() {
             target={goals.cycling.target}
             unit="km"
             color="#3b82f6"
-            onCurrentChange={(v) => updateGoal("cycling", "current", v)}
             onTargetChange={(v) => updateGoal("cycling", "target", v)}
           />
           <MonthlyGoalCard
@@ -810,7 +852,6 @@ export default function ZdrowiePage() {
             target={goals.cyclingHours.target}
             unit="h"
             color="#6366f1"
-            onCurrentChange={(v) => updateGoal("cyclingHours", "current", v)}
             onTargetChange={(v) => updateGoal("cyclingHours", "target", v)}
           />
           <MonthlyGoalCard
@@ -820,7 +861,6 @@ export default function ZdrowiePage() {
             target={goals.running.target}
             unit="km"
             color="#22c55e"
-            onCurrentChange={(v) => updateGoal("running", "current", v)}
             onTargetChange={(v) => updateGoal("running", "target", v)}
           />
         </div>

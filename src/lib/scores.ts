@@ -52,7 +52,17 @@ export function calcHealthScore(
     scores.push(Math.min(gymMonthlyDone / gymMonthlyGoal, 1) * 100);
   }
 
-  if (scores.length === 0) return 0;
+  // If no targets set but there IS activity, show that something is happening
+  if (scores.length === 0) {
+    const hasActivity =
+      goals.activeCalories.current > 0 ||
+      goals.cycling.current > 0 ||
+      goals.running.current > 0 ||
+      gymMonthlyDone > 0;
+    // Return a base score to indicate activity exists but targets need setting
+    return hasActivity ? 10 : 0;
+  }
+
   return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
 }
 
