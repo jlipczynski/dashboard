@@ -1,7 +1,7 @@
 "use client";
 
 import { BackButton } from "@/components/dashboard/back-button";
-import { workProjects, weeklyTasks, priorityConfig } from "@/lib/data";
+import { workProjects } from "@/lib/data";
 import { useState } from "react";
 
 function ProgressBar({ value, color }: { value: number; color: string }) {
@@ -16,8 +16,6 @@ function ProgressBar({ value, color }: { value: number; color: string }) {
 }
 
 function ProjectCard({ project }: { project: typeof workProjects[number] }) {
-  const tasks = weeklyTasks.filter((t) => t.project === project.id);
-
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
       <div className="flex items-center justify-between">
@@ -36,30 +34,6 @@ function ProjectCard({ project }: { project: typeof workProjects[number] }) {
       <div className="mt-4">
         <ProgressBar value={project.score} color="#f97316" />
       </div>
-
-      {tasks.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Zadania tego tygodnia
-          </p>
-          {tasks.map((task) => {
-            const p = priorityConfig[task.priority];
-            return (
-              <div
-                key={task.id}
-                className="flex items-center gap-3 rounded-lg px-3 py-2"
-                style={{ backgroundColor: p.bg }}
-              >
-                <span className="text-sm">{p.label.split(" ")[0]}</span>
-                <span className="flex-1 text-sm text-foreground">{task.title}</span>
-                <span className="text-xs font-medium" style={{ color: p.color }}>
-                  {task.points} pkt
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

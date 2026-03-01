@@ -1,4 +1,3 @@
-import type { Task } from "./data";
 import type { CachedGarminData } from "./storage";
 
 type MonthlyGoals = {
@@ -59,27 +58,10 @@ export function calcHealthScore(
       goals.cycling.current > 0 ||
       goals.running.current > 0 ||
       gymMonthlyDone > 0;
-    // Return a base score to indicate activity exists but targets need setting
     return hasActivity ? 10 : 0;
   }
 
   return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-}
-
-/**
- * Calculate the "Praca" pillar score (0-100)
- * based on weekly task completion.
- */
-export function calcWorkScore(tasks: Task[]): number {
-  const workTasks = tasks.filter((t) => t.pillar === "praca");
-  if (workTasks.length === 0) return 0;
-
-  const totalPoints = workTasks.reduce((s, t) => s + t.points, 0);
-  const earnedPoints = workTasks
-    .filter((t) => t.done)
-    .reduce((s, t) => s + t.points, 0);
-
-  return totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
 }
 
 /**
@@ -98,10 +80,8 @@ export function calcAllScores(
   garminData: CachedGarminData | null,
   goals: MonthlyGoals,
   gymMonthlyDone: number,
-  gymMonthlyGoal: number,
-  tasks: Task[]
+  gymMonthlyGoal: number
 ) {
-  // If we have garmin data, update goals' current values
   const effectiveGoals = garminData
     ? {
         activeCalories: {
@@ -132,12 +112,10 @@ export function calcAllScores(
     effectiveGym,
     gymMonthlyGoal
   );
-  const workScore = calcWorkScore(tasks);
 
   return {
     zdrowie: { score: healthScore, trend: getTrend(healthScore) },
-    praca: { score: workScore, trend: getTrend(workScore) },
-    // Placeholder scores for pages not yet built
+    praca: { score: 0, trend: "steady" as const },
     rozwoj: { score: 0, trend: "steady" as const },
     relacje: { score: 0, trend: "steady" as const },
   };

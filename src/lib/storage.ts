@@ -7,26 +7,10 @@ import { useState, useEffect, useCallback } from "react";
  * Falls back to initialValue on SSR or when localStorage is unavailable.
  */
 export function useLocalStorage<T>(key: string, initialValue: T) {
-  const [value, setValue] = useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
-    try {
-      const stored = localStorage.getItem(key);
-      return stored ? (JSON.parse(stored) as T) : initialValue;
-    } catch {
-      return initialValue;
-    }
-  });
+  const [value, setValue] = useState<T>(initialValue);
+  const [hydrated, setHydrated] = useState(false);
 
-  // Sync to localStorage on change
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // quota exceeded or private mode – ignore
-    }
-  }, [key, value]);
-
-  // Hydration fix: re-read from localStorage after mount
+  // Hydrate from localStorage after mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem(key);
@@ -34,8 +18,19 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
     } catch {
       // ignore
     }
+    setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+
+  // Sync to localStorage only after hydration (prevents overwriting stored data)
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // quota exceeded or private mode – ignore
+    }
+  }, [key, value, hydrated]);
 
   return [value, setValue] as const;
 }
