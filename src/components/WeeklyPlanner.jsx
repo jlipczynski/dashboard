@@ -79,7 +79,7 @@ export default function WeeklyPlanner() {
   const [newTask, setNewTask] = useState({ task: "", project: "Ovoc Malinovi", priority: "A", wig: "", deadline: "", person: "" });
   const [expandedTask, setExpandedTask] = useState(null);
   const [showAddGoal, setShowAddGoal] = useState(false);
-  const [newGoal, setNewGoal] = useState({ goal: "", project: "Ovoc Malinovi" });
+  const [newGoal, setNewGoal] = useState({ goal: "", project: "Ovoc Malinovi", priority: "A" });
   const [error, setError] = useState(null);
 
   const week = getWeekDates(currentDate);
@@ -92,6 +92,8 @@ export default function WeeklyPlanner() {
       .from("weekly_goals")
       .select("*")
       .eq("week_start", ws)
+      .order("priority", { ascending: true })
+      .order("sub_priority", { ascending: true })
       .order("created_at", { ascending: true });
     if (err) {
       console.error("Goals fetch error:", err);
@@ -131,14 +133,24 @@ export default function WeeklyPlanner() {
     if (!newGoal.goal.trim()) return;
     if (!supabase) { setError("Supabase nie jest podłączony"); return; }
     setError(null);
+    const samePriority = goals.filter((g) => g.priority === newGoal.priority);
     const { data, error } = await supabase
       .from("weekly_goals")
-      .insert({ goal: newGoal.goal, project: newGoal.project, week_start: weekStart })
+      .insert({ goal: newGoal.goal, project: newGoal.project, priority: newGoal.priority, sub_priority: samePriority.length + 1, week_start: weekStart })
       .select()
       .single();
     if (error) { setError(`Błąd dodawania celu: ${error.message}`); return; }
-    if (data) setGoals((prev) => [...prev, data]);
-    setNewGoal({ goal: "", project: "Ovoc Malinovi" });
+    if (data) setGoals((prev) => {
+      const updated = [...prev, data];
+      const pOrder = "ABCDE";
+      updated.sort((a, b) => {
+        const pDiff = pOrder.indexOf(a.priority || "A") - pOrder.indexOf(b.priority || "A");
+        if (pDiff !== 0) return pDiff;
+        return (a.sub_priority || 99) - (b.sub_priority || 99);
+      });
+      return updated;
+    });
+    setNewGoal({ goal: "", project: "Ovoc Malinovi", priority: "A" });
     setShowAddGoal(false);
   };
 
@@ -338,10 +350,14 @@ export default function WeeklyPlanner() {
             {goals.map((g) => {
               const pillar = PILLARS[g.project];
               const isDone = g.status === "completed";
+              const meta = PRIORITY_META[g.priority || "A"];
               return (
                 <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: isDone ? "#F7FDF7" : "#FFFFFF", borderRadius: 12, border: "1px solid #EDEDED", marginBottom: 4, opacity: isDone ? 0.55 : 1, transition: "all 0.15s" }}>
-                  <div onClick={() => toggleGoal(g.id)} style={{ width: 20, height: 20, borderRadius: 6, border: isDone ? "none" : "2px solid #BBF7D0", background: isDone ? "#16A34A" : "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.2s" }}>
+                  <div onClick={() => toggleGoal(g.id)} style={{ width: 20, height: 20, borderRadius: 6, border: isDone ? "none" : `2px solid ${meta.border}`, background: isDone ? meta.color : "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.2s" }}>
                     {isDone && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>}
+                  </div>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, color: meta.color, minWidth: 20 }}>
+                    {g.priority || "A"}{g.sub_priority ? `-${g.sub_priority}` : ""}
                   </div>
                   <div style={{ flex: 1, fontSize: 14, fontWeight: 500, textDecoration: isDone ? "line-through" : "none", color: isDone ? "#A3A3A3" : "#262626" }}>{g.goal}</div>
                   {pillar && (
@@ -359,7 +375,10 @@ export default function WeeklyPlanner() {
             ) : (
               <div style={{ padding: 16, background: "#FFFFFF", borderRadius: 12, border: "1px solid #E5E5E5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
                 <input value={newGoal.goal} onChange={(e) => setNewGoal({ ...newGoal, goal: e.target.value })} placeholder="Cel na ten tydzień..." style={inputStyle} autoFocus onKeyDown={(e) => e.key === "Enter" && addGoal()} />
-                <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <select value={newGoal.priority} onChange={(e) => setNewGoal({ ...newGoal, priority: e.target.value })} style={selectStyle}>
+                    {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{k} — {v.desc}</option>)}
+                  </select>
                   <select value={newGoal.project} onChange={(e) => setNewGoal({ ...newGoal, project: e.target.value })} style={selectStyle}>
                     {Object.keys(PILLARS).map((p) => <option key={p} value={p}>{PILLARS[p].icon} {p}</option>)}
                   </select>
@@ -498,12 +517,16 @@ export default function WeeklyPlanner() {
                 <div style={{ height: "100%", width: `${goals.length > 0 ? Math.round((goals.filter((g) => g.status === "completed").length / goals.length) * 100) : 0}%`, background: "#16A34A", borderRadius: 2, transition: "width 0.4s ease" }} />
               </div>
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                {goals.map((g) => (
-                  <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                    <span style={{ color: g.status === "completed" ? "#16A34A" : "#D4D4D4" }}>{g.status === "completed" ? "\u2713" : "\u25CB"}</span>
-                    <span style={{ color: g.status === "completed" ? "#A3A3A3" : "#525252", textDecoration: g.status === "completed" ? "line-through" : "none", flex: 1 }}>{g.goal}</span>
-                  </div>
-                ))}
+                {goals.map((g) => {
+                  const gMeta = PRIORITY_META[g.priority || "A"];
+                  return (
+                    <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                      <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, fontWeight: 700, color: g.status === "completed" ? "#A3A3A3" : gMeta.color, minWidth: 14 }}>{g.priority || "A"}</span>
+                      <span style={{ color: g.status === "completed" ? "#16A34A" : "#D4D4D4" }}>{g.status === "completed" ? "\u2713" : "\u25CB"}</span>
+                      <span style={{ color: g.status === "completed" ? "#A3A3A3" : "#525252", textDecoration: g.status === "completed" ? "line-through" : "none", flex: 1 }}>{g.goal}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
