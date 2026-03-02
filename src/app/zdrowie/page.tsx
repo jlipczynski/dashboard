@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { monthlyGoals, sportAreas } from "@/lib/data";
 import { useLocalStorage, useGarminSync } from "@/lib/storage";
@@ -704,6 +704,231 @@ function WellnessWidget({ data }: { data: WellnessData }) {
   );
 }
 
+/* ── MFP Nutrition / Calorie Deficit ─────────────────────────── */
+type NutritionEntry = {
+  date: string;
+  calories: number;
+  fat_g: number;
+  carbs_g: number;
+  protein_g: number;
+};
+
+function MfpWidget({
+  entries,
+  onImport,
+  importing,
+  importResult,
+  totalCaloriesBurned,
+}: {
+  entries: NutritionEntry[];
+  onImport: (csv: string) => void;
+  importing: boolean;
+  importResult: string | null;
+  totalCaloriesBurned: number | null;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    onImport(text);
+    e.target.value = "";
+  };
+
+  // Last 14 days for the chart
+  const last14 = entries.slice(0, 14).reverse();
+
+  // Today's entry
+  const today = new Date().toISOString().split("T")[0];
+  const todayEntry = entries.find((e) => e.date === today);
+
+  // Compute deficit: burned - consumed
+  const todayDeficit =
+    totalCaloriesBurned !== null && todayEntry
+      ? totalCaloriesBurned - todayEntry.calories
+      : null;
+
+  // Average daily calories (all entries)
+  const avgCal =
+    entries.length > 0
+      ? Math.round(entries.reduce((s, e) => s + e.calories, 0) / entries.length)
+      : 0;
+
+  // Chart dimensions
+  const w = 420;
+  const h = 160;
+  const pad = { top: 20, right: 15, bottom: 28, left: 45 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+
+  const maxCal = last14.length > 0 ? Math.max(...last14.map((e) => e.calories), 1) : 2500;
+  const barW = last14.length > 0 ? chartW / last14.length - 3 : 20;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h4 className="flex items-center gap-2 font-semibold text-foreground">
+          🍎 Kalorie (MyFitnessPal)
+        </h4>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFile}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:bg-orange-600 disabled:opacity-50"
+          >
+            {importing ? "Importuję..." : "Importuj CSV"}
+          </button>
+        </div>
+      </div>
+
+      {importResult && (
+        <div
+          className={`mt-2 rounded-lg px-3 py-2 text-xs ${
+            importResult.startsWith("!")
+              ? "bg-red-50 text-red-600"
+              : "bg-green-50 text-green-700"
+          }`}
+        >
+          {importResult}
+        </div>
+      )}
+
+      {/* Today's summary */}
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+          <span className="text-xl">🍽️</span>
+          <span className="mt-1 text-lg font-bold text-foreground">
+            {todayEntry ? todayEntry.calories : "—"}
+          </span>
+          <span className="text-[10px] text-muted-foreground">Zjedzone kcal</span>
+        </div>
+        <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+          <span className="text-xl">🔥</span>
+          <span className="mt-1 text-lg font-bold text-foreground">
+            {totalCaloriesBurned !== null ? totalCaloriesBurned : "—"}
+          </span>
+          <span className="text-[10px] text-muted-foreground">Spalone kcal</span>
+        </div>
+        <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+          <span className="text-xl">{todayDeficit !== null && todayDeficit > 0 ? "📉" : "📈"}</span>
+          <span
+            className={`mt-1 text-lg font-bold ${
+              todayDeficit !== null
+                ? todayDeficit > 0
+                  ? "text-green-600"
+                  : "text-red-500"
+                : "text-foreground"
+            }`}
+          >
+            {todayDeficit !== null ? `${todayDeficit > 0 ? "-" : "+"}${Math.abs(todayDeficit)}` : "—"}
+          </span>
+          <span className="text-[10px] text-muted-foreground">Deficyt/nadwyzka</span>
+        </div>
+        <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+          <span className="text-xl">📊</span>
+          <span className="mt-1 text-lg font-bold text-foreground">{avgCal || "—"}</span>
+          <span className="text-[10px] text-muted-foreground">Srednia kcal/dzien</span>
+        </div>
+      </div>
+
+      {/* Macros for today */}
+      {todayEntry && (
+        <div className="mt-3 flex items-center justify-center gap-6 text-xs">
+          <span>
+            <span className="font-semibold text-blue-600">{todayEntry.protein_g}g</span>{" "}
+            <span className="text-muted-foreground">bialko</span>
+          </span>
+          <span>
+            <span className="font-semibold text-amber-600">{todayEntry.carbs_g}g</span>{" "}
+            <span className="text-muted-foreground">wegle</span>
+          </span>
+          <span>
+            <span className="font-semibold text-red-500">{todayEntry.fat_g}g</span>{" "}
+            <span className="text-muted-foreground">tluszcz</span>
+          </span>
+        </div>
+      )}
+
+      {/* Bar chart */}
+      {last14.length > 0 && (
+        <svg viewBox={`0 0 ${w} ${h}`} className="mt-4 w-full" style={{ maxWidth: w }}>
+          {/* Y axis grid */}
+          {[0, 0.5, 1].map((frac) => {
+            const y = pad.top + chartH - frac * chartH;
+            return (
+              <g key={frac}>
+                <line
+                  x1={pad.left}
+                  y1={y}
+                  x2={w - pad.right}
+                  y2={y}
+                  stroke="#e5e7eb"
+                  strokeWidth={0.5}
+                />
+                <text
+                  x={pad.left - 4}
+                  y={y + 3}
+                  textAnchor="end"
+                  className="fill-muted-foreground"
+                  fontSize={8}
+                >
+                  {Math.round(frac * maxCal)}
+                </text>
+              </g>
+            );
+          })}
+          {/* Bars */}
+          {last14.map((entry, i) => {
+            const barH = (entry.calories / maxCal) * chartH;
+            const x = pad.left + i * (chartW / last14.length) + 1.5;
+            const y = pad.top + chartH - barH;
+            const dayLabel = new Date(entry.date + "T12:00:00").toLocaleDateString("pl-PL", {
+              day: "numeric",
+              month: "numeric",
+            });
+            return (
+              <g key={entry.date}>
+                <rect
+                  x={x}
+                  y={y}
+                  width={barW}
+                  height={barH}
+                  rx={2}
+                  fill={entry.calories > 2200 ? "#ef4444" : "#f97316"}
+                  opacity={0.75}
+                />
+                <text
+                  x={x + barW / 2}
+                  y={h - 5}
+                  textAnchor="middle"
+                  className="fill-muted-foreground"
+                  fontSize={7}
+                >
+                  {dayLabel}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      )}
+
+      {entries.length === 0 && (
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          Brak danych. Wyeksportuj CSV z MyFitnessPal i zaimportuj tutaj.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ── Main page ──────────────────────────────────────────────── */
 // One-time migration: clear old mock data from localStorage
 function clearOldMockData() {
@@ -780,6 +1005,46 @@ export default function ZdrowiePage() {
     distanceKm: null,
     activities: [],
   });
+
+  // MFP nutrition data
+  const [mfpEntries, setMfpEntries] = useState<NutritionEntry[]>([]);
+  const [mfpImporting, setMfpImporting] = useState(false);
+  const [mfpResult, setMfpResult] = useState<string | null>(null);
+
+  // Fetch MFP data on mount
+  useEffect(() => {
+    fetch("/api/mfp?days=30")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.entries) setMfpEntries(d.entries);
+      })
+      .catch(() => {});
+  }, []);
+
+  const importMfpCsv = useCallback(async (csv: string) => {
+    setMfpImporting(true);
+    setMfpResult(null);
+    try {
+      const res = await fetch("/api/mfp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csv }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setMfpResult(`! ${data.error}`);
+      } else {
+        setMfpResult(`Zaimportowano ${data.imported} dni (${data.from} - ${data.to})`);
+        // Refetch
+        const r = await fetch("/api/mfp?days=30");
+        const d = await r.json();
+        if (d.entries) setMfpEntries(d.entries);
+      }
+    } catch (err) {
+      setMfpResult(`! Blad importu: ${err instanceof Error ? err.message : "Unknown"}`);
+    }
+    setMfpImporting(false);
+  }, []);
 
   // Load cached activities on mount
   useEffect(() => {
@@ -911,6 +1176,17 @@ export default function ZdrowiePage() {
             <WellnessWidget data={wellness} />
           </div>
         )}
+
+        {/* ── MFP Nutrition / Deficit ──────────────────────────── */}
+        <div className="mt-4">
+          <MfpWidget
+            entries={mfpEntries}
+            onImport={importMfpCsv}
+            importing={mfpImporting}
+            importResult={mfpResult}
+            totalCaloriesBurned={wellness.totalCalories}
+          />
+        </div>
 
         {/* ── Monthly goals (editable) ─────────────────────────── */}
         <h3 className="mt-8 text-lg font-semibold text-foreground">🎯 Cele Miesieczne</h3>
