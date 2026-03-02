@@ -1,23 +1,24 @@
 #!/usr/bin/env node
-// Runs SQL migrations from supabase/migrations/ against DATABASE_URL
-// Used as part of the build process on Vercel
+// Runs SQL migrations using direct Postgres connection (local dev)
+// On Vercel, use GET /api/migrate instead (HTTPS-based, no pg needed)
 
-import pg from "pg";
-import { readFileSync, readdirSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const rootDir = join(__dirname, "..");
+const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
+if (!dbUrl) {
+  console.log("⚠️  No DATABASE_URL set — skipping build-time migrations");
+  console.log("   Run migrations via: GET /api/migrate");
+  process.exit(0);
+}
 
 async function migrate() {
-  const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
-  if (!dbUrl) {
-    console.log("⚠️  DATABASE_POOLER_URL / DATABASE_URL not set, skipping migrations");
-    return;
-  }
+  const pg = await import("pg");
+  const { readFileSync, readdirSync } = await import("fs");
+  const { join, dirname } = await import("path");
+  const { fileURLToPath } = await import("url");
 
-  const client = new pg.Client({
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const rootDir = join(__dirname, "..");
+
+  const client = new pg.default.Client({
     connectionString: dbUrl,
     ssl: { rejectUnauthorized: false },
   });
@@ -72,5 +73,5 @@ async function migrate() {
 
 migrate().catch((err) => {
   console.warn("⚠️  Migration failed (build continues):", err.message);
-  // Don't exit with error — build should continue even if DB is unreachable
+  console.log("   Run migrations via: GET /api/migrate");
 });
