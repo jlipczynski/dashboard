@@ -11,9 +11,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "..");
 
 async function migrate() {
-  const dbUrl = process.env.DATABASE_URL;
+  const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
   if (!dbUrl) {
-    console.log("⚠️  DATABASE_URL not set, skipping migrations");
+    console.log("⚠️  DATABASE_POOLER_URL / DATABASE_URL not set, skipping migrations");
     return;
   }
 
