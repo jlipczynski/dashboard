@@ -1,34 +1,25 @@
 import { NextResponse } from "next/server";
-import { Client } from "pg";
+import { createClient } from "@supabase/supabase-js";
 import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 
 export const dynamic = "force-dynamic";
 
-async function runMigrations(): Promise<{ ran: string[]; skipped: string[]; errors: string[] }> {
-  const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
-  if (!dbUrl) {
-    throw new Error("DATABASE_POOLER_URL or DATABASE_URL not configured");
+async function runMigrations(): Promise<{
+  ran: string[];
+  skipped: string[];
+  errors: string[];
+}> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      "NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required"
+    );
   }
 
-  const client = new Client({
-    connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
-  });
-
-  await client.connect();
-
-  // Create migrations tracking table
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS _migrations (
-      name TEXT PRIMARY KEY,
-      applied_at TIMESTAMPTZ DEFAULT now()
-    );
-  `);
-
-  // Get already applied migrations
-  const { rows: applied } = await client.query("SELECT name FROM _migrations ORDER BY name");
-  const appliedSet = new Set(applied.map((r: { name: string }) => r.name));
+  const supabase = createClient(url, key);
 
   // Read migration files
   const migrationsDir = join(process.cwd(), "supabase", "migrations");
@@ -38,7 +29,6 @@ async function runMigrations(): Promise<{ ran: string[]; skipped: string[]; erro
       .filter((f) => f.endsWith(".sql"))
       .sort();
   } catch {
-    await client.end();
     throw new Error("No migrations directory found at supabase/migrations/");
   }
 
@@ -47,29 +37,21 @@ async function runMigrations(): Promise<{ ran: string[]; skipped: string[]; erro
   const errors: string[] = [];
 
   for (const file of files) {
-    if (appliedSet.has(file)) {
-      skipped.push(file);
-      continue;
-    }
-
     const sql = readFileSync(join(migrationsDir, file), "utf-8");
-    try {
-      await client.query(sql);
-      await client.query("INSERT INTO _migrations (name) VALUES ($1)", [file]);
+    const { data, error } = await supabase.rpc("run_migration", {
+      p_name: file,
+      p_sql: sql,
+    });
+
+    if (error) {
+      errors.push(`${file}: ${error.message}`);
+    } else if (data === "skipped") {
+      skipped.push(file);
+    } else {
       ran.push(file);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // If it's a "already exists" error, mark as applied and continue
-      if (msg.includes("already exists")) {
-        await client.query("INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT DO NOTHING", [file]);
-        skipped.push(file);
-      } else {
-        errors.push(`${file}: ${msg}`);
-      }
     }
   }
 
-  await client.end();
   return { ran, skipped, errors };
 }
 
