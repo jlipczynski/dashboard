@@ -3,8 +3,41 @@
 import { useState, useEffect, useCallback } from "react";
 
 /**
+ * Deep-merge stored object with defaults so new/missing fields are filled in.
+ * Primitives, arrays, and null stored values fall back to the default.
+ */
+function mergeWithDefaults<T>(stored: unknown, defaults: T): T {
+  if (
+    defaults === null ||
+    defaults === undefined ||
+    typeof defaults !== "object" ||
+    Array.isArray(defaults)
+  ) {
+    return (stored ?? defaults) as T;
+  }
+  if (stored === null || stored === undefined || typeof stored !== "object" || Array.isArray(stored)) {
+    return defaults;
+  }
+  const result = { ...defaults } as Record<string, unknown>;
+  for (const key of Object.keys(defaults as Record<string, unknown>)) {
+    result[key] = mergeWithDefaults(
+      (stored as Record<string, unknown>)[key],
+      (defaults as Record<string, unknown>)[key]
+    );
+  }
+  // Keep extra keys from stored data that aren't in defaults
+  for (const key of Object.keys(stored as Record<string, unknown>)) {
+    if (!(key in result)) {
+      result[key] = (stored as Record<string, unknown>)[key];
+    }
+  }
+  return result as T;
+}
+
+/**
  * React hook that persists state in localStorage.
- * Falls back to initialValue on SSR or when localStorage is unavailable.
+ * Stored data is deep-merged with initialValue so missing/new fields
+ * always get their defaults — no more crashes from stale shapes.
  */
 export function useLocalStorage<T>(key: string, initialValue: T) {
   const [value, setValue] = useState<T>(initialValue);
@@ -14,9 +47,12 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(key);
-      if (stored) setValue(JSON.parse(stored) as T);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setValue(mergeWithDefaults(parsed, initialValue) as T);
+      }
     } catch {
-      // ignore
+      // ignore – keep initialValue
     }
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -461,21 +461,10 @@ function AreaCard({
 
 /* ── Main Page ──────────────────────────────────── */
 export default function RozwojPage() {
-  const [rawData, setRawData] = useLocalStorage<RozwojData | null>(
+  const [data, setData] = useLocalStorage<RozwojData>(
     "dashboard_rozwoj",
     DEFAULT_DATA
   );
-  // Merge with defaults to handle old/null localStorage data
-  const data: RozwojData = rawData
-    ? {
-        czytanie: { ...DEFAULT_DATA.czytanie, ...rawData.czytanie },
-        sluchanie: { ...DEFAULT_DATA.sluchanie, ...rawData.sluchanie },
-        pisanie: { ...DEFAULT_DATA.pisanie, ...rawData.pisanie },
-      }
-    : DEFAULT_DATA;
-  const setData = (updater: (prev: RozwojData) => RozwojData) => {
-    setRawData((prev) => updater(prev ?? DEFAULT_DATA));
-  };
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
