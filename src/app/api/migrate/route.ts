@@ -6,9 +6,9 @@ import { join } from "path";
 export const dynamic = "force-dynamic";
 
 async function runMigrations(): Promise<{ ran: string[]; skipped: string[]; errors: string[] }> {
-  const dbUrl = process.env.DATABASE_URL;
+  const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
   if (!dbUrl) {
-    throw new Error("DATABASE_URL not configured");
+    throw new Error("DATABASE_POOLER_URL or DATABASE_URL not configured");
   }
 
   const client = new Client({
