@@ -19,6 +19,7 @@ export default function Home() {
   });
   const [gymMonthlyDone] = useLocalStorage("dashboard_gym_monthly_done", sportAreas[0].current);
   const [gymMonthlyGoal] = useLocalStorage("dashboard_gym_monthly_goal", sportAreas[0].monthlyGoal);
+  const [rozwojData] = useLocalStorage("dashboard_rozwoj", null);
   // Garmin cached data
   const garmin = useGarminSync();
 
@@ -29,7 +30,7 @@ export default function Home() {
   }, []);
 
   // Calculate dynamic pillar scores
-  const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal);
+  const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal, rozwojData);
 
   // Apply scores to pillars
   const dynamicPillars = pillars.map((p) => {

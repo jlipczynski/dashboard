@@ -74,13 +74,51 @@ export function getTrend(score: number): "rising" | "steady" | "needs-focus" {
 }
 
 /**
+ * Rozwój data shape (matches localStorage "dashboard_rozwoj").
+ */
+export type RozwojArea = {
+  monthlyTarget: number;
+  monthlyDone: number;
+};
+
+export type RozwojData = {
+  czytanie: RozwojArea;
+  sluchanie: RozwojArea;
+  pisanie: RozwojArea;
+};
+
+/**
+ * Calculate the "Rozwój Osobisty" pillar score (0-100)
+ * based on monthly goal completion across reading, listening, writing.
+ */
+export function calcRozwojScore(data: RozwojData | null): number {
+  if (!data) return 0;
+  const areas = [data.czytanie, data.sluchanie, data.pisanie];
+  const scores: number[] = [];
+
+  for (const a of areas) {
+    if (a.monthlyTarget > 0) {
+      scores.push(Math.min(a.monthlyDone / a.monthlyTarget, 1) * 100);
+    }
+  }
+
+  if (scores.length === 0) {
+    const hasActivity = areas.some((a) => a.monthlyDone > 0);
+    return hasActivity ? 10 : 0;
+  }
+
+  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+}
+
+/**
  * Calculate all pillar scores.
  */
 export function calcAllScores(
   garminData: CachedGarminData | null,
   goals: MonthlyGoals,
   gymMonthlyDone: number,
-  gymMonthlyGoal: number
+  gymMonthlyGoal: number,
+  rozwojData?: RozwojData | null
 ) {
   const effectiveGoals = garminData
     ? {
@@ -113,10 +151,12 @@ export function calcAllScores(
     gymMonthlyGoal
   );
 
+  const rozwojScore = calcRozwojScore(rozwojData ?? null);
+
   return {
     zdrowie: { score: healthScore, trend: getTrend(healthScore) },
     praca: { score: 0, trend: "steady" as const },
-    rozwoj: { score: 0, trend: "steady" as const },
+    rozwoj: { score: rozwojScore, trend: getTrend(rozwojScore) },
     relacje: { score: 0, trend: "steady" as const },
   };
 }

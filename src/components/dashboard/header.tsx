@@ -4,11 +4,14 @@ export function DashboardHeader() {
   return (
     <header className="flex items-center justify-between">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">
           Jan&apos;s Dashboard
+        </p>
+        <h1 className="mt-1 text-4xl font-black tracking-tight text-foreground sm:text-5xl">
+          MARZEC 2026
         </h1>
-        <p className="text-muted-foreground mt-1">
-          Twój osobisty panel życiowy — 4DX Framework
+        <p className="text-muted-foreground mt-1 text-sm">
+          Twoj osobisty panel zyciowy &mdash; 4DX Framework
         </p>
       </div>
       <Link
