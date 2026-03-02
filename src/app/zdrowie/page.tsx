@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { monthlyGoals, sportAreas } from "@/lib/data";
-import { useLocalStorage, useGarminSync } from "@/lib/storage";
+import { useLocalStorage, useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 
 type GarminActivity = {
   id: number;
@@ -338,15 +338,15 @@ function MonthlyGoalCard({
   const [draft, setDraft] = useState(String(target));
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">{icon}</span>
-          <span className="text-sm font-medium text-foreground">{label}</span>
+    <div className="rounded-xl border border-border bg-card p-3 shadow-sm sm:p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0 sm:gap-2">
+          <span className="text-lg sm:text-xl">{icon}</span>
+          <span className="text-xs font-medium text-foreground truncate sm:text-sm">{label}</span>
         </div>
-        <ProgressRing value={current} max={target} color={color} size={56} />
+        <ProgressRing value={current} max={target} color={color} size={48} />
       </div>
-      <div className="mt-3">
+      <div className="mt-2 sm:mt-3">
         <ProgressBar value={current} max={target} color={color} />
         <div className="mt-2 flex items-center justify-between text-sm">
           <span className="font-semibold text-foreground">
@@ -520,7 +520,7 @@ function CompetitionCard({
         <h4 className="font-semibold text-foreground">Najblizsze zawody</h4>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid gap-3 grid-cols-2 sm:mt-4">
         {/* Name */}
         <div>
           <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Nazwa</label>
@@ -658,14 +658,14 @@ function WellnessWidget({ data }: { data: WellnessData }) {
       </h4>
 
       {items.length > 0 && (
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3">
           {items.map((item) => (
-            <div key={item.label} className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-              <span className="text-xl">{item.icon}</span>
-              <span className="mt-1 text-lg font-bold text-foreground">
+            <div key={item.label} className="flex flex-col items-center rounded-lg bg-muted/50 p-2 sm:p-3">
+              <span className="text-lg sm:text-xl">{item.icon}</span>
+              <span className="mt-0.5 text-sm font-bold text-foreground sm:mt-1 sm:text-lg">
                 {item.format(item.value!)}
               </span>
-              <span className="text-[10px] text-muted-foreground">{item.label}</span>
+              <span className="text-[9px] text-muted-foreground sm:text-[10px]">{item.label}</span>
             </div>
           ))}
         </div>
@@ -678,9 +678,9 @@ function WellnessWidget({ data }: { data: WellnessData }) {
             {data.activities.map((a, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3"
+                className="flex flex-col gap-1 rounded-lg bg-muted/50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <span className="text-lg">{activityIcon(a.activityType)}</span>
                   <div>
                     <p className="text-sm font-medium text-foreground">{a.activityName}</p>
@@ -689,7 +689,7 @@ function WellnessWidget({ data }: { data: WellnessData }) {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 pl-7 text-xs text-muted-foreground sm:gap-4 sm:pl-0">
                   {a.distance && <span>{a.distance}</span>}
                   <span>{a.duration}</span>
                   <span className="font-semibold text-orange-500">{a.calories} kcal</span>
@@ -802,7 +802,7 @@ function MfpWidget({
       )}
 
       {/* Today's summary */}
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
           <span className="text-xl">🍽️</span>
           <span className="mt-1 text-lg font-bold text-foreground">
@@ -930,63 +930,56 @@ function MfpWidget({
 }
 
 /* ── Main page ──────────────────────────────────────────────── */
-// One-time migration: clear old mock data from localStorage
-function clearOldMockData() {
-  if (typeof window === "undefined") return;
-  const migrated = localStorage.getItem("dashboard_v2_migrated");
-  if (migrated) return;
-  // Remove old cached values that had fake targets
-  const keysToRemove = [
-    "dashboard_goals",
-    "dashboard_gym_days",
-    "dashboard_gym_weekly_goal",
-    "dashboard_gym_monthly_goal",
-    "dashboard_gym_monthly_done",
-    "dashboard_run_entries",
-    "dashboard_run_weekly_goal",
-    "dashboard_run_monthly_goal",
-    "dashboard_bike_entries",
-    "dashboard_bike_weekly_goal",
-    "dashboard_bike_monthly_goal",
-    "dashboard_recent_activities",
-    "dashboard_garmin_cache",
-  ];
-  for (const key of keysToRemove) {
-    localStorage.removeItem(key);
-  }
-  localStorage.setItem("dashboard_v2_migrated", "1");
-}
-
 export default function ZdrowiePage() {
-  // Clear old mock data on first load after update
-  useEffect(() => {
-    clearOldMockData();
-  }, []);
 
-  // Monthly goals state — persisted in localStorage
-  const [goals, setGoals] = useLocalStorage("dashboard_goals", {
-    activeCalories: { ...monthlyGoals.activeCalories },
-    cycling: { ...monthlyGoals.cycling },
-    cyclingHours: { ...monthlyGoals.cyclingHours },
-    running: { ...monthlyGoals.running },
-    competition: { ...monthlyGoals.competition },
-  });
+  // All goals persisted to Supabase (with localStorage cache)
+  const goalsDefaults: GoalsSyncState = {
+    goals: {
+      activeCalories: { ...monthlyGoals.activeCalories },
+      cycling: { ...monthlyGoals.cycling },
+      cyclingHours: { ...monthlyGoals.cyclingHours },
+      running: { ...monthlyGoals.running },
+      competition: { ...monthlyGoals.competition },
+    },
+    gymDays: sportAreas[0].weekDays,
+    gymWeeklyGoal: sportAreas[0].weeklyGoal,
+    gymMonthlyGoal: sportAreas[0].monthlyGoal,
+    gymMonthlyDone: sportAreas[0].current,
+    runWeeklyGoal: sportAreas[1].weeklyGoal,
+    runMonthlyGoal: sportAreas[1].monthlyGoal,
+    bikeWeeklyGoal: sportAreas[2].weeklyGoal,
+    bikeMonthlyGoal: sportAreas[2].monthlyGoal,
+  };
+  const { state: gs, setState: setGs, saving: goalsSaving } = useGoalsSync(goalsDefaults);
 
-  // Gym state — persisted
-  const [gymDays, setGymDays] = useLocalStorage("dashboard_gym_days", sportAreas[0].weekDays);
-  const [gymWeeklyGoal, setGymWeeklyGoal] = useLocalStorage("dashboard_gym_weekly_goal", sportAreas[0].weeklyGoal);
-  const [gymMonthlyGoal, setGymMonthlyGoal] = useLocalStorage("dashboard_gym_monthly_goal", sportAreas[0].monthlyGoal);
-  const [gymMonthlyDone, setGymMonthlyDone] = useLocalStorage("dashboard_gym_monthly_done", sportAreas[0].current);
+  // Convenient accessors
+  const goals = gs.goals;
+  const setGoals = (updater: typeof gs.goals | ((prev: typeof gs.goals) => typeof gs.goals)) => {
+    setGs((prev) => ({
+      ...prev,
+      goals: typeof updater === "function" ? updater(prev.goals) : updater,
+    }));
+  };
+  const gymDays = gs.gymDays;
+  const setGymDays = (v: boolean[]) => setGs((p) => ({ ...p, gymDays: v }));
+  const gymWeeklyGoal = gs.gymWeeklyGoal;
+  const setGymWeeklyGoal = (v: number) => setGs((p) => ({ ...p, gymWeeklyGoal: v }));
+  const gymMonthlyGoal = gs.gymMonthlyGoal;
+  const setGymMonthlyGoal = (v: number) => setGs((p) => ({ ...p, gymMonthlyGoal: v }));
+  const gymMonthlyDone = gs.gymMonthlyDone;
+  const setGymMonthlyDone = (v: number) => setGs((p) => ({ ...p, gymMonthlyDone: v }));
+  const runWeeklyGoal = gs.runWeeklyGoal;
+  const setRunWeeklyGoal = (v: number) => setGs((p) => ({ ...p, runWeeklyGoal: v }));
+  const runMonthlyGoal = gs.runMonthlyGoal;
+  const setRunMonthlyGoal = (v: number) => setGs((p) => ({ ...p, runMonthlyGoal: v }));
+  const bikeWeeklyGoal = gs.bikeWeeklyGoal;
+  const setBikeWeeklyGoal = (v: number) => setGs((p) => ({ ...p, bikeWeeklyGoal: v }));
+  const bikeMonthlyGoal = gs.bikeMonthlyGoal;
+  const setBikeMonthlyGoal = (v: number) => setGs((p) => ({ ...p, bikeMonthlyGoal: v }));
 
-  // Running weekly entries — persisted
+  // Running/cycling weekly entries (localStorage-only — auto-filled from Garmin)
   const [runEntries, setRunEntries] = useLocalStorage<number[]>("dashboard_run_entries", [0, 0, 0, 0, 0, 0, 0]);
-  const [runWeeklyGoal, setRunWeeklyGoal] = useLocalStorage("dashboard_run_weekly_goal", sportAreas[1].weeklyGoal);
-  const [runMonthlyGoal, setRunMonthlyGoal] = useLocalStorage("dashboard_run_monthly_goal", sportAreas[1].monthlyGoal);
-
-  // Cycling weekly entries — persisted
   const [bikeEntries, setBikeEntries] = useLocalStorage<number[]>("dashboard_bike_entries", [0, 0, 0, 0, 0, 0, 0]);
-  const [bikeWeeklyGoal, setBikeWeeklyGoal] = useLocalStorage("dashboard_bike_weekly_goal", sportAreas[2].weeklyGoal);
-  const [bikeMonthlyGoal, setBikeMonthlyGoal] = useLocalStorage("dashboard_bike_monthly_goal", sportAreas[2].monthlyGoal);
 
   // Garmin sync (with caching)
   const garmin = useGarminSync();
@@ -1096,7 +1089,8 @@ export default function ZdrowiePage() {
     } catch {
       // wellness is optional
     }
-  }, [garmin, setGoals, setRunEntries, setBikeEntries, setGymMonthlyDone, setRecentActivities]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [garmin, setRecentActivities]);
 
   // Auto-sync with Garmin on page load
   const [autoSynced, setAutoSynced] = useState(false);
@@ -1137,6 +1131,7 @@ export default function ZdrowiePage() {
             <h1 className="text-2xl font-bold text-foreground">Zdrowie i Fitness</h1>
             <p className="text-muted-foreground">
               Kliknij wartosci celow, aby je ustawic
+              {goalsSaving && <span className="ml-2 text-xs text-blue-500">Zapisuje...</span>}
             </p>
           </div>
         </div>
@@ -1189,8 +1184,8 @@ export default function ZdrowiePage() {
         </div>
 
         {/* ── Monthly goals (editable) ─────────────────────────── */}
-        <h3 className="mt-8 text-lg font-semibold text-foreground">🎯 Cele Miesieczne</h3>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🎯 Cele Miesieczne</h3>
+        <div className="mt-3 grid gap-3 grid-cols-2 sm:gap-4 lg:grid-cols-3">
           <MonthlyGoalCard
             icon="🔥"
             label="Aktywne kalorie"
@@ -1239,8 +1234,8 @@ export default function ZdrowiePage() {
         </div>
 
         {/* ── Weekly goals (auto-calculated) ─────────────────────── */}
-        <h3 className="mt-8 text-lg font-semibold text-foreground">📅 Cele Tygodniowe</h3>
-        <div className="mt-3 grid gap-4 sm:grid-cols-3">
+        <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">📅 Cele Tygodniowe</h3>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3 sm:gap-4">
           {/* Running weekly */}
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -1334,8 +1329,8 @@ export default function ZdrowiePage() {
         </div>
 
         {/* ── Gym tracker ──────────────────────────────────────── */}
-        <h3 className="mt-8 text-lg font-semibold text-foreground">🏅 Obszary Sportowe</h3>
-        <div className="mt-3 grid gap-4">
+        <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🏅 Obszary Sportowe</h3>
+        <div className="mt-3 grid gap-3 sm:gap-4">
           <GymTracker
             weekDays={gymDays}
             onToggleDay={(i) => {
@@ -1459,7 +1454,7 @@ export default function ZdrowiePage() {
         {/* ── Recent Garmin activities ─────────────────────────── */}
         {recentActivities.length > 0 && (
           <>
-            <h3 className="mt-8 text-lg font-semibold text-foreground">📋 Ostatnie aktywnosci (Garmin)</h3>
+            <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">📋 Ostatnie aktywnosci (Garmin)</h3>
             <div className="mt-3 space-y-2">
               {recentActivities.slice(0, 10).map((a) => {
                 const typeIcon =
@@ -1470,9 +1465,9 @@ export default function ZdrowiePage() {
                 return (
                   <div
                     key={a.id}
-                    className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 shadow-sm"
+                    className="flex flex-col gap-1 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3">
                       <span className="text-lg">{typeIcon}</span>
                       <div>
                         <p className="text-sm font-medium text-foreground">{a.name}</p>
@@ -1485,7 +1480,7 @@ export default function ZdrowiePage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2 pl-7 text-xs text-muted-foreground sm:gap-4 sm:pl-0">
                       {a.distanceKm > 0 && <span>{a.distanceKm} km</span>}
                       <span>{a.durationMin} min</span>
                       <span>{a.calories} kcal</span>

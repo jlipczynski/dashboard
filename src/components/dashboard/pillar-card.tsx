@@ -52,31 +52,31 @@ function ProgressRing({ score, color, size = 100 }: { score: number; color: stri
 export function PillarCard({ pillar }: { pillar: Pillar }) {
   return (
     <Link href={pillar.href}>
-      <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer">
+      <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer sm:p-6">
         {/* Background decoration */}
         <div
-          className="absolute -right-6 -top-6 text-8xl opacity-10 transition-transform duration-500 group-hover:scale-110"
+          className="absolute -right-6 -top-6 text-6xl opacity-10 transition-transform duration-500 group-hover:scale-110 sm:text-8xl"
           aria-hidden
         >
           {pillar.icon}
         </div>
 
-        <div className="relative flex items-start justify-between gap-4">
-          <div className="flex-1 space-y-3">
+        <div className="relative flex items-center justify-between gap-3 sm:items-start sm:gap-4">
+          <div className="flex-1 min-w-0 space-y-2 sm:space-y-3">
             <div className="flex items-center gap-2">
-              <span className="text-2xl">{pillar.icon}</span>
-              <h3 className="text-lg font-semibold text-foreground">{pillar.name}</h3>
+              <span className="text-xl sm:text-2xl">{pillar.icon}</span>
+              <h3 className="text-base font-semibold text-foreground truncate sm:text-lg">{pillar.name}</h3>
             </div>
-            <TrendBadge trend={pillar.trend} />
-            <p className="text-sm text-muted-foreground">
-              Szczegóły ›
-            </p>
+            <div className="flex items-center gap-2">
+              <TrendBadge trend={pillar.trend} />
+              <span className="text-xs text-muted-foreground hidden sm:inline">Szczegoly ›</span>
+            </div>
           </div>
 
-          <div className="relative flex items-center justify-center">
-            <ProgressRing score={pillar.score} color={pillar.color} />
+          <div className="relative flex shrink-0 items-center justify-center">
+            <ProgressRing score={pillar.score} color={pillar.color} size={80} />
             <span
-              className="absolute text-xl font-bold"
+              className="absolute text-lg font-bold sm:text-xl"
               style={{ color: pillar.color }}
             >
               {pillar.score}%

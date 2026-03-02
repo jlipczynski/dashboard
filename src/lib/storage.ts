@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 /**
  * Deep-merge stored object with defaults so new/missing fields are filled in.
@@ -180,3 +180,134 @@ export function useGarminSync() {
 
   return { data, syncing, error, sync };
 }
+
+/**
+ * useGoalsSync – persists fitness goals to Supabase with localStorage cache.
+ * On mount: loads from Supabase (falls back to localStorage).
+ * On save: writes to both Supabase and localStorage.
+ */
+export type GoalsShape = {
+  activeCalories: { target: number; current: number; unit: string };
+  cycling: { target: number; current: number; unit: string };
+  cyclingHours: { target: number; current: number; unit: string };
+  running: { target: number; current: number; unit: string };
+  competition: { name: string; date: string; type: "running" | "cycling"; distance: number };
+};
+
+export type GoalsSyncState = {
+  goals: GoalsShape;
+  gymDays: boolean[];
+  gymWeeklyGoal: number;
+  gymMonthlyGoal: number;
+  gymMonthlyDone: number;
+  runWeeklyGoal: number;
+  runMonthlyGoal: number;
+  bikeWeeklyGoal: number;
+  bikeMonthlyGoal: number;
+};
+
+const GOALS_CACHE_KEY = "dashboard_goals_v2";
+
+function loadGoalsCache(): GoalsSyncState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(GOALS_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveGoalsCache(state: GoalsSyncState) {
+  try {
+    localStorage.setItem(GOALS_CACHE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
+export function useGoalsSync(defaults: GoalsSyncState) {
+  const [state, setStateRaw] = useState<GoalsSyncState>(defaults);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load from Supabase on mount, fallback to localStorage cache
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // First try localStorage cache for instant display
+      const cached = loadGoalsCache();
+      if (cached && !cancelled) {
+        setStateRaw(mergeWithDefaults(cached, defaults) as GoalsSyncState);
+      }
+
+      // Then load from Supabase (source of truth)
+      try {
+        const res = await fetch("/api/goals");
+        const json = await res.json();
+        if (!cancelled && json.data) {
+          const fromDb: GoalsSyncState = {
+            goals: mergeWithDefaults(json.data.goals, defaults.goals) as GoalsShape,
+            gymDays: json.data.gym_days ?? defaults.gymDays,
+            gymWeeklyGoal: json.data.gym_weekly_goal ?? defaults.gymWeeklyGoal,
+            gymMonthlyGoal: json.data.gym_monthly_goal ?? defaults.gymMonthlyGoal,
+            gymMonthlyDone: json.data.gym_monthly_done ?? defaults.gymMonthlyDone,
+            runWeeklyGoal: json.data.run_weekly_goal ?? defaults.runWeeklyGoal,
+            runMonthlyGoal: json.data.run_monthly_goal ?? defaults.runMonthlyGoal,
+            bikeWeeklyGoal: json.data.bike_weekly_goal ?? defaults.bikeWeeklyGoal,
+            bikeMonthlyGoal: json.data.bike_monthly_goal ?? defaults.bikeMonthlyGoal,
+          };
+          setStateRaw(fromDb);
+          saveGoalsCache(fromDb);
+        }
+      } catch {
+        // Supabase unavailable — localStorage cache is fine
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Debounced save to Supabase
+  const persistToSupabase = useCallback((next: GoalsSyncState) => {
+    saveGoalsCache(next);
+    setSaving(true);
+    fetch("/api/goals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        goals: next.goals,
+        gym_days: next.gymDays,
+        gym_weekly_goal: next.gymWeeklyGoal,
+        gym_monthly_goal: next.gymMonthlyGoal,
+        gym_monthly_done: next.gymMonthlyDone,
+        run_weekly_goal: next.runWeeklyGoal,
+        run_monthly_goal: next.runMonthlyGoal,
+        bike_weekly_goal: next.bikeWeeklyGoal,
+        bike_monthly_goal: next.bikeMonthlyGoal,
+      }),
+    })
+      .catch(() => {})
+      .finally(() => setSaving(false));
+  }, []);
+
+  const setState = useCallback(
+    (updater: GoalsSyncState | ((prev: GoalsSyncState) => GoalsSyncState)) => {
+      setStateRaw((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        // Debounce: save 500ms after last change
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => persistToSupabase(next), 500);
+        saveGoalsCache(next);
+        return next;
+      });
+    },
+    [persistToSupabase]
+  );
+
+  return { state, setState, loaded, saving };
+}
+
