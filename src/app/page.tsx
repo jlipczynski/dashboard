@@ -39,13 +39,15 @@ export default function Home() {
     return p;
   });
 
-  const overallScore = Math.round(
-    dynamicPillars.reduce((sum, p) => sum + p.score, 0) / dynamicPillars.length
-  );
+  // Only count pillars that have some data (score > 0) for summary stats
+  const activePillars = dynamicPillars.filter((p) => p.score > 0);
+  const overallScore = activePillars.length > 0
+    ? Math.round(activePillars.reduce((sum, p) => sum + p.score, 0) / activePillars.length)
+    : 0;
 
-  const onTrack = dynamicPillars.filter((p) => p.score >= 65).length;
-  const atRisk = dynamicPillars.filter((p) => p.score >= 40 && p.score < 65).length;
-  const offTrack = dynamicPillars.filter((p) => p.score < 40).length;
+  const onTrack = activePillars.filter((p) => p.score >= 65).length;
+  const atRisk = activePillars.filter((p) => p.score >= 40 && p.score < 65).length;
+  const offTrack = activePillars.filter((p) => p.score > 0 && p.score < 40).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -60,7 +62,7 @@ export default function Home() {
             </div>
             <div>
               <p className="text-sm font-medium text-foreground">Ogolny wynik</p>
-              <p className="text-xs text-muted-foreground">srednia z {dynamicPillars.length} filarow</p>
+              <p className="text-xs text-muted-foreground">srednia z {activePillars.length > 0 ? activePillars.length : dynamicPillars.length} filarow</p>
             </div>
           </div>
           <div className="ml-auto flex gap-3">
