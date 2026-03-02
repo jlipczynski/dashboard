@@ -156,7 +156,7 @@ export function calcAllScores(
   return {
     zdrowie: { score: healthScore, trend: getTrend(healthScore) },
     praca: { score: 0, trend: "steady" as const },
-    rozwoj: { score: rozwojScore, trend: getTrend(rozwojScore) },
+    rozwoj: { score: rozwojScore, trend: rozwojScore === 0 ? "steady" as const : getTrend(rozwojScore) },
     relacje: { score: 0, trend: "steady" as const },
   };
 }
