@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { monthlyGoals, sportAreas } from "@/lib/data";
-import { useLocalStorage, useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
+import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 
 type GarminActivity = {
   id: number;
@@ -949,6 +949,13 @@ export default function ZdrowiePage() {
     runMonthlyGoal: sportAreas[1].monthlyGoal,
     bikeWeeklyGoal: sportAreas[2].weeklyGoal,
     bikeMonthlyGoal: sportAreas[2].monthlyGoal,
+    rozwojTargets: {
+      czytanie: { monthly: 300, weekly: 75 },
+      sluchanie: { monthly: 600, weekly: 150 },
+      pisanie: { monthly: 30, weekly: 8 },
+    },
+    runEntries: [0, 0, 0, 0, 0, 0, 0],
+    bikeEntries: [0, 0, 0, 0, 0, 0, 0],
   };
   const { state: gs, setState: setGs, saving: goalsSaving } = useGoalsSync(goalsDefaults);
 
@@ -977,13 +984,15 @@ export default function ZdrowiePage() {
   const bikeMonthlyGoal = gs.bikeMonthlyGoal;
   const setBikeMonthlyGoal = (v: number) => setGs((p) => ({ ...p, bikeMonthlyGoal: v }));
 
-  // Running/cycling weekly entries (localStorage-only — auto-filled from Garmin)
-  const [runEntries, setRunEntries] = useLocalStorage<number[]>("dashboard_run_entries", [0, 0, 0, 0, 0, 0, 0]);
-  const [bikeEntries, setBikeEntries] = useLocalStorage<number[]>("dashboard_bike_entries", [0, 0, 0, 0, 0, 0, 0]);
+  // Running/cycling weekly entries (Supabase-backed via goalsSync)
+  const runEntries = gs.runEntries;
+  const setRunEntries = (v: number[]) => setGs((p) => ({ ...p, runEntries: v }));
+  const bikeEntries = gs.bikeEntries;
+  const setBikeEntries = (v: number[]) => setGs((p) => ({ ...p, bikeEntries: v }));
 
   // Garmin sync (with caching)
   const garmin = useGarminSync();
-  const [recentActivities, setRecentActivities] = useLocalStorage<GarminActivity[]>("dashboard_recent_activities", []);
+  const [recentActivities, setRecentActivities] = useState<GarminActivity[]>([]);
 
   // Wellness data
   const [wellness, setWellness] = useState<WellnessData>({
@@ -1044,7 +1053,7 @@ export default function ZdrowiePage() {
     if (garmin.data) {
       setRecentActivities(garmin.data.activities);
     }
-  }, [garmin.data, setRecentActivities]);
+  }, [garmin.data]);
 
 
   const syncGarmin = useCallback(async () => {
@@ -1090,7 +1099,7 @@ export default function ZdrowiePage() {
       // wellness is optional
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [garmin, setRecentActivities]);
+  }, [garmin]);
 
   // Auto-sync with Garmin on page load
   const [autoSynced, setAutoSynced] = useState(false);
