@@ -437,16 +437,16 @@ export default function RozwojPage() {
       const data = await res.json();
       if (data.error) {
         setError(`Blad ladowania: ${data.error}`);
-        return;
-      }
-      if (data.entries) {
-        setEntries(data.entries);
-        setError(null);
+      } else {
+        if (data.entries) setEntries(data.entries);
+        if (data.warning) setError(data.warning);
+        else setError(null);
       }
     } catch (err) {
       setError(`Brak polaczenia z baza: ${err instanceof Error ? err.message : "nieznany blad"}`);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
