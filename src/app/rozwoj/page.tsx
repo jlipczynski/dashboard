@@ -1,57 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { useLocalStorage } from "@/lib/storage";
 
 /* ── Types ──────────────────────────────────────── */
-type AreaConfig = {
-  monthlyTarget: number;
-  weeklyTarget: number;
-  monthlyDone: number;
-  weeklyDone: number;
-  yearlyTarget: number;
-  yearlyDone: number;
-  currentTitle: string; // current book title or project
+type Entry = {
+  id: string;
+  area: string;
+  date: string;
+  amount: number;
 };
 
-type RozwojData = {
-  czytanie: AreaConfig;
-  sluchanie: AreaConfig;
-  pisanie: AreaConfig;
+type Targets = {
+  czytanie: { monthly: number; weekly: number };
+  sluchanie: { monthly: number; weekly: number };
+  pisanie: { monthly: number; weekly: number };
 };
 
-const DEFAULT_DATA: RozwojData = {
-  czytanie: {
-    monthlyTarget: 300,
-    weeklyTarget: 75,
-    monthlyDone: 0,
-    weeklyDone: 0,
-    yearlyTarget: 3600,
-    yearlyDone: 0,
-    currentTitle: "",
-  },
-  sluchanie: {
-    monthlyTarget: 600,
-    weeklyTarget: 150,
-    monthlyDone: 0,
-    weeklyDone: 0,
-    yearlyTarget: 7200,
-    yearlyDone: 0,
-    currentTitle: "",
-  },
-  pisanie: {
-    monthlyTarget: 30,
-    weeklyTarget: 8,
-    monthlyDone: 0,
-    weeklyDone: 0,
-    yearlyTarget: 365,
-    yearlyDone: 0,
-    currentTitle: "",
-  },
-};
+type AreaKey = "czytanie" | "sluchanie" | "pisanie";
 
-type AreaKey = keyof RozwojData;
+const DEFAULT_TARGETS: Targets = {
+  czytanie: { monthly: 300, weekly: 75 },
+  sluchanie: { monthly: 600, weekly: 150 },
+  pisanie: { monthly: 30, weekly: 8 },
+};
 
 const AREAS: {
   key: AreaKey;
@@ -62,7 +35,7 @@ const AREAS: {
   color: string;
   colorLight: string;
   colorBorder: string;
-  quickAdds: number[];
+  placeholder: string;
 }[] = [
   {
     key: "czytanie",
@@ -73,7 +46,7 @@ const AREAS: {
     color: "#8B5CF6",
     colorLight: "#F5F3FF",
     colorBorder: "#DDD6FE",
-    quickAdds: [5, 10, 25, 50],
+    placeholder: "Ile stron dzisiaj?",
   },
   {
     key: "sluchanie",
@@ -84,7 +57,7 @@ const AREAS: {
     color: "#0EA5E9",
     colorLight: "#F0F9FF",
     colorBorder: "#BAE6FD",
-    quickAdds: [15, 30, 45, 60],
+    placeholder: "Ile minut dzisiaj?",
   },
   {
     key: "pisanie",
@@ -95,70 +68,30 @@ const AREAS: {
     color: "#F59E0B",
     colorLight: "#FFFBEB",
     colorBorder: "#FDE68A",
-    quickAdds: [1, 2, 5, 10],
+    placeholder: "Ile stron dzisiaj?",
   },
 ];
 
-/* ── Editable Number ────────────────────────────── */
-function EditableNumber({
-  value,
-  onSave,
-  unit,
-  color,
-}: {
-  value: number;
-  onSave: (v: number) => void;
-  unit: string;
-  color: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(value));
+/* ── Helpers ───────────────────────────────────── */
+function today() {
+  return new Date().toISOString().split("T")[0];
+}
 
-  useEffect(() => {
-    setDraft(String(value));
-  }, [value]);
+function getMonthStart() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0];
+}
 
-  if (editing) {
-    return (
-      <form
-        className="inline-flex items-center gap-1"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const n = parseInt(draft);
-          if (!isNaN(n) && n >= 0) onSave(n);
-          setEditing(false);
-        }}
-      >
-        <input
-          autoFocus
-          type="number"
-          min={0}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            const n = parseInt(draft);
-            if (!isNaN(n) && n >= 0) onSave(n);
-            setEditing(false);
-          }}
-          className="w-20 rounded border border-border bg-background px-2 py-0.5 text-sm"
-        />
-        <span className="text-xs text-muted-foreground">{unit}</span>
-      </form>
-    );
-  }
+function getWeekStart() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+  return new Date(d.getFullYear(), d.getMonth(), diff).toISOString().split("T")[0];
+}
 
-  return (
-    <button
-      onClick={() => setEditing(true)}
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-sm transition-colors hover:bg-accent"
-      title="Kliknij aby edytowac"
-    >
-      <span className="font-bold" style={{ color }}>
-        {value}
-      </span>
-      <span className="text-xs text-muted-foreground">{unit}</span>
-    </button>
-  );
+function formatDate(dateStr: string) {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("pl-PL", { day: "numeric", month: "short", weekday: "short" });
 }
 
 /* ── Progress Bar ───────────────────────────────── */
@@ -189,307 +122,352 @@ function ProgressBar({
   );
 }
 
-/* ── Circular Progress ──────────────────────────── */
-function CircularProgress({
-  current,
-  target,
-  color,
-  size = 90,
-}: {
-  current: number;
-  target: number;
-  color: string;
-  size?: number;
-}) {
-  const pct = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-  const strokeWidth = 7;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (pct / 100) * circumference;
-
-  return (
-    <div className="relative inline-flex items-center justify-center">
-      <svg width={size} height={size} className="-rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="#f3f4f6"
-          strokeWidth={strokeWidth}
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className="transition-all duration-700 ease-out"
-        />
-      </svg>
-      <span
-        className="absolute text-lg font-bold"
-        style={{ color }}
-      >
-        {Math.round(pct)}%
-      </span>
-    </div>
-  );
-}
-
 /* ── Area Card ──────────────────────────────────── */
 function AreaCard({
   area,
-  config,
-  onUpdate,
+  entries,
+  targets,
+  onAddEntry,
+  onEditEntry,
+  onDeleteEntry,
+  onTargetChange,
+  saving,
 }: {
   area: (typeof AREAS)[number];
-  config: AreaConfig;
-  onUpdate: (patch: Partial<AreaConfig>) => void;
+  entries: Entry[];
+  targets: { monthly: number; weekly: number };
+  onAddEntry: (area: AreaKey, date: string, amount: number) => void;
+  onEditEntry: (area: AreaKey, date: string, amount: number) => void;
+  onDeleteEntry: (id: string) => void;
+  onTargetChange: (field: "monthly" | "weekly", value: number) => void;
+  saving: boolean;
 }) {
-  const [customAmount, setCustomAmount] = useState("");
-  const monthPct =
-    config.monthlyTarget > 0
-      ? Math.round((config.monthlyDone / config.monthlyTarget) * 100)
-      : 0;
-  const weekPct =
-    config.weeklyTarget > 0
-      ? Math.round((config.weeklyDone / config.weeklyTarget) * 100)
-      : 0;
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(today());
+  const [showHistory, setShowHistory] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [editingTarget, setEditingTarget] = useState<"monthly" | "weekly" | null>(null);
+  const [targetDraft, setTargetDraft] = useState("");
 
-  const addProgress = (amount: number) => {
-    onUpdate({
-      monthlyDone: config.monthlyDone + amount,
-      weeklyDone: config.weeklyDone + amount,
-      yearlyDone: config.yearlyDone + amount,
-    });
+  const monthStart = getMonthStart();
+  const weekStart = getWeekStart();
+
+  const monthlyDone = entries
+    .filter((e) => e.date >= monthStart)
+    .reduce((s, e) => s + e.amount, 0);
+  const weeklyDone = entries
+    .filter((e) => e.date >= weekStart)
+    .reduce((s, e) => s + e.amount, 0);
+
+  const monthPct = targets.monthly > 0 ? Math.round((monthlyDone / targets.monthly) * 100) : 0;
+  const weekPct = targets.weekly > 0 ? Math.round((weeklyDone / targets.weekly) * 100) : 0;
+
+  // Today's entry
+  const todayEntry = entries.find((e) => e.date === today());
+
+  const handleSubmit = () => {
+    const n = parseInt(amount);
+    if (!isNaN(n) && n > 0) {
+      // If entry for this date already exists, add to it
+      const existing = entries.find((e) => e.date === date);
+      if (existing) {
+        onEditEntry(area.key, date, existing.amount + n);
+      } else {
+        onAddEntry(area.key, date, n);
+      }
+      setAmount("");
+      setDate(today());
+    }
   };
+
+  // Last 30 entries for history
+  const historyEntries = [...entries].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
 
   return (
     <div
-      className="rounded-2xl border bg-card p-6 shadow-sm transition-all hover:shadow-md"
+      className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6"
       style={{ borderColor: area.colorBorder }}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between">
+      {/* Header with monthly ring */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div
-            className="flex h-12 w-12 items-center justify-center rounded-xl text-2xl"
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-xl"
             style={{ background: area.colorLight }}
           >
             {area.icon}
           </div>
           <div>
             <h3 className="text-lg font-bold text-foreground">{area.name}</h3>
-            {config.currentTitle && (
-              <p className="text-sm text-muted-foreground italic">
-                {config.currentTitle}
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              {monthlyDone} / {targets.monthly} {area.unit} w marcu
+            </p>
           </div>
         </div>
-        <CircularProgress
-          current={config.monthlyDone}
-          target={config.monthlyTarget}
-          color={area.color}
-        />
+        {todayEntry && (
+          <div className="flex flex-col items-center rounded-lg px-3 py-1" style={{ background: area.colorLight }}>
+            <span className="text-lg font-bold" style={{ color: area.color }}>{todayEntry.amount}</span>
+            <span className="text-[10px] text-muted-foreground">dzisiaj</span>
+          </div>
+        )}
       </div>
 
-      {/* Current book/project title */}
-      <div className="mt-3">
+      {/* Add entry form */}
+      <form
+        className="mt-4 flex items-center gap-2"
+        onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
+      >
         <input
-          type="text"
-          value={config.currentTitle}
-          onChange={(e) => onUpdate({ currentTitle: e.target.value })}
-          placeholder={
-            area.key === "czytanie"
-              ? "Jaka ksiazka?"
-              : area.key === "sluchanie"
-                ? "Jaki audiobook?"
-                : "Co piszesz?"
-          }
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2"
+          type="number"
+          min={1}
+          inputMode="numeric"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder={area.placeholder}
+          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2"
           style={{ ["--tw-ring-color" as string]: area.color + "40" } as React.CSSProperties}
         />
-      </div>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="w-[130px] shrink-0 rounded-lg border border-border bg-background px-2 py-2.5 text-xs text-foreground focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={saving}
+          className="shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all active:scale-95 disabled:opacity-50"
+          style={{ background: area.color }}
+        >
+          {saving ? "..." : "Dodaj"}
+        </button>
+      </form>
 
       {/* Monthly progress */}
-      <div className="mt-5">
-        <div className="mb-2 flex items-center justify-between">
+      <div className="mt-4">
+        <div className="mb-1.5 flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Marzec 2026
+            Marzec
           </span>
           <span className="text-sm font-medium" style={{ color: area.color }}>
-            {config.monthlyDone} / {config.monthlyTarget} {area.unit}
+            {monthPct}%
           </span>
         </div>
         <ProgressBar
-          current={config.monthlyDone}
-          target={config.monthlyTarget}
+          current={monthlyDone}
+          target={targets.monthly}
           color={area.color}
           colorLight={area.colorLight}
-          height={12}
+          height={10}
         />
-        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-          <span>{monthPct}% celu miesiecznego</span>
-          <span>
-            Zostalo:{" "}
-            {Math.max(0, config.monthlyTarget - config.monthlyDone)}{" "}
-            {area.unit}
-          </span>
+        <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+          <span>{monthlyDone} / {targets.monthly} {area.unitShort}</span>
+          {editingTarget === "monthly" ? (
+            <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+              e.preventDefault();
+              const n = parseInt(targetDraft);
+              if (!isNaN(n) && n > 0) onTargetChange("monthly", n);
+              setEditingTarget(null);
+            }}>
+              <input autoFocus type="number" min={1} value={targetDraft}
+                onChange={(e) => setTargetDraft(e.target.value)}
+                onBlur={() => {
+                  const n = parseInt(targetDraft);
+                  if (!isNaN(n) && n > 0) onTargetChange("monthly", n);
+                  setEditingTarget(null);
+                }}
+                className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-right" />
+              <span className="text-[10px]">{area.unitShort}</span>
+            </form>
+          ) : (
+            <button onClick={() => { setTargetDraft(String(targets.monthly)); setEditingTarget("monthly"); }}
+              className="hover:underline">cel: {targets.monthly}</button>
+          )}
         </div>
       </div>
 
       {/* Weekly progress */}
-      <div className="mt-4">
-        <div className="mb-2 flex items-center justify-between">
+      <div className="mt-3">
+        <div className="mb-1.5 flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Ten tydzien
+            Tydzien
           </span>
           <span className="text-sm font-medium" style={{ color: area.color }}>
-            {config.weeklyDone} / {config.weeklyTarget} {area.unit}
+            {weekPct}%
           </span>
         </div>
         <ProgressBar
-          current={config.weeklyDone}
-          target={config.weeklyTarget}
+          current={weeklyDone}
+          target={targets.weekly}
           color={area.color}
           colorLight={area.colorLight}
-          height={8}
+          height={7}
         />
-        <div className="mt-1 text-right text-xs text-muted-foreground">
-          {weekPct}% celu tygodniowego
+        <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+          <span>{weeklyDone} / {targets.weekly} {area.unitShort}</span>
+          {editingTarget === "weekly" ? (
+            <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+              e.preventDefault();
+              const n = parseInt(targetDraft);
+              if (!isNaN(n) && n > 0) onTargetChange("weekly", n);
+              setEditingTarget(null);
+            }}>
+              <input autoFocus type="number" min={1} value={targetDraft}
+                onChange={(e) => setTargetDraft(e.target.value)}
+                onBlur={() => {
+                  const n = parseInt(targetDraft);
+                  if (!isNaN(n) && n > 0) onTargetChange("weekly", n);
+                  setEditingTarget(null);
+                }}
+                className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-right" />
+              <span className="text-[10px]">{area.unitShort}</span>
+            </form>
+          ) : (
+            <button onClick={() => { setTargetDraft(String(targets.weekly)); setEditingTarget("weekly"); }}
+              className="hover:underline">cel: {targets.weekly}</button>
+          )}
         </div>
       </div>
 
-      {/* Quick add buttons */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        {area.quickAdds.map((n) => (
-          <button
-            key={n}
-            onClick={() => addProgress(n)}
-            className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all hover:shadow-sm active:scale-95"
-            style={{
-              borderColor: area.colorBorder,
-              color: area.color,
-              background: area.colorLight,
-            }}
-          >
-            +{n} {area.unitShort}
-          </button>
-        ))}
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            min={1}
-            value={customAmount}
-            onChange={(e) => setCustomAmount(e.target.value)}
-            placeholder="..."
-            className="w-16 rounded-lg border border-border bg-background px-2 py-1.5 text-center text-sm focus:outline-none"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                const n = parseInt(customAmount);
-                if (!isNaN(n) && n > 0) {
-                  addProgress(n);
-                  setCustomAmount("");
-                }
-              }
-            }}
-          />
-          <button
-            onClick={() => {
-              const n = parseInt(customAmount);
-              if (!isNaN(n) && n > 0) {
-                addProgress(n);
-                setCustomAmount("");
-              }
-            }}
-            className="rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
-            style={{ color: area.color }}
-          >
-            Dodaj
-          </button>
-        </div>
-      </div>
+      {/* History toggle */}
+      <button
+        onClick={() => setShowHistory((v) => !v)}
+        className="mt-4 w-full rounded-lg border border-border py-2 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
+      >
+        {showHistory ? "Ukryj historie" : `Historia wpisow (${entries.length})`}
+      </button>
 
-      {/* Target settings */}
-      <div className="mt-4 flex flex-wrap items-center gap-4 rounded-xl border border-dashed border-border p-3">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Cel miesieczny:</span>
-          <EditableNumber
-            value={config.monthlyTarget}
-            onSave={(v) => onUpdate({ monthlyTarget: v })}
-            unit={area.unit}
-            color={area.color}
-          />
+      {/* History list */}
+      {showHistory && (
+        <div className="mt-2 max-h-64 space-y-1 overflow-y-auto">
+          {historyEntries.length === 0 && (
+            <p className="py-4 text-center text-xs text-muted-foreground">Brak wpisow</p>
+          )}
+          {historyEntries.map((entry) => (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2"
+            >
+              <span className="text-xs text-muted-foreground">{formatDate(entry.date)}</span>
+              {editingId === entry.id ? (
+                <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+                  e.preventDefault();
+                  const n = parseInt(editDraft);
+                  if (!isNaN(n) && n > 0) onEditEntry(area.key, entry.date, n);
+                  setEditingId(null);
+                }}>
+                  <input autoFocus type="number" min={0} value={editDraft}
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    onBlur={() => {
+                      const n = parseInt(editDraft);
+                      if (!isNaN(n) && n > 0) onEditEntry(area.key, entry.date, n);
+                      setEditingId(null);
+                    }}
+                    className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-right" />
+                </form>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setEditDraft(String(entry.amount)); setEditingId(entry.id); }}
+                    className="text-sm font-semibold transition-colors hover:opacity-70"
+                    style={{ color: area.color }}
+                  >
+                    {entry.amount} {area.unitShort}
+                  </button>
+                  <button
+                    onClick={() => onDeleteEntry(entry.id)}
+                    className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
+                    title="Usun"
+                  >
+                    &#10005;
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Cel tygodniowy:</span>
-          <EditableNumber
-            value={config.weeklyTarget}
-            onSave={(v) => onUpdate({ weeklyTarget: v })}
-            unit={area.unit}
-            color={area.color}
-          />
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Cel roczny:</span>
-          <EditableNumber
-            value={config.yearlyTarget}
-            onSave={(v) => onUpdate({ yearlyTarget: v })}
-            unit={area.unit}
-            color={area.color}
-          />
-        </div>
-        <button
-          onClick={() =>
-            onUpdate({ monthlyDone: 0, weeklyDone: 0 })
-          }
-          className="ml-auto rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-100"
-          title="Resetuj postep miesieczny i tygodniowy"
-        >
-          Reset
-        </button>
-      </div>
+      )}
     </div>
   );
 }
 
 /* ── Main Page ──────────────────────────────────── */
 export default function RozwojPage() {
-  const [data, setData] = useLocalStorage<RozwojData>(
-    "dashboard_rozwoj",
-    DEFAULT_DATA
-  );
-  const [mounted, setMounted] = useState(false);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [targets, setTargets] = useLocalStorage<Targets>("dashboard_rozwoj_targets", DEFAULT_TARGETS);
 
-  useEffect(() => setMounted(true), []);
+  // Fetch entries from Supabase
+  const fetchEntries = useCallback(async () => {
+    try {
+      const res = await fetch("/api/rozwoj?days=365");
+      const data = await res.json();
+      if (data.entries) setEntries(data.entries);
+    } catch {
+      // offline — keep empty
+    }
+    setLoading(false);
+  }, []);
 
-  const updateArea = (key: AreaKey, patch: Partial<AreaConfig>) => {
-    setData((prev) => ({
+  useEffect(() => { fetchEntries(); }, [fetchEntries]);
+
+  const addEntry = async (area: AreaKey, date: string, amount: number) => {
+    setSaving(true);
+    try {
+      await fetch("/api/rozwoj", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ area, date, amount }),
+      });
+      await fetchEntries();
+    } catch { /* ignore */ }
+    setSaving(false);
+  };
+
+  const editEntry = async (area: AreaKey, date: string, amount: number) => {
+    setSaving(true);
+    try {
+      await fetch("/api/rozwoj", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ area, date, amount }),
+      });
+      await fetchEntries();
+    } catch { /* ignore */ }
+    setSaving(false);
+  };
+
+  const deleteEntry = async (id: string) => {
+    setSaving(true);
+    try {
+      await fetch(`/api/rozwoj?id=${id}`, { method: "DELETE" });
+      await fetchEntries();
+    } catch { /* ignore */ }
+    setSaving(false);
+  };
+
+  const updateTarget = (area: AreaKey, field: "monthly" | "weekly", value: number) => {
+    setTargets((prev) => ({
       ...prev,
-      [key]: { ...prev[key], ...patch },
+      [area]: { ...prev[area], [field]: value },
     }));
   };
 
-  // Overall score for the month
-  const overallPct =
-    AREAS.reduce((sum, a) => {
-      const c = data[a.key];
-      return sum + (c.monthlyTarget > 0 ? Math.min(c.monthlyDone / c.monthlyTarget, 1) : 0);
-    }, 0) / AREAS.length;
+  // Compute totals for summary
+  const monthStart = getMonthStart();
+  const monthEntries = entries.filter((e) => e.date >= monthStart);
 
-  const yearlyPct =
-    AREAS.reduce((sum, a) => {
-      const c = data[a.key];
-      return sum + (c.yearlyTarget > 0 ? Math.min(c.yearlyDone / c.yearlyTarget, 1) : 0);
-    }, 0) / AREAS.length;
+  const areaTotals = AREAS.map((a) => {
+    const total = monthEntries.filter((e) => e.area === a.key).reduce((s, e) => s + e.amount, 0);
+    const target = targets[a.key].monthly;
+    return { ...a, total, target, pct: target > 0 ? Math.round((total / target) * 100) : 0 };
+  });
 
-  if (!mounted) {
+  const overallPct = areaTotals.reduce((s, a) => s + Math.min(a.pct, 100), 0) / AREAS.length;
+
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-muted-foreground">Ladowanie...</div>
@@ -502,98 +480,56 @@ export default function RozwojPage() {
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <BackButton />
 
-        {/* Big Month Header */}
+        {/* Header */}
         <div className="mt-6 text-center">
           <div className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
             Rozwoj Osobisty
           </div>
-          <h1 className="mt-2 text-5xl font-black tracking-tight text-foreground sm:text-6xl">
+          <h1 className="mt-2 text-4xl font-black tracking-tight text-foreground sm:text-5xl">
             MARZEC 2026
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Czytanie &middot; Sluchanie &middot; Pisanie
-          </p>
         </div>
 
-        {/* Overall Summary */}
-        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {/* Monthly progress */}
-          <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-4 text-center">
-            <div className="text-3xl font-black text-purple-600">
-              {Math.round(overallPct * 100)}%
+        {/* Summary */}
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+          <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-3 text-center sm:p-4">
+            <div className="text-2xl font-black text-purple-600 sm:text-3xl">
+              {Math.round(overallPct)}%
             </div>
-            <div className="mt-1 text-xs font-medium text-purple-400">
+            <div className="mt-1 text-[10px] font-medium text-purple-400 sm:text-xs">
               Cel miesieczny
             </div>
           </div>
-
-          {/* Areas summary */}
-          {AREAS.map((a) => {
-            const c = data[a.key];
-            const pct =
-              c.monthlyTarget > 0
-                ? Math.round((c.monthlyDone / c.monthlyTarget) * 100)
-                : 0;
-            return (
-              <div
-                key={a.key}
-                className="rounded-2xl border p-4 text-center"
-                style={{
-                  borderColor: a.colorBorder,
-                  background: a.colorLight + "80",
-                }}
-              >
-                <div className="text-2xl">{a.icon}</div>
-                <div
-                  className="mt-1 text-2xl font-bold"
-                  style={{ color: a.color }}
-                >
-                  {pct}%
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {c.monthlyDone}/{c.monthlyTarget} {a.unitShort}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Yearly progress bar */}
-        <div className="mt-6 rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Postep roczny 2026
-            </span>
-            <span className="text-sm font-bold text-foreground">
-              {Math.round(yearlyPct * 100)}%
-            </span>
-          </div>
-          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-gray-100">
+          {areaTotals.map((a) => (
             <div
-              className="h-full rounded-full bg-gradient-to-r from-purple-500 via-sky-500 to-amber-500 transition-all duration-700"
-              style={{ width: `${Math.round(yearlyPct * 100)}%` }}
-            />
-          </div>
-          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            {AREAS.map((a) => {
-              const c = data[a.key];
-              return (
-                <span key={a.key}>
-                  {a.icon} {c.yearlyDone}/{c.yearlyTarget} {a.unitShort}
-                </span>
-              );
-            })}
-          </div>
+              key={a.key}
+              className="rounded-2xl border p-3 text-center sm:p-4"
+              style={{ borderColor: a.colorBorder, background: a.colorLight + "80" }}
+            >
+              <div className="text-xl sm:text-2xl">{a.icon}</div>
+              <div className="mt-0.5 text-xl font-bold sm:text-2xl" style={{ color: a.color }}>
+                {a.pct}%
+              </div>
+              <div className="text-[10px] text-muted-foreground sm:text-xs">
+                {a.total}/{a.target} {a.unitShort}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Area Cards */}
-        <div className="mt-8 grid gap-6 lg:grid-cols-1">
+        <div className="mt-6 grid gap-4 sm:gap-6">
           {AREAS.map((a) => (
             <AreaCard
               key={a.key}
               area={a}
-              config={data[a.key]}
-              onUpdate={(patch) => updateArea(a.key, patch)}
+              entries={entries.filter((e) => e.area === a.key)}
+              targets={targets[a.key]}
+              onAddEntry={addEntry}
+              onEditEntry={editEntry}
+              onDeleteEntry={deleteEntry}
+              onTargetChange={(field, value) => updateTarget(a.key, field, value)}
+              saving={saving}
             />
           ))}
         </div>

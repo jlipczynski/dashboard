@@ -5,8 +5,8 @@ import { pillars, monthlyGoals, sportAreas } from "@/lib/data";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { PillarCard } from "@/components/dashboard/pillar-card";
 import { useLocalStorage, useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
-import { calcAllScores } from "@/lib/scores";
-import { useEffect } from "react";
+import { calcAllScores, type RozwojData } from "@/lib/scores";
+import { useEffect, useState } from "react";
 
 export default function Home() {
   // Goals from Supabase (with localStorage cache)
@@ -31,13 +31,40 @@ export default function Home() {
   const goals = gs.goals;
   const gymMonthlyDone = gs.gymMonthlyDone;
   const gymMonthlyGoal = gs.gymMonthlyGoal;
-  const [rozwojData] = useLocalStorage("dashboard_rozwoj", null);
+  const [rozwojTargets] = useLocalStorage("dashboard_rozwoj_targets", {
+    czytanie: { monthly: 300 },
+    sluchanie: { monthly: 600 },
+    pisanie: { monthly: 30 },
+  });
+  const [rozwojData, setRozwojData] = useState<RozwojData | null>(null);
   // Garmin cached data
   const garmin = useGarminSync();
 
   // Try to load cached garmin data on mount (don't force sync)
   useEffect(() => {
     garmin.sync(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load rozwoj entries from Supabase for pillar score
+  useEffect(() => {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    fetch("/api/rozwoj?days=31")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.entries) return;
+        const ms = monthStart.toISOString().split("T")[0];
+        const monthEntries = (d.entries as { area: string; date: string; amount: number }[])
+          .filter((e) => e.date >= ms);
+        const sum = (area: string) => monthEntries.filter((e) => e.area === area).reduce((s, e) => s + e.amount, 0);
+        setRozwojData({
+          czytanie: { monthlyTarget: rozwojTargets.czytanie.monthly, monthlyDone: sum("czytanie") },
+          sluchanie: { monthlyTarget: rozwojTargets.sluchanie.monthly, monthlyDone: sum("sluchanie") },
+          pisanie: { monthlyTarget: rozwojTargets.pisanie.monthly, monthlyDone: sum("pisanie") },
+        });
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
