@@ -398,6 +398,7 @@ export default function RozwojPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Targets persisted to Supabase via goalsSync
   const goalsDefaults: GoalsSyncState = {
@@ -434,9 +435,16 @@ export default function RozwojPage() {
     try {
       const res = await fetch("/api/rozwoj?days=365");
       const data = await res.json();
-      if (data.entries) setEntries(data.entries);
-    } catch {
-      // offline — keep empty
+      if (data.error) {
+        setError(`Blad ladowania: ${data.error}`);
+        return;
+      }
+      if (data.entries) {
+        setEntries(data.entries);
+        setError(null);
+      }
+    } catch (err) {
+      setError(`Brak polaczenia z baza: ${err instanceof Error ? err.message : "nieznany blad"}`);
     }
     setLoading(false);
   }, []);
@@ -445,36 +453,63 @@ export default function RozwojPage() {
 
   const addEntry = async (area: AreaKey, date: string, amount: number) => {
     setSaving(true);
+    setError(null);
     try {
-      await fetch("/api/rozwoj", {
+      const res = await fetch("/api/rozwoj", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ area, date, amount }),
       });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(`Nie udalo sie zapisac: ${data.error || res.statusText}`);
+        setSaving(false);
+        return;
+      }
       await fetchEntries();
-    } catch { /* ignore */ }
+    } catch (err) {
+      setError(`Blad zapisu: ${err instanceof Error ? err.message : "nieznany blad"}`);
+    }
     setSaving(false);
   };
 
   const editEntry = async (area: AreaKey, date: string, amount: number) => {
     setSaving(true);
+    setError(null);
     try {
-      await fetch("/api/rozwoj", {
+      const res = await fetch("/api/rozwoj", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ area, date, amount }),
       });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(`Nie udalo sie edytowac: ${data.error || res.statusText}`);
+        setSaving(false);
+        return;
+      }
       await fetchEntries();
-    } catch { /* ignore */ }
+    } catch (err) {
+      setError(`Blad edycji: ${err instanceof Error ? err.message : "nieznany blad"}`);
+    }
     setSaving(false);
   };
 
   const deleteEntry = async (id: string) => {
     setSaving(true);
+    setError(null);
     try {
-      await fetch(`/api/rozwoj?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/rozwoj?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(`Nie udalo sie usunac: ${data.error || res.statusText}`);
+        setSaving(false);
+        return;
+      }
       await fetchEntries();
-    } catch { /* ignore */ }
+    } catch (err) {
+      setError(`Blad usuwania: ${err instanceof Error ? err.message : "nieznany blad"}`);
+    }
     setSaving(false);
   };
 
@@ -519,6 +554,13 @@ export default function RozwojPage() {
             MARZEC 2026
           </h1>
         </div>
+
+        {/* Error banner */}
+        {error && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         {/* Summary */}
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
