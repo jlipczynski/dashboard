@@ -1,60 +1,64 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-/**
- * Ensure the rozwoj_entries table exists.
- * Uses Supabase RPC if available, otherwise tries a simple query first.
- */
+const MIGRATION_SQL = `
+CREATE TABLE IF NOT EXISTS rozwoj_entries (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  area TEXT NOT NULL CHECK (area IN ('czytanie', 'sluchanie', 'pisanie')),
+  date DATE NOT NULL,
+  amount INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(area, date)
+);
+ALTER TABLE rozwoj_entries ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on rozwoj_entries" ON rozwoj_entries
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_rozwoj_entries_area_date ON rozwoj_entries (area, date DESC);
+`;
+
+let tableReady = false;
+
 async function ensureTable() {
-  if (!supabase) return;
-  // Try a simple query — if it fails with "relation does not exist", create the table
+  if (tableReady || !supabase) return;
+
+  // Quick check — if table exists, mark ready
   const { error } = await supabase.from("rozwoj_entries").select("id").limit(1);
-  if (error && error.message.includes("does not exist")) {
-    // Table doesn't exist — create it via raw SQL RPC
-    try {
-      await supabase.rpc("run_sql", {
-        sql: `
-          CREATE TABLE IF NOT EXISTS rozwoj_entries (
-            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            area TEXT NOT NULL CHECK (area IN ('czytanie', 'sluchanie', 'pisanie')),
-            date DATE NOT NULL,
-            amount INT NOT NULL DEFAULT 0,
-            created_at TIMESTAMPTZ DEFAULT now(),
-            updated_at TIMESTAMPTZ DEFAULT now(),
-            UNIQUE(area, date)
-          );
-          ALTER TABLE rozwoj_entries ENABLE ROW LEVEL SECURITY;
-          DO $$ BEGIN
-            CREATE POLICY "Allow all on rozwoj_entries" ON rozwoj_entries
-              FOR ALL USING (true) WITH CHECK (true);
-          EXCEPTION WHEN duplicate_object THEN NULL;
-          END $$;
-          CREATE INDEX IF NOT EXISTS idx_rozwoj_entries_area_date ON rozwoj_entries (area, date DESC);
-        `,
-      });
-    } catch { /* run_sql RPC may not exist — table needs to be created via /api/migrate */ }
+  if (!error) {
+    tableReady = true;
+    return;
   }
-}
 
-let tableChecked = false;
+  if (!error.message.includes("does not exist")) {
+    tableReady = true; // some other error, table likely exists
+    return;
+  }
 
-async function checkTable() {
-  if (tableChecked) return;
-  await ensureTable();
-  tableChecked = true;
+  // Table doesn't exist — try to create via run_migration RPC (exists on this Supabase instance)
+  try {
+    await supabase.rpc("run_migration", {
+      p_name: "006_rozwoj_entries.sql",
+      p_sql: MIGRATION_SQL,
+    });
+    tableReady = true;
+  } catch {
+    // RPC not available
+  }
 }
 
 // GET /api/rozwoj?area=czytanie&days=90
-// Returns entries for a given area, last N days (default 90)
 export async function GET(request: Request) {
   if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+    return NextResponse.json({ entries: [] });
   }
 
-  await checkTable();
+  await ensureTable();
 
   const { searchParams } = new URL(request.url);
-  const area = searchParams.get("area"); // optional filter
+  const area = searchParams.get("area");
   const days = parseInt(searchParams.get("days") || "90");
 
   const since = new Date();
@@ -74,6 +78,13 @@ export async function GET(request: Request) {
   const { data, error } = await query;
 
   if (error) {
+    // If table still doesn't exist, return empty instead of crashing
+    if (error.message.includes("does not exist")) {
+      return NextResponse.json({
+        entries: [],
+        warning: "Tabela rozwoj_entries nie istnieje. Wejdz na /api/migrate zeby ja utworzyc.",
+      });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
@@ -81,13 +92,12 @@ export async function GET(request: Request) {
 }
 
 // POST /api/rozwoj
-// Upsert a daily entry: { area, date, amount }
 export async function POST(request: Request) {
   if (!supabase) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
-  await checkTable();
+  await ensureTable();
 
   const body = await request.json();
   const { area, date, amount } = body;
@@ -104,6 +114,11 @@ export async function POST(request: Request) {
     );
 
   if (error) {
+    if (error.message.includes("does not exist")) {
+      return NextResponse.json({
+        error: "Tabela nie istnieje. Wejdz na /api/migrate zeby ja utworzyc.",
+      }, { status: 500 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
@@ -116,7 +131,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
-  await checkTable();
+  await ensureTable();
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

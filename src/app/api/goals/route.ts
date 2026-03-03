@@ -3,59 +3,73 @@ import { supabase } from "@/lib/supabase";
 
 const ROW_ID = "default";
 
-/**
- * Ensure fitness_goals table exists and has all columns.
- */
+const MIGRATION_005_SQL = `
+CREATE TABLE IF NOT EXISTS fitness_goals (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  goals JSONB NOT NULL DEFAULT '{}',
+  gym_days JSONB NOT NULL DEFAULT '[false,false,false,false,false,false,false]',
+  gym_weekly_goal NUMERIC DEFAULT 0,
+  gym_monthly_goal NUMERIC DEFAULT 0,
+  gym_monthly_done NUMERIC DEFAULT 0,
+  run_weekly_goal NUMERIC DEFAULT 0,
+  run_monthly_goal NUMERIC DEFAULT 0,
+  bike_weekly_goal NUMERIC DEFAULT 0,
+  bike_monthly_goal NUMERIC DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE fitness_goals ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on fitness_goals" ON fitness_goals
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+`;
+
+const MIGRATION_007_SQL = `
+ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS rozwoj_targets JSONB NOT NULL DEFAULT '{"czytanie":{"monthly":300,"weekly":75},"sluchanie":{"monthly":600,"weekly":150},"pisanie":{"monthly":30,"weekly":8}}';
+ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS run_entries JSONB NOT NULL DEFAULT '[0,0,0,0,0,0,0]';
+ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS bike_entries JSONB NOT NULL DEFAULT '[0,0,0,0,0,0,0]';
+`;
+
+let tableReady = false;
+
 async function ensureTable() {
-  if (!supabase) return;
+  if (tableReady || !supabase) return;
+
   const { error } = await supabase.from("fitness_goals").select("id").limit(1);
-  if (error && error.message.includes("does not exist")) {
-    try {
-      await supabase.rpc("run_sql", {
-        sql: `
-          CREATE TABLE IF NOT EXISTS fitness_goals (
-            id TEXT PRIMARY KEY DEFAULT 'default',
-            goals JSONB NOT NULL DEFAULT '{}',
-            gym_days JSONB NOT NULL DEFAULT '[false,false,false,false,false,false,false]',
-            gym_weekly_goal INT NOT NULL DEFAULT 0,
-            gym_monthly_goal INT NOT NULL DEFAULT 0,
-            gym_monthly_done INT NOT NULL DEFAULT 0,
-            run_weekly_goal NUMERIC NOT NULL DEFAULT 0,
-            run_monthly_goal NUMERIC NOT NULL DEFAULT 0,
-            bike_weekly_goal NUMERIC NOT NULL DEFAULT 0,
-            bike_monthly_goal NUMERIC NOT NULL DEFAULT 0,
-            rozwoj_targets JSONB NOT NULL DEFAULT '{"czytanie":{"monthly":300,"weekly":75},"sluchanie":{"monthly":600,"weekly":150},"pisanie":{"monthly":30,"weekly":8}}',
-            run_entries JSONB NOT NULL DEFAULT '[0,0,0,0,0,0,0]',
-            bike_entries JSONB NOT NULL DEFAULT '[0,0,0,0,0,0,0]',
-            created_at TIMESTAMPTZ DEFAULT now(),
-            updated_at TIMESTAMPTZ DEFAULT now()
-          );
-          ALTER TABLE fitness_goals ENABLE ROW LEVEL SECURITY;
-          DO $$ BEGIN
-            CREATE POLICY "Allow all on fitness_goals" ON fitness_goals
-              FOR ALL USING (true) WITH CHECK (true);
-          EXCEPTION WHEN duplicate_object THEN NULL;
-          END $$;
-        `,
-      });
-    } catch { /* run_sql RPC may not exist */ }
+  if (!error) {
+    tableReady = true;
+    return;
   }
-}
 
-let tableChecked = false;
+  if (!error.message.includes("does not exist")) {
+    tableReady = true;
+    return;
+  }
 
-async function checkTable() {
-  if (tableChecked) return;
-  await ensureTable();
-  tableChecked = true;
+  // Table doesn't exist — try creating via run_migration RPC
+  try {
+    await supabase.rpc("run_migration", {
+      p_name: "005_fitness_goals.sql",
+      p_sql: MIGRATION_005_SQL,
+    });
+    // Also run 007 to add extra columns
+    await supabase.rpc("run_migration", {
+      p_name: "007_fitness_goals_extras.sql",
+      p_sql: MIGRATION_007_SQL,
+    });
+    tableReady = true;
+  } catch {
+    // RPC not available
+  }
 }
 
 export async function GET() {
   if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+    return NextResponse.json({ data: null });
   }
 
-  await checkTable();
+  await ensureTable();
 
   const { data, error } = await supabase
     .from("fitness_goals")
@@ -64,10 +78,13 @@ export async function GET() {
     .single();
 
   if (error && error.code === "PGRST116") {
-    // No row yet — return empty defaults
     return NextResponse.json({ data: null });
   }
   if (error) {
+    // If table doesn't exist, return null gracefully
+    if (error.message.includes("does not exist")) {
+      return NextResponse.json({ data: null });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
@@ -79,7 +96,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
-  await checkTable();
+  await ensureTable();
 
   const body = await request.json();
 
@@ -105,6 +122,11 @@ export async function POST(request: Request) {
     .upsert(row, { onConflict: "id" });
 
   if (error) {
+    if (error.message.includes("does not exist")) {
+      return NextResponse.json({
+        error: "Tabela nie istnieje. Wejdz na /api/migrate zeby ja utworzyc.",
+      }, { status: 500 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
