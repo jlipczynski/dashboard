@@ -194,6 +194,12 @@ export type GoalsShape = {
   competition: { name: string; date: string; type: "running" | "cycling"; distance: number };
 };
 
+export type RozwojTargets = {
+  czytanie: { monthly: number; weekly: number };
+  sluchanie: { monthly: number; weekly: number };
+  pisanie: { monthly: number; weekly: number };
+};
+
 export type GoalsSyncState = {
   goals: GoalsShape;
   gymDays: boolean[];
@@ -204,6 +210,9 @@ export type GoalsSyncState = {
   runMonthlyGoal: number;
   bikeWeeklyGoal: number;
   bikeMonthlyGoal: number;
+  rozwojTargets: RozwojTargets;
+  runEntries: number[];
+  bikeEntries: number[];
 };
 
 const GOALS_CACHE_KEY = "dashboard_goals_v2";
@@ -258,6 +267,9 @@ export function useGoalsSync(defaults: GoalsSyncState) {
             runMonthlyGoal: json.data.run_monthly_goal ?? defaults.runMonthlyGoal,
             bikeWeeklyGoal: json.data.bike_weekly_goal ?? defaults.bikeWeeklyGoal,
             bikeMonthlyGoal: json.data.bike_monthly_goal ?? defaults.bikeMonthlyGoal,
+            rozwojTargets: mergeWithDefaults(json.data.rozwoj_targets, defaults.rozwojTargets) as RozwojTargets,
+            runEntries: json.data.run_entries ?? defaults.runEntries,
+            bikeEntries: json.data.bike_entries ?? defaults.bikeEntries,
           };
           setStateRaw(fromDb);
           saveGoalsCache(fromDb);
@@ -288,6 +300,9 @@ export function useGoalsSync(defaults: GoalsSyncState) {
         run_monthly_goal: next.runMonthlyGoal,
         bike_weekly_goal: next.bikeWeeklyGoal,
         bike_monthly_goal: next.bikeMonthlyGoal,
+        rozwoj_targets: next.rozwojTargets,
+        run_entries: next.runEntries,
+        bike_entries: next.bikeEntries,
       }),
     })
       .catch(() => {})

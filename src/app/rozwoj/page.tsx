@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
-import { useLocalStorage } from "@/lib/storage";
+import { useGoalsSync, type GoalsSyncState } from "@/lib/storage";
+import { monthlyGoals, sportAreas } from "@/lib/data";
 
 /* ── Types ──────────────────────────────────────── */
 type Entry = {
@@ -397,7 +398,36 @@ export default function RozwojPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [targets, setTargets] = useLocalStorage<Targets>("dashboard_rozwoj_targets", DEFAULT_TARGETS);
+
+  // Targets persisted to Supabase via goalsSync
+  const goalsDefaults: GoalsSyncState = {
+    goals: {
+      activeCalories: { ...monthlyGoals.activeCalories },
+      cycling: { ...monthlyGoals.cycling },
+      cyclingHours: { ...monthlyGoals.cyclingHours },
+      running: { ...monthlyGoals.running },
+      competition: { ...monthlyGoals.competition },
+    },
+    gymDays: sportAreas[0].weekDays,
+    gymWeeklyGoal: sportAreas[0].weeklyGoal,
+    gymMonthlyGoal: sportAreas[0].monthlyGoal,
+    gymMonthlyDone: sportAreas[0].current,
+    runWeeklyGoal: sportAreas[1].weeklyGoal,
+    runMonthlyGoal: sportAreas[1].monthlyGoal,
+    bikeWeeklyGoal: sportAreas[2].weeklyGoal,
+    bikeMonthlyGoal: sportAreas[2].monthlyGoal,
+    rozwojTargets: DEFAULT_TARGETS,
+    runEntries: [0, 0, 0, 0, 0, 0, 0],
+    bikeEntries: [0, 0, 0, 0, 0, 0, 0],
+  };
+  const { state: gs, setState: setGs } = useGoalsSync(goalsDefaults);
+  const targets = gs.rozwojTargets;
+  const setTargets = (updater: Targets | ((prev: Targets) => Targets)) => {
+    setGs((prev) => ({
+      ...prev,
+      rozwojTargets: typeof updater === "function" ? updater(prev.rozwojTargets) : updater,
+    }));
+  };
 
   // Fetch entries from Supabase
   const fetchEntries = useCallback(async () => {

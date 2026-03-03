@@ -4,7 +4,7 @@ import Link from "next/link";
 import { pillars, monthlyGoals, sportAreas } from "@/lib/data";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { PillarCard } from "@/components/dashboard/pillar-card";
-import { useLocalStorage, useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
+import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { calcAllScores, type RozwojData } from "@/lib/scores";
 import { useEffect, useState } from "react";
 
@@ -26,16 +26,19 @@ export default function Home() {
     runMonthlyGoal: sportAreas[1].monthlyGoal,
     bikeWeeklyGoal: sportAreas[2].weeklyGoal,
     bikeMonthlyGoal: sportAreas[2].monthlyGoal,
+    rozwojTargets: {
+      czytanie: { monthly: 300, weekly: 75 },
+      sluchanie: { monthly: 600, weekly: 150 },
+      pisanie: { monthly: 30, weekly: 8 },
+    },
+    runEntries: [0, 0, 0, 0, 0, 0, 0],
+    bikeEntries: [0, 0, 0, 0, 0, 0, 0],
   };
   const { state: gs } = useGoalsSync(goalsDefaults);
   const goals = gs.goals;
   const gymMonthlyDone = gs.gymMonthlyDone;
   const gymMonthlyGoal = gs.gymMonthlyGoal;
-  const [rozwojTargets] = useLocalStorage("dashboard_rozwoj_targets", {
-    czytanie: { monthly: 300 },
-    sluchanie: { monthly: 600 },
-    pisanie: { monthly: 30 },
-  });
+  const rozwojTargets = gs.rozwojTargets;
   const [rozwojData, setRozwojData] = useState<RozwojData | null>(null);
   // Garmin cached data
   const garmin = useGarminSync();
@@ -65,8 +68,7 @@ export default function Home() {
         });
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [rozwojTargets]);
 
   // Calculate dynamic pillar scores
   const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal, rozwojData);

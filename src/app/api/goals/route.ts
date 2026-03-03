@@ -43,6 +43,9 @@ export async function POST(request: Request) {
     run_monthly_goal: body.run_monthly_goal ?? 0,
     bike_weekly_goal: body.bike_weekly_goal ?? 0,
     bike_monthly_goal: body.bike_monthly_goal ?? 0,
+    rozwoj_targets: body.rozwoj_targets ?? {},
+    run_entries: body.run_entries ?? [0, 0, 0, 0, 0, 0, 0],
+    bike_entries: body.bike_entries ?? [0, 0, 0, 0, 0, 0, 0],
     updated_at: new Date().toISOString(),
   };
 
