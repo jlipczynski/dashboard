@@ -2,13 +2,31 @@ import pg from "pg";
 
 const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
 
-export async function runSQL(sql: string): Promise<void> {
+function getClientConfig(): pg.ClientConfig {
   if (!dbUrl) throw new Error("No DATABASE_URL configured");
 
-  const client = new pg.Client({
-    connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
-  });
+  // Parse URL manually to handle special chars in password (like !)
+  try {
+    const u = new URL(dbUrl);
+    return {
+      host: u.hostname,
+      port: parseInt(u.port || "5432", 10),
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      database: u.pathname.replace("/", ""),
+      ssl: { rejectUnauthorized: false },
+    };
+  } catch {
+    // Fallback to connection string if URL parsing fails
+    return {
+      connectionString: dbUrl,
+      ssl: { rejectUnauthorized: false },
+    };
+  }
+}
+
+export async function runSQL(sql: string): Promise<void> {
+  const client = new pg.Client(getClientConfig());
 
   await client.connect();
   try {
@@ -19,12 +37,7 @@ export async function runSQL(sql: string): Promise<void> {
 }
 
 export async function runMigrationSQL(name: string, sql: string): Promise<"ran" | "skipped"> {
-  if (!dbUrl) throw new Error("No DATABASE_URL configured");
-
-  const client = new pg.Client({
-    connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
-  });
+  const client = new pg.Client(getClientConfig());
 
   await client.connect();
   try {
