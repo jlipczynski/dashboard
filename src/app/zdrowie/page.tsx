@@ -417,7 +417,6 @@ function GymTracker({
   weeklyGoal,
   monthlyGoal,
   monthlyDone,
-  onWeeklyGoalChange,
   onMonthlyGoalChange,
   onMonthlyDoneChange,
 }: {
@@ -426,7 +425,6 @@ function GymTracker({
   weeklyGoal: number;
   monthlyGoal: number;
   monthlyDone: number;
-  onWeeklyGoalChange: (v: number) => void;
   onMonthlyGoalChange: (v: number) => void;
   onMonthlyDoneChange: (v: number) => void;
 }) {
@@ -442,7 +440,7 @@ function GymTracker({
             <h4 className="font-semibold text-foreground">Silownia</h4>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>Cel:</span>
-              <EditableNumber value={weeklyGoal} onSave={onWeeklyGoalChange} unit="x/tydz" className="text-xs" />
+              <span>{weeklyGoal} x/tydz</span>
               <span>|</span>
               <EditableNumber value={monthlyGoal} onSave={onMonthlyGoalChange} unit="x/mies" className="text-xs" />
             </div>
@@ -484,12 +482,13 @@ function GymTracker({
   );
 }
 
-/* ── Competition card (editable) ────────────────────────────── */
+/* ── Competition card (editable, with countdown + training progress) ── */
 function CompetitionCard({
   name,
   date,
   type,
   distance,
+  currentMonthlyKm,
   onNameChange,
   onDateChange,
   onTypeChange,
@@ -499,6 +498,7 @@ function CompetitionCard({
   date: string;
   type: "running" | "cycling";
   distance: number;
+  currentMonthlyKm: number;
   onNameChange: (v: string) => void;
   onDateChange: (v: string) => void;
   onTypeChange: (v: "running" | "cycling") => void;
@@ -510,110 +510,143 @@ function CompetitionCard({
   const today = new Date();
   const compDate = new Date(date);
   const diffDays = date ? Math.ceil((compDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+  const diffWeeks = Math.ceil(diffDays / 7);
   const typeIcon = type === "cycling" ? "🚴" : "🏃";
+  const typeColor = type === "cycling" ? "#3b82f6" : "#22c55e";
 
   const hasData = name || date;
+  const trainingPct = distance > 0 ? Math.min((currentMonthlyKm / distance) * 100, 100) : 0;
+
+  // Urgency color based on days remaining
+  const urgencyColor = diffDays <= 7 ? "text-red-500" : diffDays <= 30 ? "text-amber-500" : "text-emerald-500";
+  const urgencyBg = diffDays <= 7 ? "bg-red-500/10" : diffDays <= 30 ? "bg-amber-500/10" : "bg-emerald-500/10";
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex items-center gap-3">
-        <span className="text-2xl">🏆</span>
-        <h4 className="font-semibold text-foreground">Najblizsze zawody</h4>
-      </div>
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      {/* Gradient accent bar */}
+      <div className="h-1" style={{ background: `linear-gradient(90deg, ${typeColor}, ${typeColor}88)` }} />
 
-      <div className="mt-3 grid gap-3 grid-cols-2 sm:mt-4">
-        {/* Name */}
-        <div>
-          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Nazwa</label>
-          <EditableText
-            value={name || "Wpisz nazwe..."}
-            onSave={onNameChange}
-            className="mt-0.5 block text-sm text-foreground"
-          />
-        </div>
-
-        {/* Date */}
-        <div>
-          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Data</label>
-          <div className="mt-0.5">
-            {editingDate ? (
-              <input
-                autoFocus
-                type="date"
-                value={draftDate}
-                onChange={(e) => setDraftDate(e.target.value)}
-                onBlur={() => {
-                  if (draftDate) onDateChange(draftDate);
-                  setEditingDate(false);
-                }}
-                className="rounded border border-border bg-background px-2 py-0.5 text-sm"
-              />
-            ) : (
-              <button
-                onClick={() => { setDraftDate(date); setEditingDate(true); }}
-                className="group inline-flex items-center gap-1 rounded px-1 py-0.5 text-sm text-foreground hover:bg-muted/60"
-              >
-                {date || "Wybierz date..."}
-                <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">&#9998;</span>
-              </button>
-            )}
+      <div className="p-5">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🏆</span>
+            <div>
+              <h4 className="font-semibold text-foreground">Najblizsze zawody</h4>
+              {hasData && (
+                <div className="flex items-center gap-2 mt-0.5">
+                  <div className="mt-1 flex gap-1">
+                    <button
+                      onClick={() => onTypeChange("running")}
+                      className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all ${
+                        type === "running"
+                          ? "bg-green-500 text-white shadow-sm"
+                          : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      }`}
+                    >
+                      🏃 Bieg
+                    </button>
+                    <button
+                      onClick={() => onTypeChange("cycling")}
+                      className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all ${
+                        type === "cycling"
+                          ? "bg-blue-500 text-white shadow-sm"
+                          : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      }`}
+                    >
+                      🚴 Rower
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Type toggle */}
-        <div>
-          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Typ</label>
-          <div className="mt-1 flex gap-1">
-            <button
-              onClick={() => onTypeChange("running")}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-                type === "running"
-                  ? "bg-green-500 text-white shadow-sm"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              🏃 Bieg
-            </button>
-            <button
-              onClick={() => onTypeChange("cycling")}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-                type === "cycling"
-                  ? "bg-blue-500 text-white shadow-sm"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              🚴 Rower
-            </button>
-          </div>
-        </div>
-
-        {/* Distance */}
-        <div>
-          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Dystans</label>
-          <div className="mt-0.5">
-            <EditableNumber value={distance} onSave={onDistanceChange} unit="km" className="text-sm" />
-          </div>
-        </div>
-      </div>
-
-      {/* Summary bar */}
-      {hasData && (
-        <div className="mt-4 flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-lg">{typeIcon}</span>
-            <span className="font-medium text-foreground">{name}</span>
-            {distance > 0 && (
-              <span className="rounded-full bg-background px-2 py-0.5 text-xs text-muted-foreground">{distance} km</span>
-            )}
-          </div>
-          {diffDays > 0 && (
-            <div className="flex flex-col items-center rounded-lg bg-background px-3 py-1.5">
-              <span className="text-lg font-bold text-foreground">{diffDays}</span>
-              <span className="text-[10px] text-muted-foreground">dni</span>
+          {/* Countdown circle */}
+          {hasData && diffDays > 0 && (
+            <div className={`flex flex-col items-center justify-center rounded-2xl ${urgencyBg} px-4 py-2.5`}>
+              <span className={`text-2xl font-bold ${urgencyColor}`}>{diffDays}</span>
+              <span className="text-[10px] font-medium text-muted-foreground">
+                {diffDays === 1 ? "dzien" : "dni"}
+              </span>
+              {diffWeeks > 1 && (
+                <span className="text-[10px] text-muted-foreground">({diffWeeks} tyg.)</span>
+              )}
             </div>
           )}
         </div>
-      )}
+
+        {/* Event details */}
+        <div className="mt-4 grid gap-3 grid-cols-3">
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Nazwa</label>
+            <EditableText
+              value={name || "Wpisz nazwe..."}
+              onSave={onNameChange}
+              className="mt-0.5 block text-sm font-medium text-foreground"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Data</label>
+            <div className="mt-0.5">
+              {editingDate ? (
+                <input
+                  autoFocus
+                  type="date"
+                  value={draftDate}
+                  onChange={(e) => setDraftDate(e.target.value)}
+                  onBlur={() => {
+                    if (draftDate) onDateChange(draftDate);
+                    setEditingDate(false);
+                  }}
+                  className="rounded border border-border bg-background px-2 py-0.5 text-sm"
+                />
+              ) : (
+                <button
+                  onClick={() => { setDraftDate(date); setEditingDate(true); }}
+                  className="group inline-flex items-center gap-1 rounded px-1 py-0.5 text-sm text-foreground hover:bg-muted/60"
+                >
+                  {date ? new Date(date).toLocaleDateString("pl-PL", { day: "numeric", month: "short", year: "numeric" }) : "Wybierz..."}
+                  <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">&#9998;</span>
+                </button>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Dystans</label>
+            <div className="mt-0.5">
+              <EditableNumber value={distance} onSave={onDistanceChange} unit="km" className="text-sm font-medium" />
+            </div>
+          </div>
+        </div>
+
+        {/* Training progress towards competition distance */}
+        {distance > 0 && (
+          <div className="mt-4 rounded-lg bg-muted/40 p-3">
+            <div className="flex items-center justify-between text-xs mb-2">
+              <span className="font-medium text-muted-foreground">
+                {typeIcon} Trening w tym miesiącu
+              </span>
+              <span className="font-semibold" style={{ color: typeColor }}>
+                {currentMonthlyKm.toFixed(1)} / {distance} km
+              </span>
+            </div>
+            <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${trainingPct}%`,
+                  background: `linear-gradient(90deg, ${typeColor}88, ${typeColor})`,
+                }}
+              />
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>{trainingPct.toFixed(0)}% dystansu zawodów</span>
+              {trainingPct >= 100 && <span className="font-medium text-emerald-500">Gotowy na zawody!</span>}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1129,20 +1162,27 @@ export default function ZdrowiePage() {
   };
   const gymDays = gs.gymDays;
   const setGymDays = (v: boolean[]) => setGs((p) => ({ ...p, gymDays: v }));
-  const gymWeeklyGoal = gs.gymWeeklyGoal;
-  const setGymWeeklyGoal = (v: number) => setGs((p) => ({ ...p, gymWeeklyGoal: v }));
   const gymMonthlyGoal = gs.gymMonthlyGoal;
   const setGymMonthlyGoal = (v: number) => setGs((p) => ({ ...p, gymMonthlyGoal: v }));
   const gymMonthlyDone = gs.gymMonthlyDone;
   const setGymMonthlyDone = (v: number) => setGs((p) => ({ ...p, gymMonthlyDone: v }));
-  const runWeeklyGoal = gs.runWeeklyGoal;
-  const setRunWeeklyGoal = (v: number) => setGs((p) => ({ ...p, runWeeklyGoal: v }));
   const runMonthlyGoal = gs.runMonthlyGoal;
-  const setRunMonthlyGoal = (v: number) => setGs((p) => ({ ...p, runMonthlyGoal: v }));
-  const bikeWeeklyGoal = gs.bikeWeeklyGoal;
-  const setBikeWeeklyGoal = (v: number) => setGs((p) => ({ ...p, bikeWeeklyGoal: v }));
+  const setRunMonthlyGoal = (v: number) => setGs((p) => ({
+    ...p,
+    runMonthlyGoal: v,
+    goals: { ...p.goals, running: { ...p.goals.running, target: v } },
+  }));
   const bikeMonthlyGoal = gs.bikeMonthlyGoal;
-  const setBikeMonthlyGoal = (v: number) => setGs((p) => ({ ...p, bikeMonthlyGoal: v }));
+  const setBikeMonthlyGoal = (v: number) => setGs((p) => ({
+    ...p,
+    bikeMonthlyGoal: v,
+    goals: { ...p.goals, cycling: { ...p.goals.cycling, target: v } },
+  }));
+
+  // Auto-derive weekly goals from monthly (month ≈ 4.33 weeks)
+  const gymWeeklyGoal = Math.round(gymMonthlyGoal / 4.33);
+  const runWeeklyGoal = Math.round(runMonthlyGoal / 4.33 * 10) / 10;
+  const bikeWeeklyGoal = Math.round(bikeMonthlyGoal / 4.33 * 10) / 10;
 
   // Running/cycling weekly entries (Supabase-backed via goalsSync)
   const runEntries = gs.runEntries;
@@ -1395,10 +1435,10 @@ export default function ZdrowiePage() {
             icon="🚴"
             label="Rower (km)"
             current={goals.cycling.current}
-            target={goals.cycling.target}
+            target={bikeMonthlyGoal || goals.cycling.target}
             unit="km"
             color="#3b82f6"
-            onTargetChange={(v) => updateGoal("cycling", "target", v)}
+            onTargetChange={setBikeMonthlyGoal}
           />
           <MonthlyGoalCard
             icon="🕐"
@@ -1413,10 +1453,10 @@ export default function ZdrowiePage() {
             icon="🏃"
             label="Bieganie"
             current={goals.running.current}
-            target={goals.running.target}
+            target={runMonthlyGoal || goals.running.target}
             unit="km"
             color="#22c55e"
-            onTargetChange={(v) => updateGoal("running", "target", v)}
+            onTargetChange={setRunMonthlyGoal}
           />
           <MonthlyGoalCard
             icon="🏋️"
@@ -1429,8 +1469,9 @@ export default function ZdrowiePage() {
           />
         </div>
 
-        {/* ── Weekly goals (auto-calculated) ─────────────────────── */}
+        {/* ── Weekly goals (auto-calculated from monthly / 4.33) ── */}
         <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">📅 Cele Tygodniowe</h3>
+        <p className="mt-1 text-xs text-muted-foreground">Automatycznie z celów miesięcznych (÷ 4.33)</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-3 sm:gap-4">
           {/* Running weekly */}
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -1447,10 +1488,7 @@ export default function ZdrowiePage() {
                 <span className="font-semibold text-foreground">
                   {runWeekTotal.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">km</span>
                 </span>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <span>cel:</span>
-                  <EditableNumber value={runWeeklyGoal} onSave={setRunWeeklyGoal} unit="km" className="text-xs" />
-                </div>
+                <span className="text-xs text-muted-foreground">cel: {runWeeklyGoal} km</span>
               </div>
             </div>
           </div>
@@ -1470,10 +1508,7 @@ export default function ZdrowiePage() {
                 <span className="font-semibold text-foreground">
                   {bikeWeekTotal.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">km</span>
                 </span>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <span>cel:</span>
-                  <EditableNumber value={bikeWeeklyGoal} onSave={setBikeWeeklyGoal} unit="km" className="text-xs" />
-                </div>
+                <span className="text-xs text-muted-foreground">cel: {bikeWeeklyGoal} km</span>
               </div>
             </div>
           </div>
@@ -1493,10 +1528,7 @@ export default function ZdrowiePage() {
                 <span className="font-semibold text-foreground">
                   {gymDays.filter(Boolean).length} <span className="text-xs font-normal text-muted-foreground">treningow</span>
                 </span>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <span>cel:</span>
-                  <EditableNumber value={gymWeeklyGoal} onSave={setGymWeeklyGoal} unit="x" className="text-xs" />
-                </div>
+                <span className="text-xs text-muted-foreground">cel: {gymWeeklyGoal} x</span>
               </div>
             </div>
           </div>
@@ -1509,6 +1541,11 @@ export default function ZdrowiePage() {
             date={goals.competition.date}
             type={goals.competition.type ?? "running"}
             distance={goals.competition.distance ?? 0}
+            currentMonthlyKm={
+              (goals.competition.type ?? "running") === "running"
+                ? goals.running.current
+                : goals.cycling.current
+            }
             onNameChange={(v) =>
               setGoals((prev) => ({ ...prev, competition: { ...prev.competition, name: v } }))
             }
@@ -1537,7 +1574,6 @@ export default function ZdrowiePage() {
             weeklyGoal={gymWeeklyGoal}
             monthlyGoal={gymMonthlyGoal}
             monthlyDone={gymMonthlyDone}
-            onWeeklyGoalChange={setGymWeeklyGoal}
             onMonthlyGoalChange={setGymMonthlyGoal}
             onMonthlyDoneChange={setGymMonthlyDone}
           />
@@ -1551,13 +1587,13 @@ export default function ZdrowiePage() {
                   <h4 className="font-semibold text-foreground">Bieganie</h4>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>Cel:</span>
-                    <EditableNumber value={runWeeklyGoal} onSave={setRunWeeklyGoal} unit="km/tydz" className="text-xs" />
+                    <span>{runWeeklyGoal} km/tydz</span>
                     <span>|</span>
                     <EditableNumber value={runMonthlyGoal} onSave={setRunMonthlyGoal} unit="km/mies" className="text-xs" />
                   </div>
                 </div>
               </div>
-              <ProgressRing value={goals.running.current} max={goals.running.target} color="#22c55e" />
+              <ProgressRing value={goals.running.current} max={runMonthlyGoal || goals.running.target} color="#22c55e" />
             </div>
 
             <div className="mt-4 flex gap-1">
@@ -1603,13 +1639,13 @@ export default function ZdrowiePage() {
                   <h4 className="font-semibold text-foreground">Rower</h4>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>Cel:</span>
-                    <EditableNumber value={bikeWeeklyGoal} onSave={setBikeWeeklyGoal} unit="km/tydz" className="text-xs" />
+                    <span>{bikeWeeklyGoal} km/tydz</span>
                     <span>|</span>
                     <EditableNumber value={bikeMonthlyGoal} onSave={setBikeMonthlyGoal} unit="km/mies" className="text-xs" />
                   </div>
                 </div>
               </div>
-              <ProgressRing value={goals.cycling.current} max={goals.cycling.target} color="#3b82f6" />
+              <ProgressRing value={goals.cycling.current} max={bikeMonthlyGoal || goals.cycling.target} color="#3b82f6" />
             </div>
 
             <div className="mt-4 flex gap-1">
