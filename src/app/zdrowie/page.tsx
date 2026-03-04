@@ -1372,7 +1372,7 @@ export default function ZdrowiePage() {
             onImport={importMfpCsv}
             importing={mfpImporting}
             importResult={mfpResult}
-            totalCaloriesBurned={wellness.totalCalories}
+            totalCaloriesBurned={wellness.activeCalories}
             calorieTarget={calorieTarget}
             onCalorieTargetChange={updateCalorieTarget}
             dailyBurned={dailyBurned}
