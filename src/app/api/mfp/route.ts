@@ -48,18 +48,19 @@ function parseDate(dateStr: string): string | null {
 }
 
 function parseMfpCsv(csv: string): NutritionRow[] {
-  const lines = csv.trim().split("\n");
+  // Strip BOM if present
+  if (csv.charCodeAt(0) === 0xfeff) csv = csv.slice(1);
+  const lines = csv.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
 
   // Parse headers to find column indices dynamically
-  const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
-  if (!headers.includes("calories") || !headers.includes("protein")) return [];
+  const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase().trim());
 
-  // Build column index map
+  // Build column index map — match partial names for flexibility
   const col = (name: string) => headers.findIndex((h) => h.includes(name));
   const dateIdx = col("date");
-  const calIdx = col("calories");
-  const fatIdx = col("fat");
+  const calIdx = col("calorie");
+  const fatIdx = headers.findIndex((h) => h === "fat" || h === "fat (g)" || h.includes("total fat"));
   const satFatIdx = headers.findIndex((h) => h.includes("saturated") && !h.includes("poly") && !h.includes("mono"));
   const cholIdx = col("cholesterol");
   const sodiumIdx = col("sodium");
@@ -151,7 +152,9 @@ export async function POST(req: Request) {
 
     const rows = parseMfpCsv(csv);
     if (rows.length === 0) {
-      return NextResponse.json({ error: "No valid rows found in CSV. Make sure it's a MyFitnessPal Nutrition Summary file." }, { status: 400 });
+      // Show first line for debugging
+      const firstLine = csv.trim().split(/\r?\n/)[0]?.slice(0, 200) || "(empty)";
+      return NextResponse.json({ error: `Nie znaleziono danych. Naglowki: ${firstLine}` }, { status: 400 });
     }
 
     // Upsert rows (update existing dates, insert new)
