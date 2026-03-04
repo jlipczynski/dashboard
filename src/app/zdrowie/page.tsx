@@ -1266,7 +1266,7 @@ export default function ZdrowiePage() {
 
 
   const syncGarmin = useCallback(async () => {
-    const data = await garmin.sync(true);
+    const data = await garmin.sync();
     if (data) {
       // Update monthly goals with Garmin data
       setGoals((prev) => ({
@@ -1278,8 +1278,7 @@ export default function ZdrowiePage() {
       }));
 
       // Update weekly entries
-      setRunEntries(data.summary.week.dailyRunning);
-      setBikeEntries(data.summary.week.dailyCycling);
+      // Weekly entries from Garmin are not yet supported — keep manual entries
 
       // Update gym
       setGymMonthlyDone(data.summary.month.gymSessions);
@@ -1344,7 +1343,7 @@ export default function ZdrowiePage() {
   };
 
   const lastSyncTime = garmin.data
-    ? new Date(garmin.data.syncedAt).toLocaleTimeString("pl-PL")
+    ? new Date(garmin.data.lastSyncISO).toLocaleTimeString("pl-PL")
     : null;
 
   return (

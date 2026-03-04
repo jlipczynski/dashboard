@@ -46,7 +46,7 @@ export default function Home() {
 
   // Try to load cached garmin data on mount (don't force sync)
   useEffect(() => {
-    garmin.sync(false);
+    garmin.sync();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -181,7 +181,7 @@ export default function Home() {
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:gap-4">
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-              Garmin zsynchronizowany: {new Date(garmin.data.syncedAt).toLocaleString("pl-PL")}
+              Garmin zsynchronizowany: {new Date(garmin.data.lastSyncISO).toLocaleString("pl-PL")}
             </span>
             {garmin.data.summary.month.runningKm > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-green-700">

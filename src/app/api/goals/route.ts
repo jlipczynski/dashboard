@@ -128,3 +128,63 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+// PATCH /api/goals — partial update (only changed fields)
+const ALLOWED_COLUMNS = new Set([
+  "goals", "gym_days", "gym_weekly_goal", "gym_monthly_goal",
+  "gym_monthly_done", "run_weekly_goal", "run_monthly_goal",
+  "bike_weekly_goal", "bike_monthly_goal", "rozwoj_targets",
+  "run_entries", "bike_entries",
+]);
+
+export async function PATCH(request: Request) {
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  }
+
+  await ensureTable();
+
+  const body = await request.json();
+
+  // Only allow known columns
+  const updates: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (ALLOWED_COLUMNS.has(key)) {
+      updates[key] = value;
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ ok: true }); // nothing to update
+  }
+
+  updates.updated_at = new Date().toISOString();
+
+  // First ensure the row exists
+  const { data: existing } = await supabase
+    .from("fitness_goals")
+    .select("id")
+    .eq("id", ROW_ID)
+    .single();
+
+  if (!existing) {
+    // Row doesn't exist — create with only the provided fields
+    const { error } = await supabase
+      .from("fitness_goals")
+      .insert({ id: ROW_ID, ...updates });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  } else {
+    // Row exists — update only the changed fields
+    const { error } = await supabase
+      .from("fitness_goals")
+      .update(updates)
+      .eq("id", ROW_ID);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json({ ok: true });
+}
