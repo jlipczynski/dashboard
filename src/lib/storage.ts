@@ -310,13 +310,19 @@ export function useGoalsSync(defaults: GoalsSyncState) {
       .finally(() => setSaving(false));
   }, []);
 
+  // CRITICAL: track whether initial load completed to prevent overwriting DB with defaults
+  const loadedRef = useRef(false);
+  useEffect(() => { loadedRef.current = loaded; }, [loaded]);
+
   const setState = useCallback(
     (updater: GoalsSyncState | ((prev: GoalsSyncState) => GoalsSyncState)) => {
       setStateRaw((prev) => {
         const next = typeof updater === "function" ? updater(prev) : updater;
-        // Debounce: save 500ms after last change
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(() => persistToSupabase(next), 500);
+        // Only save to Supabase AFTER initial load to prevent overwriting real data with defaults
+        if (loadedRef.current) {
+          if (saveTimer.current) clearTimeout(saveTimer.current);
+          saveTimer.current = setTimeout(() => persistToSupabase(next), 500);
+        }
         saveGoalsCache(next);
         return next;
       });

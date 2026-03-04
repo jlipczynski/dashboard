@@ -187,14 +187,35 @@ function CzytanieCard({
   const color = "#8B5CF6";
   const colorLight = "#F5F3FF";
 
-  // Fetch books
+  // Fetch books (with localStorage cache as safety net)
   const fetchBooks = useCallback(async () => {
+    // Load cache first so user sees data immediately
+    try {
+      const cached = localStorage.getItem("dashboard_books_cache");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.books?.length > 0) setBooks(parsed.books);
+      }
+    } catch { /* ignore */ }
+
     try {
       const res = await fetch("/api/books");
       const data = await res.json();
-      if (data.books) setBooks(data.books);
-    } catch {
-      // silent
+      if (data.error) {
+        setBookError(data.error);
+        return;
+      }
+      if (data.books) {
+        setBooks(data.books);
+        setBookError(null);
+        // Update cache only if we got actual data
+        if (data.books.length > 0) {
+          localStorage.setItem("dashboard_books_cache", JSON.stringify({ books: data.books }));
+        }
+      }
+    } catch (err) {
+      setBookError("Nie udalo sie zaladowac ksiazek — sprawdz polaczenie");
+      console.error("Books fetch error:", err);
     } finally {
       setBooksLoading(false);
     }
