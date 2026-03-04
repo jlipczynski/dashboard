@@ -983,6 +983,7 @@ export default function RozwojPage() {
       cyclingHours: { ...monthlyGoals.cyclingHours },
       running: { ...monthlyGoals.running },
       competition: { ...monthlyGoals.competition },
+      competitions: [],
     },
     gymDays: sportAreas[0].weekDays,
     gymWeeklyGoal: sportAreas[0].weeklyGoal,

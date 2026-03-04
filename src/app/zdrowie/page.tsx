@@ -29,7 +29,6 @@ type TodayActivity = {
 
 type WellnessData = {
   activeCalories: number | null;
-  totalCalories: number | null;
   steps: number | null;
   restingHR: number | null;
   sleepHours: number | null;
@@ -493,6 +492,7 @@ function CompetitionCard({
   onDateChange,
   onTypeChange,
   onDistanceChange,
+  onRemove,
 }: {
   name: string;
   date: string;
@@ -503,6 +503,7 @@ function CompetitionCard({
   onDateChange: (v: string) => void;
   onTypeChange: (v: "running" | "cycling") => void;
   onDistanceChange: (v: number) => void;
+  onRemove?: () => void;
 }) {
   const [editingDate, setEditingDate] = useState(false);
   const [draftDate, setDraftDate] = useState(date);
@@ -562,6 +563,16 @@ function CompetitionCard({
             </div>
           </div>
 
+          <div className="flex items-center gap-2">
+          {onRemove && (
+            <button
+              onClick={onRemove}
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-100 hover:text-red-500"
+              title="Usun zawody"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            </button>
+          )}
           {/* Countdown circle */}
           {hasData && diffDays > 0 && (
             <div className={`flex flex-col items-center justify-center rounded-2xl ${urgencyBg} px-4 py-2.5`}>
@@ -574,6 +585,7 @@ function CompetitionCard({
               )}
             </div>
           )}
+          </div>
         </div>
 
         {/* Event details */}
@@ -663,8 +675,7 @@ function WellnessWidget({ data }: { data: WellnessData }) {
   const otherKm = (data.distanceKm ?? 0) - cyclingKm - runningKm;
 
   const items = [
-    { icon: "🔥", label: "Akt. kalorie", value: data.activeCalories, format: (v: number) => `${v} kcal` },
-    { icon: "📊", label: "Kalorie total", value: data.totalCalories, format: (v: number) => `${v} kcal` },
+    { icon: "🔥", label: "Spalone", value: data.activeCalories, format: (v: number) => `${v} kcal` },
     { icon: "👣", label: "Kroki", value: data.steps, format: (v: number) => v.toLocaleString("pl-PL") },
     { icon: "🚴", label: "Rower", value: cyclingKm > 0 ? cyclingKm : null, format: (v: number) => `${v.toFixed(1)} km` },
     { icon: "🏃", label: "Bieg", value: runningKm > 0 ? runningKm : null, format: (v: number) => `${v.toFixed(1)} km` },
@@ -767,7 +778,6 @@ function MfpWidget({
   onImport,
   importing,
   importResult,
-  totalCaloriesBurned,
   calorieTarget,
   onCalorieTargetChange,
   dailyBurned,
@@ -776,7 +786,6 @@ function MfpWidget({
   onImport: (csv: string) => void;
   importing: boolean;
   importResult: string | null;
-  totalCaloriesBurned: number | null;
   calorieTarget: number;
   onCalorieTargetChange: (v: number) => void;
   dailyBurned: Record<string, number>;
@@ -861,8 +870,6 @@ function MfpWidget({
 
   // Today
   const todayEntry = entries.find((e) => e.date === today);
-  const todayDeficit = totalCaloriesBurned !== null && todayEntry
-    ? totalCaloriesBurned - todayEntry.calories : null;
   const avgCal = entries.length > 0
     ? Math.round(entries.reduce((s, e) => s + e.calories, 0) / entries.length) : 0;
 
@@ -1046,36 +1053,21 @@ function MfpWidget({
         )}
       </div>
 
-      {/* ── Today / Details Card ── */}
+      {/* ── Today / Chart Card ── */}
+      {last14.length > 0 && (
       <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <h4 className="flex items-center gap-2 font-semibold text-foreground">🍎 Dzisiejsze kalorie</h4>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-          <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-            <span className="text-xl">🍽️</span>
-            <span className="mt-1 text-lg font-bold text-foreground">{todayEntry ? todayEntry.calories : "—"}</span>
-            <span className="text-[10px] text-muted-foreground">Zjedzone kcal</span>
-          </div>
-          <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-            <span className="text-xl">🔥</span>
-            <span className="mt-1 text-lg font-bold text-foreground">{totalCaloriesBurned !== null ? totalCaloriesBurned : "—"}</span>
-            <span className="text-[10px] text-muted-foreground">Spalone kcal</span>
-          </div>
-          <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-            <span className="text-xl">{todayDeficit !== null && todayDeficit > 0 ? "📉" : "📈"}</span>
-            <span className={`mt-1 text-lg font-bold ${todayDeficit !== null ? (todayDeficit > 0 ? "text-green-600" : "text-red-500") : "text-foreground"}`}>
-              {todayDeficit !== null ? `${todayDeficit > 0 ? "−" : "+"}${Math.abs(todayDeficit)}` : "—"}
-            </span>
-            <span className="text-[10px] text-muted-foreground">Deficyt (Garmin)</span>
-          </div>
-          <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-            <span className="text-xl">📊</span>
-            <span className="mt-1 text-lg font-bold text-foreground">{avgCal || "—"}</span>
-            <span className="text-[10px] text-muted-foreground">Srednia kcal/dzien</span>
+        <div className="flex items-center justify-between">
+          <h4 className="flex items-center gap-2 font-semibold text-foreground">🍎 Kalorie — ostatnie 14 dni</h4>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            {todayEntry && (
+              <span>Dzis: <span className="font-semibold text-foreground">{todayEntry.calories} kcal</span></span>
+            )}
+            <span>Srednia: <span className="font-semibold text-foreground">{avgCal} kcal</span></span>
           </div>
         </div>
 
         {todayEntry && (
-          <div className="mt-3 flex items-center justify-center gap-6 text-xs">
+          <div className="mt-2 flex items-center justify-center gap-6 text-xs">
             <span><span className="font-semibold text-blue-600">{todayEntry.protein_g}g</span> <span className="text-muted-foreground">bialko</span></span>
             <span><span className="font-semibold text-amber-600">{todayEntry.carbs_g}g</span> <span className="text-muted-foreground">wegle</span></span>
             <span><span className="font-semibold text-red-500">{todayEntry.fat_g}g</span> <span className="text-muted-foreground">tluszcz</span></span>
@@ -1112,12 +1104,14 @@ function MfpWidget({
           </svg>
         )}
 
-        {entries.length === 0 && (
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            Brak danych. Wyeksportuj CSV z MyFitnessPal i zaimportuj tutaj.
-          </p>
-        )}
       </div>
+      )}
+
+      {entries.length === 0 && (
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          Brak danych. Wyeksportuj CSV z MyFitnessPal i zaimportuj tutaj.
+        </p>
+      )}
     </div>
   );
 }
@@ -1133,6 +1127,7 @@ export default function ZdrowiePage() {
       cyclingHours: { ...monthlyGoals.cyclingHours },
       running: { ...monthlyGoals.running },
       competition: { ...monthlyGoals.competition },
+      competitions: [],
     },
     gymDays: sportAreas[0].weekDays,
     gymWeeklyGoal: sportAreas[0].weeklyGoal,
@@ -1166,13 +1161,14 @@ export default function ZdrowiePage() {
   const setGymMonthlyGoal = (v: number) => setGs((p) => ({ ...p, gymMonthlyGoal: v }));
   const gymMonthlyDone = gs.gymMonthlyDone;
   const setGymMonthlyDone = (v: number) => setGs((p) => ({ ...p, gymMonthlyDone: v }));
-  const runMonthlyGoal = gs.runMonthlyGoal;
+  // Use column value, falling back to JSONB target for backwards compat
+  const runMonthlyGoal = gs.runMonthlyGoal || gs.goals.running.target;
   const setRunMonthlyGoal = (v: number) => setGs((p) => ({
     ...p,
     runMonthlyGoal: v,
     goals: { ...p.goals, running: { ...p.goals.running, target: v } },
   }));
-  const bikeMonthlyGoal = gs.bikeMonthlyGoal;
+  const bikeMonthlyGoal = gs.bikeMonthlyGoal || gs.goals.cycling.target;
   const setBikeMonthlyGoal = (v: number) => setGs((p) => ({
     ...p,
     bikeMonthlyGoal: v,
@@ -1197,7 +1193,6 @@ export default function ZdrowiePage() {
   // Wellness data
   const [wellness, setWellness] = useState<WellnessData>({
     activeCalories: null,
-    totalCalories: null,
     steps: null,
     restingHR: null,
     sleepHours: null,
@@ -1298,7 +1293,6 @@ export default function ZdrowiePage() {
       if (!wellnessData.error) {
         setWellness({
           activeCalories: wellnessData.today.activeCalories,
-          totalCalories: wellnessData.today.totalCalories,
           steps: wellnessData.today.steps,
           restingHR: wellnessData.today.restingHR,
           sleepHours: wellnessData.today.sleepHours,
@@ -1412,7 +1406,6 @@ export default function ZdrowiePage() {
             onImport={importMfpCsv}
             importing={mfpImporting}
             importResult={mfpResult}
-            totalCaloriesBurned={wellness.activeCalories}
             calorieTarget={calorieTarget}
             onCalorieTargetChange={updateCalorieTarget}
             dailyBurned={dailyBurned}
@@ -1534,35 +1527,82 @@ export default function ZdrowiePage() {
           </div>
         </div>
 
-        {/* ── Competition (editable) ───────────────────────────── */}
-        <div className="mt-4">
-          <CompetitionCard
-            name={goals.competition.name}
-            date={goals.competition.date}
-            type={goals.competition.type ?? "running"}
-            distance={goals.competition.distance ?? 0}
-            currentMonthlyKm={
-              (goals.competition.type ?? "running") === "running"
-                ? goals.running.current
-                : goals.cycling.current
-            }
-            onNameChange={(v) =>
-              setGoals((prev) => ({ ...prev, competition: { ...prev.competition, name: v } }))
-            }
-            onDateChange={(v) =>
-              setGoals((prev) => ({ ...prev, competition: { ...prev.competition, date: v } }))
-            }
-            onTypeChange={(v) =>
-              setGoals((prev) => ({ ...prev, competition: { ...prev.competition, type: v } }))
-            }
-            onDistanceChange={(v) =>
-              setGoals((prev) => ({ ...prev, competition: { ...prev.competition, distance: v } }))
-            }
-          />
+        {/* ── Competitions (multiple, editable) ─────────────────── */}
+        <div className="mt-4 space-y-3">
+          {/* Render all competitions from the array */}
+          {(goals.competitions && goals.competitions.length > 0
+            ? goals.competitions
+            : goals.competition.name || goals.competition.date
+              ? [goals.competition]
+              : []
+          ).map((comp, idx) => (
+            <div key={idx} className="relative">
+              <CompetitionCard
+                name={comp.name}
+                date={comp.date}
+                type={comp.type ?? "running"}
+                distance={comp.distance ?? 0}
+                currentMonthlyKm={
+                  (comp.type ?? "running") === "running"
+                    ? goals.running.current
+                    : goals.cycling.current
+                }
+                onNameChange={(v) => {
+                  setGoals((prev) => {
+                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
+                    list[idx] = { ...list[idx], name: v };
+                    return { ...prev, competitions: list, competition: list[0] || prev.competition };
+                  });
+                }}
+                onDateChange={(v) => {
+                  setGoals((prev) => {
+                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
+                    list[idx] = { ...list[idx], date: v };
+                    return { ...prev, competitions: list, competition: list[0] || prev.competition };
+                  });
+                }}
+                onTypeChange={(v) => {
+                  setGoals((prev) => {
+                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
+                    list[idx] = { ...list[idx], type: v };
+                    return { ...prev, competitions: list, competition: list[0] || prev.competition };
+                  });
+                }}
+                onDistanceChange={(v) => {
+                  setGoals((prev) => {
+                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
+                    list[idx] = { ...list[idx], distance: v };
+                    return { ...prev, competitions: list, competition: list[0] || prev.competition };
+                  });
+                }}
+                onRemove={() => {
+                  setGoals((prev) => {
+                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
+                    list.splice(idx, 1);
+                    return { ...prev, competitions: list, competition: list[0] || { name: "", date: "", type: "running", distance: 0 } };
+                  });
+                }}
+              />
+            </div>
+          ))}
+
+          {/* Add competition button */}
+          <button
+            onClick={() => {
+              setGoals((prev) => {
+                const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
+                list.push({ name: "", date: "", type: "running", distance: 0 });
+                return { ...prev, competitions: list, competition: list[0] || prev.competition };
+              });
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-card/50 px-4 py-4 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+          >
+            + Dodaj zawody
+          </button>
         </div>
 
         {/* ── Gym tracker ──────────────────────────────────────── */}
-        <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🏅 Obszary Sportowe</h3>
+        <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🏅 Moj sport w ujeciu tygodniowym</h3>
         <div className="mt-3 grid gap-3 sm:gap-4">
           <GymTracker
             weekDays={gymDays}

@@ -192,6 +192,7 @@ export type GoalsShape = {
   cyclingHours: { target: number; current: number; unit: string };
   running: { target: number; current: number; unit: string };
   competition: { name: string; date: string; type: "running" | "cycling"; distance: number };
+  competitions: { name: string; date: string; type: "running" | "cycling"; distance: number }[];
 };
 
 export type RozwojTargets = {
