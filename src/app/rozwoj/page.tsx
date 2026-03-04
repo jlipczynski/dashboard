@@ -13,6 +13,16 @@ type Entry = {
   amount: number;
 };
 
+type Book = {
+  id: string;
+  title: string;
+  total_pages: number;
+  current_page: number;
+  status: "reading" | "finished" | "archived";
+  created_at: string;
+  updated_at: string;
+};
+
 type Targets = {
   czytanie: { monthly: number; weekly: number };
   sluchanie: { monthly: number; weekly: number };
@@ -86,13 +96,38 @@ function getMonthStart() {
 function getWeekStart() {
   const d = new Date();
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   return new Date(d.getFullYear(), d.getMonth(), diff).toISOString().split("T")[0];
 }
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T12:00:00");
   return d.toLocaleDateString("pl-PL", { day: "numeric", month: "short", weekday: "short" });
+}
+
+function getDaysInMonth() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+
+function getDayOfMonth() {
+  return new Date().getDate();
+}
+
+const MONTH_NAMES_UPPER = ["STYCZEN", "LUTY", "MARZEC", "KWIECIEN", "MAJ", "CZERWIEC", "LIPIEC", "SIERPIEN", "WRZESIEN", "PAZDZIERNIK", "LISTOPAD", "GRUDZIEN"];
+const MONTH_NAMES_GEN = ["styczniu", "lutym", "marcu", "kwietniu", "maju", "czerwcu", "lipcu", "sierpniu", "wrzesniu", "pazdzierniku", "listopadzie", "grudniu"];
+const MONTH_NAMES_NOM = ["Styczen", "Luty", "Marzec", "Kwiecien", "Maj", "Czerwiec", "Lipiec", "Sierpien", "Wrzesien", "Pazdziernik", "Listopad", "Grudzien"];
+
+function getMonthUpper() {
+  return MONTH_NAMES_UPPER[new Date().getMonth()];
+}
+
+function getMonthGenitive() {
+  return MONTH_NAMES_GEN[new Date().getMonth()];
+}
+
+function getMonthNominative() {
+  return MONTH_NAMES_NOM[new Date().getMonth()];
 }
 
 /* ── Progress Bar ───────────────────────────────── */
@@ -123,7 +158,554 @@ function ProgressBar({
   );
 }
 
-/* ── Area Card ──────────────────────────────────── */
+/* ── Czytanie Card ─────────────────────────────── */
+function CzytanieCard({
+  entries,
+  targets,
+  onTargetChange,
+  onEntriesChanged,
+}: {
+  entries: Entry[];
+  targets: { monthly: number; weekly: number };
+  onTargetChange: (field: "monthly" | "weekly", value: number) => void;
+  onEntriesChanged: () => void;
+}) {
+  const [books, setBooks] = useState<Book[]>([]);
+  const [booksLoading, setBooksLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [readingBookId, setReadingBookId] = useState<string | null>(null);
+  const [pageInput, setPageInput] = useState("");
+  const [readDate, setReadDate] = useState(today());
+  const [showAddBook, setShowAddBook] = useState(false);
+  const [newBookTitle, setNewBookTitle] = useState("");
+  const [newBookPages, setNewBookPages] = useState("");
+  const [showFinished, setShowFinished] = useState(false);
+  const [editingTarget, setEditingTarget] = useState<"monthly" | "weekly" | null>(null);
+  const [targetDraft, setTargetDraft] = useState("");
+  const [bookError, setBookError] = useState<string | null>(null);
+
+  const color = "#8B5CF6";
+  const colorLight = "#F5F3FF";
+
+  // Fetch books
+  const fetchBooks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/books");
+      const data = await res.json();
+      if (data.books) setBooks(data.books);
+    } catch {
+      // silent
+    } finally {
+      setBooksLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchBooks(); }, [fetchBooks]);
+
+  // Calculations
+  const monthStart = getMonthStart();
+  const weekStart = getWeekStart();
+  const daysInMonth = getDaysInMonth();
+  const dayOfMonth = getDayOfMonth();
+
+  const monthlyDone = entries
+    .filter((e) => e.date >= monthStart)
+    .reduce((s, e) => s + e.amount, 0);
+  const weeklyDone = entries
+    .filter((e) => e.date >= weekStart)
+    .reduce((s, e) => s + e.amount, 0);
+  const todayDone = entries
+    .filter((e) => e.date === today())
+    .reduce((s, e) => s + e.amount, 0);
+
+  const monthPct = targets.monthly > 0 ? Math.min(Math.round((monthlyDone / targets.monthly) * 100), 100) : 0;
+  const dailyTarget = targets.monthly > 0 ? Math.ceil(targets.monthly / daysInMonth) : 0;
+  const weeklyTarget = targets.weekly;
+  const expectedByNow = dailyTarget * (dayOfMonth - 1) + dailyTarget; // including today
+  const ahead = monthlyDone - expectedByNow;
+
+  // Quarter milestones for the progress bar
+  const q1 = Math.round(targets.monthly * 0.25);
+  const q2 = Math.round(targets.monthly * 0.5);
+  const q3 = Math.round(targets.monthly * 0.75);
+
+  const activeBooks = books.filter((b) => b.status === "reading");
+  const finishedBooks = books.filter((b) => b.status === "finished");
+
+  // Add book
+  const handleAddBook = async () => {
+    const title = newBookTitle.trim();
+    const pages = parseInt(newBookPages);
+    if (!title || isNaN(pages) || pages <= 0) return;
+
+    setSaving(true);
+    setBookError(null);
+    try {
+      const res = await fetch("/api/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, total_pages: pages }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setBookError(data.error);
+      } else {
+        setNewBookTitle("");
+        setNewBookPages("");
+        setShowAddBook(false);
+        await fetchBooks();
+      }
+    } catch {
+      setBookError("Blad dodawania ksiazki");
+    }
+    setSaving(false);
+  };
+
+  // Log reading
+  const handleLogReading = async (bookId: string) => {
+    const pageNum = parseInt(pageInput);
+    const book = books.find((b) => b.id === bookId);
+    if (!book || isNaN(pageNum) || pageNum < 0) return;
+
+    setSaving(true);
+    setBookError(null);
+    try {
+      const res = await fetch("/api/books/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ book_id: bookId, page_number: pageNum, date: readDate }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setBookError(data.error);
+      } else {
+        setPageInput("");
+        setReadingBookId(null);
+        setReadDate(today());
+        await fetchBooks();
+        onEntriesChanged();
+      }
+    } catch {
+      setBookError("Blad zapisu czytania");
+    }
+    setSaving(false);
+  };
+
+  // Archive/delete book
+  const handleArchiveBook = async (id: string) => {
+    await fetch("/api/books", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: "archived" }),
+    });
+    await fetchBooks();
+  };
+
+  // Current book for reading form
+  const readingBook = books.find((b) => b.id === readingBookId);
+  const pagesReadPreview =
+    readingBook && pageInput
+      ? Math.max(0, parseInt(pageInput) - readingBook.current_page)
+      : 0;
+
+  return (
+    <div className="space-y-4">
+      {/* ── Goal Journey Card ── */}
+      <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6" style={{ borderColor: "#DDD6FE" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl text-xl" style={{ background: colorLight }}>
+              📖
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Czytanie</h3>
+              <p className="text-xs text-muted-foreground">
+                {monthlyDone} / {targets.monthly} stron w {getMonthGenitive()}
+              </p>
+            </div>
+          </div>
+          {todayDone > 0 && (
+            <div className="flex flex-col items-center rounded-lg px-3 py-1" style={{ background: colorLight }}>
+              <span className="text-lg font-bold" style={{ color }}>
+                {todayDone}
+              </span>
+              <span className="text-[10px] text-muted-foreground">dzisiaj</span>
+            </div>
+          )}
+        </div>
+
+        {/* Big Journey Progress */}
+        <div className="mt-5 rounded-xl p-4" style={{ background: "linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)" }}>
+          {/* Percentage + label */}
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-4xl font-black sm:text-5xl" style={{ color }}>
+                {monthPct}%
+              </div>
+              <div className="mt-0.5 text-sm font-medium text-muted-foreground">
+                {monthlyDone} / {targets.monthly} stron
+              </div>
+            </div>
+            <div className="text-right">
+              {ahead >= 0 ? (
+                <div className="rounded-lg bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                  +{ahead} str. z przodu
+                </div>
+              ) : (
+                <div className="rounded-lg bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700">
+                  {ahead} str. do nadrobienia
+                </div>
+              )}
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                plan na dzien {dayOfMonth}: {expectedByNow} str.
+              </div>
+            </div>
+          </div>
+
+          {/* Thick progress bar with milestones */}
+          <div className="relative mt-4">
+            <div className="h-5 overflow-hidden rounded-full" style={{ background: "#DDD6FE" }}>
+              <div
+                className="h-full rounded-full transition-all duration-700 ease-out"
+                style={{
+                  width: `${targets.monthly > 0 ? Math.min((monthlyDone / targets.monthly) * 100, 100) : 0}%`,
+                  background: "linear-gradient(90deg, #8B5CF6 0%, #7C3AED 50%, #6D28D9 100%)",
+                }}
+              />
+            </div>
+            {/* Milestone markers */}
+            {[25, 50, 75].map((pctMark) => (
+              <div
+                key={pctMark}
+                className="absolute top-0 h-5 w-px"
+                style={{ left: `${pctMark}%`, background: "#C4B5FD" }}
+              />
+            ))}
+          </div>
+          {/* Milestone labels */}
+          <div className="mt-1.5 flex justify-between text-[10px] font-medium text-purple-400">
+            <span>0</span>
+            <span>{q1}</span>
+            <span>{q2}</span>
+            <span>{q3}</span>
+            <span>{targets.monthly}</span>
+          </div>
+        </div>
+
+        {/* Goal Breakdown: Month / Week / Day */}
+        <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
+          {/* Monthly */}
+          <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-2.5 sm:p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-purple-400">
+              {getMonthNominative()}
+            </div>
+            <div className="mt-1 text-lg font-bold" style={{ color }}>
+              {monthlyDone}
+              <span className="text-xs font-normal text-muted-foreground"> / </span>
+              {editingTarget === "monthly" ? (
+                <form className="inline" onSubmit={(e) => {
+                  e.preventDefault();
+                  const n = parseInt(targetDraft);
+                  if (!isNaN(n) && n > 0) onTargetChange("monthly", n);
+                  setEditingTarget(null);
+                }}>
+                  <input autoFocus type="number" min={1} value={targetDraft}
+                    onChange={(e) => setTargetDraft(e.target.value)}
+                    onBlur={() => {
+                      const n = parseInt(targetDraft);
+                      if (!isNaN(n) && n > 0) onTargetChange("monthly", n);
+                      setEditingTarget(null);
+                    }}
+                    className="w-14 rounded border border-purple-300 bg-white px-1 py-0 text-lg font-bold text-right"
+                    style={{ color }} />
+                </form>
+              ) : (
+                <button onClick={() => { setTargetDraft(String(targets.monthly)); setEditingTarget("monthly"); }}
+                  className="cursor-pointer hover:underline" style={{ color }}>
+                  {targets.monthly}
+                </button>
+              )}
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">str.</div>
+            <ProgressBar current={monthlyDone} target={targets.monthly} color={color} colorLight={colorLight} height={4} />
+          </div>
+
+          {/* Weekly */}
+          <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-2.5 sm:p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-purple-400">
+              Tydzien
+            </div>
+            <div className="mt-1 text-lg font-bold" style={{ color }}>
+              {weeklyDone}
+              <span className="text-xs font-normal text-muted-foreground"> / </span>
+              {editingTarget === "weekly" ? (
+                <form className="inline" onSubmit={(e) => {
+                  e.preventDefault();
+                  const n = parseInt(targetDraft);
+                  if (!isNaN(n) && n > 0) onTargetChange("weekly", n);
+                  setEditingTarget(null);
+                }}>
+                  <input autoFocus type="number" min={1} value={targetDraft}
+                    onChange={(e) => setTargetDraft(e.target.value)}
+                    onBlur={() => {
+                      const n = parseInt(targetDraft);
+                      if (!isNaN(n) && n > 0) onTargetChange("weekly", n);
+                      setEditingTarget(null);
+                    }}
+                    className="w-14 rounded border border-purple-300 bg-white px-1 py-0 text-lg font-bold text-right"
+                    style={{ color }} />
+                </form>
+              ) : (
+                <button onClick={() => { setTargetDraft(String(weeklyTarget)); setEditingTarget("weekly"); }}
+                  className="cursor-pointer hover:underline" style={{ color }}>
+                  {weeklyTarget}
+                </button>
+              )}
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">str.</div>
+            <ProgressBar current={weeklyDone} target={weeklyTarget} color={color} colorLight={colorLight} height={4} />
+          </div>
+
+          {/* Daily */}
+          <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-2.5 sm:p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-purple-400">
+              Dzisiaj
+            </div>
+            <div className="mt-1 text-lg font-bold" style={{ color }}>
+              {todayDone}
+              <span className="text-xs font-normal text-muted-foreground"> / </span>
+              <span style={{ color }}>{dailyTarget}</span>
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">str.</div>
+            <ProgressBar current={todayDone} target={dailyTarget} color={color} colorLight={colorLight} height={4} />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Books Card ── */}
+      <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6" style={{ borderColor: "#DDD6FE" }}>
+        <div className="flex items-center justify-between">
+          <h4 className="font-bold text-foreground">Moje ksiazki</h4>
+          <button
+            onClick={() => setShowAddBook((v) => !v)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
+            style={{ background: color }}
+          >
+            {showAddBook ? "Anuluj" : "+ Nowa ksiazka"}
+          </button>
+        </div>
+
+        {/* Error */}
+        {bookError && (
+          <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {bookError}
+          </div>
+        )}
+
+        {/* Add book form */}
+        {showAddBook && (
+          <form
+            className="mt-3 flex flex-col gap-2 rounded-xl border border-purple-200 bg-purple-50/50 p-3 sm:flex-row sm:items-end"
+            onSubmit={(e) => { e.preventDefault(); handleAddBook(); }}
+          >
+            <div className="flex-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Tytul
+              </label>
+              <input
+                autoFocus
+                value={newBookTitle}
+                onChange={(e) => setNewBookTitle(e.target.value)}
+                placeholder="Tytul ksiazki"
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+              />
+            </div>
+            <div className="w-full sm:w-28">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Stron
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={newBookPages}
+                onChange={(e) => setNewBookPages(e.target.value)}
+                placeholder="np. 350"
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+              style={{ background: color }}
+            >
+              {saving ? "..." : "Dodaj ksiazke"}
+            </button>
+          </form>
+        )}
+
+        {/* Books list */}
+        {booksLoading ? (
+          <div className="mt-4 text-center text-xs text-muted-foreground">Ladowanie ksiazek...</div>
+        ) : activeBooks.length === 0 && !showAddBook ? (
+          <div className="mt-4 rounded-xl border border-dashed border-purple-200 bg-purple-50/30 p-6 text-center">
+            <div className="text-2xl">📚</div>
+            <p className="mt-2 text-sm text-muted-foreground">Dodaj pierwsza ksiazke, zeby sledzic postepy w czytaniu</p>
+            <button
+              onClick={() => setShowAddBook(true)}
+              className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all active:scale-95"
+              style={{ background: color }}
+            >
+              + Dodaj ksiazke
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {activeBooks.map((book) => {
+              const bookPct = book.total_pages > 0
+                ? Math.round((book.current_page / book.total_pages) * 100)
+                : 0;
+              const isReading = readingBookId === book.id;
+
+              return (
+                <div key={book.id} className="rounded-xl border border-purple-100 bg-white p-3 transition-all">
+                  {/* Book info row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-foreground">{book.title}</div>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          str. {book.current_page} / {book.total_pages}
+                        </span>
+                        <span className="text-xs font-medium" style={{ color }}>
+                          {bookPct}%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {!isReading && (
+                        <button
+                          onClick={() => { setReadingBookId(book.id); setPageInput(""); setReadDate(today()); }}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
+                          style={{ background: color }}
+                        >
+                          Czytaj
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleArchiveBook(book.id)}
+                        className="rounded p-1 text-xs text-muted-foreground transition-colors hover:text-red-500"
+                        title="Archiwizuj"
+                      >
+                        &#10005;
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Book progress bar */}
+                  <div className="mt-2">
+                    <ProgressBar
+                      current={book.current_page}
+                      target={book.total_pages}
+                      color={color}
+                      colorLight={colorLight}
+                      height={6}
+                    />
+                  </div>
+
+                  {/* Reading form (expanded) */}
+                  {isReading && (
+                    <form
+                      className="mt-3 rounded-lg p-3"
+                      style={{ background: colorLight }}
+                      onSubmit={(e) => { e.preventDefault(); handleLogReading(book.id); }}
+                    >
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Na ktorej stronie skonczyles?
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          autoFocus
+                          type="number"
+                          min={0}
+                          max={book.total_pages}
+                          value={pageInput}
+                          onChange={(e) => setPageInput(e.target.value)}
+                          placeholder={`${book.current_page + 1} - ${book.total_pages}`}
+                          className="w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-purple-300"
+                        />
+                        <input
+                          type="date"
+                          value={readDate}
+                          onChange={(e) => setReadDate(e.target.value)}
+                          className="w-[130px] rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={saving || !pageInput}
+                          className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+                          style={{ background: color }}
+                        >
+                          {saving ? "..." : "Zapisz"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReadingBookId(null)}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Anuluj
+                        </button>
+                      </div>
+                      {/* Preview of pages read */}
+                      {pageInput && pagesReadPreview > 0 && (
+                        <div className="mt-2 text-xs font-medium" style={{ color }}>
+                          +{pagesReadPreview} stron przeczytanych
+                        </div>
+                      )}
+                      {pageInput && pagesReadPreview === 0 && parseInt(pageInput) <= readingBook!.current_page && (
+                        <div className="mt-2 text-xs text-orange-600">
+                          Korekta pozycji (strony nie zostana dodane do celu)
+                        </div>
+                      )}
+                    </form>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Finished books */}
+        {finishedBooks.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowFinished((v) => !v)}
+              className="mt-3 w-full rounded-lg border border-border py-2 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
+            >
+              {showFinished ? "Ukryj ukonczone" : `Ukonczone ksiazki (${finishedBooks.length})`}
+            </button>
+            {showFinished && (
+              <div className="mt-2 space-y-1.5">
+                {finishedBooks.map((book) => (
+                  <div key={book.id} className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">✅</span>
+                      <span className="text-sm font-medium text-foreground">{book.title}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{book.total_pages} str.</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Area Card (for Sluchanie & Pisanie) ────────── */
 function AreaCard({
   area,
   entries,
@@ -164,13 +746,11 @@ function AreaCard({
   const monthPct = targets.monthly > 0 ? Math.round((monthlyDone / targets.monthly) * 100) : 0;
   const weekPct = targets.weekly > 0 ? Math.round((weeklyDone / targets.weekly) * 100) : 0;
 
-  // Today's entry
   const todayEntry = entries.find((e) => e.date === today());
 
   const handleSubmit = () => {
     const n = parseInt(amount);
     if (!isNaN(n) && n > 0) {
-      // If entry for this date already exists, add to it
       const existing = entries.find((e) => e.date === date);
       if (existing) {
         onEditEntry(area.key, date, existing.amount + n);
@@ -182,7 +762,6 @@ function AreaCard({
     }
   };
 
-  // Last 30 entries for history
   const historyEntries = [...entries].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
 
   return (
@@ -190,7 +769,6 @@ function AreaCard({
       className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6"
       style={{ borderColor: area.colorBorder }}
     >
-      {/* Header with monthly ring */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div
@@ -202,7 +780,7 @@ function AreaCard({
           <div>
             <h3 className="text-lg font-bold text-foreground">{area.name}</h3>
             <p className="text-xs text-muted-foreground">
-              {monthlyDone} / {targets.monthly} {area.unit} w marcu
+              {monthlyDone} / {targets.monthly} {area.unit} w {getMonthGenitive()}
             </p>
           </div>
         </div>
@@ -214,7 +792,6 @@ function AreaCard({
         )}
       </div>
 
-      {/* Add entry form */}
       <form
         className="mt-4 flex items-center gap-2"
         onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
@@ -249,7 +826,7 @@ function AreaCard({
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Marzec
+            {getMonthNominative()}
           </span>
           <span className="text-sm font-medium" style={{ color: area.color }}>
             {monthPct}%
@@ -339,7 +916,6 @@ function AreaCard({
         {showHistory ? "Ukryj historie" : `Historia wpisow (${entries.length})`}
       </button>
 
-      {/* History list */}
       {showHistory && (
         <div className="mt-2 max-h-64 space-y-1 overflow-y-auto">
           {historyEntries.length === 0 && (
@@ -400,7 +976,6 @@ export default function RozwojPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Targets persisted to Supabase via goalsSync
   const goalsDefaults: GoalsSyncState = {
     goals: {
       activeCalories: { ...monthlyGoals.activeCalories },
@@ -430,7 +1005,6 @@ export default function RozwojPage() {
     }));
   };
 
-  // Fetch entries from Supabase
   const fetchEntries = useCallback(async () => {
     try {
       const res = await fetch("/api/rozwoj?days=365");
@@ -551,7 +1125,7 @@ export default function RozwojPage() {
             Rozwoj Osobisty
           </div>
           <h1 className="mt-2 text-4xl font-black tracking-tight text-foreground sm:text-5xl">
-            MARZEC 2026
+            {getMonthUpper()} {new Date().getFullYear()}
           </h1>
         </div>
 
@@ -591,7 +1165,16 @@ export default function RozwojPage() {
 
         {/* Area Cards */}
         <div className="mt-6 grid gap-4 sm:gap-6">
-          {AREAS.map((a) => (
+          {/* Czytanie — special card with book tracking */}
+          <CzytanieCard
+            entries={entries.filter((e) => e.area === "czytanie")}
+            targets={targets.czytanie}
+            onTargetChange={(field, value) => updateTarget("czytanie", field, value)}
+            onEntriesChanged={fetchEntries}
+          />
+
+          {/* Sluchanie & Pisanie — standard cards */}
+          {AREAS.filter((a) => a.key !== "czytanie").map((a) => (
             <AreaCard
               key={a.key}
               area={a}
