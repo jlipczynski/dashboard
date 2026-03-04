@@ -265,18 +265,22 @@ export async function GET(req: Request) {
     const pooler = process.env.DATABASE_POOLER_URL || "";
     const direct = process.env.DATABASE_URL || "";
     const used = pooler || direct;
-    let parsed = { user: "", host: "", port: "", db: "", passwordLength: 0 };
+    let parsed: Record<string, string | number> = {};
     try {
       const u = new URL(used);
+      const decodedPass = decodeURIComponent(u.password);
       parsed = {
-        user: u.username,
+        user: decodeURIComponent(u.username),
         host: u.hostname,
         port: u.port,
         db: u.pathname.replace("/", ""),
-        passwordLength: u.password.length,
+        passwordRawLength: u.password.length,
+        passwordDecodedLength: decodedPass.length,
+        passwordFirst2: decodedPass.substring(0, 2) + "***",
+        passwordLast2: "***" + decodedPass.substring(decodedPass.length - 2),
       };
     } catch {
-      // ignore parse error
+      parsed = { error: "URL parse failed" };
     }
     return NextResponse.json({
       hasPoolerUrl: !!process.env.DATABASE_POOLER_URL,
