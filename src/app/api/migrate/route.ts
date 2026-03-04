@@ -257,7 +257,36 @@ export async function POST() {
 }
 
 // GET also runs migrations (convenience)
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+
+  // Debug mode: show which env vars are set (no secrets)
+  if (searchParams.get("debug") === "1") {
+    const pooler = process.env.DATABASE_POOLER_URL || "";
+    const direct = process.env.DATABASE_URL || "";
+    const used = pooler || direct;
+    let parsed = { user: "", host: "", port: "", db: "", passwordLength: 0 };
+    try {
+      const u = new URL(used);
+      parsed = {
+        user: u.username,
+        host: u.hostname,
+        port: u.port,
+        db: u.pathname.replace("/", ""),
+        passwordLength: u.password.length,
+      };
+    } catch {
+      // ignore parse error
+    }
+    return NextResponse.json({
+      hasPoolerUrl: !!process.env.DATABASE_POOLER_URL,
+      hasDirectUrl: !!process.env.DATABASE_URL,
+      usingVar: pooler ? "DATABASE_POOLER_URL" : direct ? "DATABASE_URL" : "NONE",
+      parsed,
+      rawUrlPrefix: used.substring(0, 30) + "...",
+    });
+  }
+
   try {
     const result = await runMigrations();
     return NextResponse.json(result);
