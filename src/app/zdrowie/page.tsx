@@ -872,20 +872,6 @@ function MfpWidget({
     calorieTarget * 1.3
   );
 
-  // Today
-  const todayEntry = entries.find((e) => e.date === today);
-  const avgCal = entries.length > 0
-    ? Math.round(entries.reduce((s, e) => s + e.calories, 0) / entries.length) : 0;
-
-  // 14-day chart
-  const last14 = entries.slice(0, 14).reverse();
-  const w = 420, h = 160;
-  const pad = { top: 20, right: 15, bottom: 28, left: 45 };
-  const chartW = w - pad.left - pad.right;
-  const chartH = h - pad.top - pad.bottom;
-  const maxCal = last14.length > 0 ? Math.max(...last14.map((e) => e.calories), calorieTarget, 1) : 2500;
-  const barW = last14.length > 0 ? chartW / last14.length - 3 : 20;
-
   return (
     <div className="space-y-4">
       {/* ── 7-Day Deficit Card ── */}
@@ -1079,59 +1065,6 @@ function MfpWidget({
         )}
       </div>
 
-      {/* ── Today / Chart Card ── */}
-      {last14.length > 0 && (
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h4 className="flex items-center gap-2 font-semibold text-foreground">🍎 Kalorie — ostatnie 14 dni</h4>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            {todayEntry && (
-              <span>Dzis: <span className="font-semibold text-foreground">{todayEntry.calories} kcal</span></span>
-            )}
-            <span>Srednia: <span className="font-semibold text-foreground">{avgCal} kcal</span></span>
-          </div>
-        </div>
-
-        {todayEntry && (
-          <div className="mt-2 flex items-center justify-center gap-6 text-xs">
-            <span><span className="font-semibold text-blue-600">{todayEntry.protein_g}g</span> <span className="text-muted-foreground">bialko</span></span>
-            <span><span className="font-semibold text-amber-600">{todayEntry.carbs_g}g</span> <span className="text-muted-foreground">wegle</span></span>
-            <span><span className="font-semibold text-red-500">{todayEntry.fat_g}g</span> <span className="text-muted-foreground">tluszcz</span></span>
-          </div>
-        )}
-
-        {last14.length > 0 && (
-          <svg viewBox={`0 0 ${w} ${h}`} className="mt-4 w-full" style={{ maxWidth: w }}>
-            {[0, 0.5, 1].map((frac) => {
-              const y = pad.top + chartH - frac * chartH;
-              return (
-                <g key={frac}>
-                  <line x1={pad.left} y1={y} x2={w - pad.right} y2={y} stroke="#e5e7eb" strokeWidth={0.5} />
-                  <text x={pad.left - 4} y={y + 3} textAnchor="end" className="fill-muted-foreground" fontSize={8}>{Math.round(frac * maxCal)}</text>
-                </g>
-              );
-            })}
-            <line x1={pad.left} y1={pad.top + chartH - (calorieTarget / maxCal) * chartH}
-              x2={w - pad.right} y2={pad.top + chartH - (calorieTarget / maxCal) * chartH}
-              stroke="#f97316" strokeWidth={1} strokeDasharray="4 3" opacity={0.6} />
-            {last14.map((entry, i) => {
-              const bH = (entry.calories / maxCal) * chartH;
-              const x = pad.left + i * (chartW / last14.length) + 1.5;
-              const y = pad.top + chartH - bH;
-              const dayLabel = new Date(entry.date + "T12:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "numeric" });
-              return (
-                <g key={entry.date}>
-                  <rect x={x} y={y} width={barW} height={bH} rx={2}
-                    fill={entry.calories > calorieTarget ? "#ef4444" : "#22c55e"} opacity={0.75} />
-                  <text x={x + barW / 2} y={h - 5} textAnchor="middle" className="fill-muted-foreground" fontSize={7}>{dayLabel}</text>
-                </g>
-              );
-            })}
-          </svg>
-        )}
-
-      </div>
-      )}
 
       {entries.length === 0 && (
         <p className="mt-4 text-center text-sm text-muted-foreground">
