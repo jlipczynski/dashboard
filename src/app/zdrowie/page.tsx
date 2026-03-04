@@ -1080,13 +1080,9 @@ type Competition = { name: string; date: string; type: "running" | "cycling"; di
 
 function CompetitionsTable({
   competitions,
-  runningKm,
-  cyclingKm,
   onChange,
 }: {
   competitions: Competition[];
-  runningKm: number;
-  cyclingKm: number;
   onChange: (list: Competition[]) => void;
 }) {
   const [sortAsc, setSortAsc] = useState(true);
@@ -1171,7 +1167,6 @@ function CompetitionsTable({
                 <th className="px-3 py-2 text-left font-medium">Dni</th>
                 <th className="px-3 py-2 text-left font-medium">Typ</th>
                 <th className="px-3 py-2 text-right font-medium">Dystans</th>
-                <th className="px-3 py-2 text-right font-medium">Trening</th>
                 <th className="px-3 py-2 w-16"></th>
               </tr>
             </thead>
@@ -1179,8 +1174,6 @@ function CompetitionsTable({
               {sorted.map((comp) => {
                 const days = daysUntil(comp.date);
                 const isEditing = editIdx === comp._idx;
-                const km = (comp.type === "cycling" ? cyclingKm : runningKm);
-                const pct = comp.distance > 0 ? Math.min(Math.round((km / comp.distance) * 100), 100) : 0;
                 const isPast = days !== null && days < 0;
 
                 if (isEditing) {
@@ -1223,7 +1216,6 @@ function CompetitionsTable({
                           className="w-20 rounded border border-border bg-background px-2 py-1 text-sm text-right"
                         />
                       </td>
-                      <td className="px-3 py-2"></td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">
                           <button onClick={saveEdit} className="rounded p-1 text-green-600 hover:bg-green-50" title="Zapisz">✓</button>
@@ -1256,22 +1248,6 @@ function CompetitionsTable({
                     </td>
                     <td className="px-3 py-2.5 text-right font-medium tabular-nums">
                       {comp.distance > 0 ? `${comp.distance} km` : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {comp.distance > 0 && !isPast && (
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: pct >= 80 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#ef4444",
-                              }}
-                            />
-                          </div>
-                          <span className="text-xs tabular-nums text-muted-foreground w-8 text-right">{pct}%</span>
-                        </div>
-                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex gap-0.5">
@@ -1713,8 +1689,6 @@ export default function ZdrowiePage() {
                 ? [goals.competition]
                 : []
           }
-          runningKm={goals.running.current}
-          cyclingKm={goals.cycling.current}
           onChange={(list) => {
             setGoals((prev) => ({
               ...prev,
