@@ -50,6 +50,7 @@ function ProgressRing({ score, color, size = 100 }: { score: number; color: stri
 }
 
 export function PillarCard({ pillar }: { pillar: Pillar }) {
+  const subs = pillar.subcategories ?? [];
   return (
     <Link href={pillar.href}>
       <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer sm:p-6">
@@ -83,6 +84,30 @@ export function PillarCard({ pillar }: { pillar: Pillar }) {
             </span>
           </div>
         </div>
+
+        {/* Subcategory breakdowns */}
+        {subs.length > 0 && (
+          <div className="relative mt-3 space-y-1.5">
+            {subs.map((s) => (
+              <div key={s.label} className="flex items-center gap-1.5 text-[11px]">
+                <span className="w-4 text-center text-sm" title={s.status}>{s.emoji}</span>
+                <span className="w-16 truncate text-muted-foreground">{s.label}</span>
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{
+                      width: `${Math.min(s.pct, 100)}%`,
+                      backgroundColor: s.status === "on-track" ? "#22c55e" : s.status === "warning" ? "#f59e0b" : "#ef4444",
+                    }}
+                  />
+                </div>
+                <span className="w-14 text-right text-muted-foreground tabular-nums">
+                  {s.pct}%
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Bottom gradient line */}
         <div

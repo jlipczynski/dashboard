@@ -76,8 +76,8 @@ export default function Home() {
 
   // Apply scores to pillars
   const dynamicPillars = pillars.map((p) => {
-    const s = scores[p.id as keyof typeof scores];
-    if (s) return { ...p, score: s.score, trend: s.trend };
+    const s = scores[p.id];
+    if (s) return { ...p, score: s.score, trend: s.trend, subcategories: s.subcategories };
     return p;
   });
 
