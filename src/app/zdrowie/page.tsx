@@ -754,24 +754,45 @@ function MfpWidget({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    let csv: string;
-    if (file.name.endsWith(".zip")) {
+    if (file.name.toLowerCase().endsWith(".zip")) {
       const buf = new Uint8Array(await file.arrayBuffer());
       const unzipped = unzipSync(buf);
-      const csvFile = Object.keys(unzipped).find(
-        (name) => name.toLowerCase().endsWith(".csv") && name.toLowerCase().includes("nutrition")
-      ) || Object.keys(unzipped).find((name) => name.toLowerCase().endsWith(".csv"));
-      if (!csvFile) {
+      const csvFiles = Object.keys(unzipped)
+        .filter((name) => name.toLowerCase().endsWith(".csv"))
+        .sort((a, b) => {
+          // Prefer files with "nutrition" in the name
+          const aN = a.toLowerCase().includes("nutrition") ? 0 : 1;
+          const bN = b.toLowerCase().includes("nutrition") ? 0 : 1;
+          return aN - bN;
+        });
+
+      if (csvFiles.length === 0) {
         onImport("");
         e.target.value = "";
         return;
       }
-      csv = strFromU8(unzipped[csvFile]);
-    } else {
-      csv = await file.text();
-    }
 
-    onImport(csv);
+      // Try each CSV — first one that imports successfully wins
+      for (const csvFile of csvFiles) {
+        let text = strFromU8(unzipped[csvFile]);
+        // Strip BOM if present
+        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+        const firstLine = text.split("\n")[0]?.toLowerCase() || "";
+        if (firstLine.includes("calorie") || firstLine.includes("protein") || firstLine.includes("fat")) {
+          onImport(text);
+          e.target.value = "";
+          return;
+        }
+      }
+      // Fallback: send first CSV
+      let text = strFromU8(unzipped[csvFiles[0]]);
+      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+      onImport(text);
+    } else {
+      let text = await file.text();
+      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+      onImport(text);
+    }
     e.target.value = "";
   };
 
