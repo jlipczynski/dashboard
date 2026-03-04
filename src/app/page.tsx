@@ -99,14 +99,45 @@ export default function Home() {
         {/* Summary bar */}
         <div className="mt-6 rounded-2xl border border-border bg-card p-4 shadow-sm sm:mt-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl font-bold text-primary">
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-xl font-bold ${
+              overallScore >= 65 ? "bg-green-100 text-green-700" :
+              overallScore >= 40 ? "bg-amber-100 text-amber-700" :
+              overallScore > 0 ? "bg-red-100 text-red-700" :
+              "bg-primary/10 text-primary"
+            }`}>
               {overallScore}
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Ogolny wynik</p>
-              <p className="text-xs text-muted-foreground">srednia z {activePillars.length > 0 ? activePillars.length : dynamicPillars.length} filarow</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-foreground">Ogolny wynik</p>
+                <span className="text-[11px] text-muted-foreground">/ 100</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Postep celów miesięcznych — srednia z {activePillars.length > 0 ? activePillars.length : dynamicPillars.length} aktywnych filarow
+              </p>
             </div>
           </div>
+
+          {/* Score breakdown */}
+          <div className="mt-3 space-y-1.5">
+            {dynamicPillars.filter(p => p.score > 0).map((p) => (
+              <div key={p.id} className="flex items-center gap-2 text-xs">
+                <span className="w-4 text-center">{p.icon}</span>
+                <span className="w-24 truncate text-muted-foreground">{p.name.split(" ")[0]}</span>
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(p.score, 100)}%`,
+                      backgroundColor: p.score >= 65 ? "#22c55e" : p.score >= 40 ? "#f59e0b" : "#ef4444",
+                    }}
+                  />
+                </div>
+                <span className="w-8 text-right font-medium text-foreground">{p.score}%</span>
+              </div>
+            ))}
+          </div>
+
           <div className="mt-3 flex flex-wrap gap-2">
             {onTrack > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
@@ -124,6 +155,25 @@ export default function Home() {
               </span>
             )}
           </div>
+
+          {/* How it works */}
+          <details className="mt-3">
+            <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+              Jak liczone?
+            </summary>
+            <div className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground space-y-1">
+              <p><span className="font-medium text-foreground">Okres:</span> biezacy miesiac (od 1. do dzis)</p>
+              <p><span className="font-medium text-foreground">Skala:</span> 0–100 (100 = wszystkie cele na 100%)</p>
+              <p><span className="font-medium text-foreground">Zdrowie:</span> srednia % realizacji: akt. kalorie, rower km, rower h, bieg km, silownia</p>
+              <p><span className="font-medium text-foreground">Rozwoj:</span> srednia % realizacji: czytanie, sluchanie, pisanie (minuty)</p>
+              <p><span className="font-medium text-foreground">Ogolny:</span> srednia z aktywnych filarow (tylko te z ustawionymi celami)</p>
+              <p className="pt-1 border-t border-border">
+                <span className="text-green-600 font-medium">65+</span> na dobrej drodze ·
+                <span className="text-amber-600 font-medium"> 40–64</span> wymaga uwagi ·
+                <span className="text-red-600 font-medium"> &lt;40</span> ponizej celu
+              </p>
+            </div>
+          </details>
         </div>
 
         {/* Garmin status + quick stats */}
