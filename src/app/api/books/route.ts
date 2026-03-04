@@ -107,15 +107,24 @@ export async function POST(request: Request) {
   await ensureTable();
 
   const body = await request.json();
-  const { title, total_pages } = body;
+  const { title, total_pages, type, cover_url } = body;
 
   if (!title || !total_pages) {
     return NextResponse.json({ error: "Missing title or total_pages" }, { status: 400 });
   }
 
+  const insert: Record<string, unknown> = {
+    title,
+    total_pages: Number(total_pages),
+    current_page: 0,
+    status: "reading",
+  };
+  if (type === "reading" || type === "listening") insert.type = type;
+  if (cover_url) insert.cover_url = cover_url;
+
   const { data, error } = await supabase
     .from("books")
-    .insert({ title, total_pages: Number(total_pages), current_page: 0, status: "reading" })
+    .insert(insert)
     .select()
     .single();
 
@@ -146,6 +155,7 @@ export async function PATCH(request: Request) {
   if (updates.total_pages !== undefined) allowed.total_pages = Number(updates.total_pages);
   if (updates.status !== undefined) allowed.status = updates.status;
   if (updates.current_page !== undefined) allowed.current_page = Number(updates.current_page);
+  if (updates.cover_url !== undefined) allowed.cover_url = updates.cover_url;
   allowed.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase

@@ -180,6 +180,14 @@ CREATE INDEX IF NOT EXISTS idx_book_readings_book_date ON book_readings (book_id
 CREATE INDEX IF NOT EXISTS idx_book_readings_date ON book_readings (date DESC);
 `,
   },
+  {
+    name: "009_books_type_cover.sql",
+    sql: `
+ALTER TABLE books ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'reading' CHECK (type IN ('reading', 'listening'));
+ALTER TABLE books ADD COLUMN IF NOT EXISTS cover_url TEXT;
+CREATE INDEX IF NOT EXISTS idx_books_type ON books (type);
+`,
+  },
 ];
 
 async function runMigrations(): Promise<{

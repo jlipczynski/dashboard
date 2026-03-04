@@ -19,6 +19,8 @@ type Book = {
   total_pages: number;
   current_page: number;
   status: "reading" | "finished" | "archived";
+  type: "reading" | "listening";
+  cover_url: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -128,6 +130,38 @@ function getMonthGenitive() {
 
 function getMonthNominative() {
   return MONTH_NAMES_NOM[new Date().getMonth()];
+}
+
+/* ── Book Cover helper ─────────────────────────── */
+async function fetchCoverUrl(title: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/books/cover?q=${encodeURIComponent(title)}`);
+    const data = await res.json();
+    return data.cover_url || null;
+  } catch {
+    return null;
+  }
+}
+
+function BookCover({ url, title, size = 48 }: { url: string | null; title: string; size?: number }) {
+  if (!url) {
+    return (
+      <div
+        className="flex shrink-0 items-center justify-center rounded-lg bg-muted text-lg"
+        style={{ width: size, height: size * 1.4 }}
+      >
+        📖
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={title}
+      className="shrink-0 rounded-lg object-cover shadow-sm"
+      style={{ width: size, height: size * 1.4 }}
+    />
+  );
 }
 
 /* ── Progress Bar ───────────────────────────────── */
@@ -262,10 +296,11 @@ function CzytanieCard({
     setSaving(true);
     setBookError(null);
     try {
+      const cover_url = await fetchCoverUrl(title);
       const res = await fetch("/api/books", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, total_pages: pages }),
+        body: JSON.stringify({ title, total_pages: pages, type: "reading", cover_url }),
       });
       const data = await res.json();
       if (data.error) {
@@ -593,15 +628,18 @@ function CzytanieCard({
                 <div key={book.id} className="rounded-xl border border-purple-100 bg-white p-3 transition-all">
                   {/* Book info row */}
                   <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold text-foreground">{book.title}</div>
-                      <div className="mt-0.5 flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          str. {book.current_page} / {book.total_pages}
-                        </span>
-                        <span className="text-xs font-medium" style={{ color }}>
-                          {bookPct}%
-                        </span>
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <BookCover url={book.cover_url} title={book.title} size={36} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-foreground">{book.title}</div>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            str. {book.current_page} / {book.total_pages}
+                          </span>
+                          <span className="text-xs font-medium" style={{ color }}>
+                            {bookPct}%
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -711,7 +749,7 @@ function CzytanieCard({
                 {finishedBooks.map((book) => (
                   <div key={book.id} className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm">✅</span>
+                      <BookCover url={book.cover_url} title={book.title} size={24} />
                       <span className="text-sm font-medium text-foreground">{book.title}</span>
                     </div>
                     <span className="text-xs text-muted-foreground">{book.total_pages} str.</span>
@@ -726,7 +764,535 @@ function CzytanieCard({
   );
 }
 
-/* ── Area Card (for Sluchanie & Pisanie) ────────── */
+/* ── Sluchanie Card (audiobooks with minutes) ───── */
+function SluchanieCard({
+  entries,
+  targets,
+  onTargetChange,
+  onEntriesChanged,
+}: {
+  entries: Entry[];
+  targets: { monthly: number; weekly: number };
+  onTargetChange: (field: "monthly" | "weekly", value: number) => void;
+  onEntriesChanged: () => void;
+}) {
+  const [books, setBooks] = useState<Book[]>([]);
+  const [booksLoading, setBooksLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [listeningBookId, setListeningBookId] = useState<string | null>(null);
+  const [minuteInput, setMinuteInput] = useState("");
+  const [listenDate, setListenDate] = useState(today());
+  const [showAddBook, setShowAddBook] = useState(false);
+  const [newBookTitle, setNewBookTitle] = useState("");
+  const [newBookMinutes, setNewBookMinutes] = useState("");
+  const [showFinished, setShowFinished] = useState(false);
+  const [editingTarget, setEditingTarget] = useState<"monthly" | "weekly" | null>(null);
+  const [targetDraft, setTargetDraft] = useState("");
+  const [bookError, setBookError] = useState<string | null>(null);
+
+  const color = "#0EA5E9";
+  const colorLight = "#F0F9FF";
+
+  const fetchBooks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/books");
+      const data = await res.json();
+      if (data.books) {
+        setBooks(data.books.filter((b: Book) => b.type === "listening"));
+        setBookError(null);
+      }
+    } catch (err) {
+      setBookError("Nie udalo sie zaladowac audiobookow");
+      console.error("Audiobooks fetch error:", err);
+    } finally {
+      setBooksLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchBooks(); }, [fetchBooks]);
+
+  const monthStart = getMonthStart();
+  const weekStart = getWeekStart();
+  const daysInMonth = getDaysInMonth();
+  const dayOfMonth = getDayOfMonth();
+
+  const monthlyDone = entries
+    .filter((e) => e.date >= monthStart)
+    .reduce((s, e) => s + e.amount, 0);
+  const weeklyDone = entries
+    .filter((e) => e.date >= weekStart)
+    .reduce((s, e) => s + e.amount, 0);
+  const todayDone = entries
+    .filter((e) => e.date === today())
+    .reduce((s, e) => s + e.amount, 0);
+
+  const monthPct = targets.monthly > 0 ? Math.min(Math.round((monthlyDone / targets.monthly) * 100), 100) : 0;
+  const dailyTarget = targets.monthly > 0 ? Math.ceil(targets.monthly / daysInMonth) : 0;
+  const weeklyTarget = targets.weekly;
+  const expectedByNow = dailyTarget * dayOfMonth;
+  const ahead = monthlyDone - expectedByNow;
+
+  const q1 = Math.round(targets.monthly * 0.25);
+  const q2 = Math.round(targets.monthly * 0.5);
+  const q3 = Math.round(targets.monthly * 0.75);
+
+  const activeBooks = books.filter((b) => b.status === "reading");
+  const finishedBooks = books.filter((b) => b.status === "finished");
+
+  const handleAddBook = async () => {
+    const title = newBookTitle.trim();
+    const minutes = parseInt(newBookMinutes);
+    if (!title || isNaN(minutes) || minutes <= 0) return;
+
+    setSaving(true);
+    setBookError(null);
+    try {
+      const cover_url = await fetchCoverUrl(title);
+      const res = await fetch("/api/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, total_pages: minutes, type: "listening", cover_url }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setBookError(data.error);
+      } else {
+        setNewBookTitle("");
+        setNewBookMinutes("");
+        setShowAddBook(false);
+        await fetchBooks();
+      }
+    } catch {
+      setBookError("Blad dodawania audiobooka");
+    }
+    setSaving(false);
+  };
+
+  const handleLogListening = async (bookId: string) => {
+    const mins = parseInt(minuteInput);
+    const book = books.find((b) => b.id === bookId);
+    if (!book || isNaN(mins) || mins <= 0) return;
+
+    const newPage = book.current_page + mins;
+
+    setSaving(true);
+    setBookError(null);
+    try {
+      const res = await fetch("/api/books/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ book_id: bookId, page_number: newPage, date: listenDate }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setBookError(data.error);
+      } else {
+        setMinuteInput("");
+        setListeningBookId(null);
+        setListenDate(today());
+        await fetchBooks();
+        onEntriesChanged();
+      }
+    } catch {
+      setBookError("Blad zapisu sluchania");
+    }
+    setSaving(false);
+  };
+
+  const handleArchiveBook = async (id: string) => {
+    await fetch("/api/books", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: "archived" }),
+    });
+    await fetchBooks();
+  };
+
+  function formatMinutes(mins: number) {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}min` : `${m}min`;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Goal Journey Card */}
+      <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6" style={{ borderColor: "#BAE6FD" }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl text-xl" style={{ background: colorLight }}>
+              🎧
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Sluchanie</h3>
+              <p className="text-xs text-muted-foreground">
+                {monthlyDone} / {targets.monthly} min w {getMonthGenitive()}
+              </p>
+            </div>
+          </div>
+          {todayDone > 0 && (
+            <div className="flex flex-col items-center rounded-lg px-3 py-1" style={{ background: colorLight }}>
+              <span className="text-lg font-bold" style={{ color }}>
+                {todayDone}
+              </span>
+              <span className="text-[10px] text-muted-foreground">dzisiaj</span>
+            </div>
+          )}
+        </div>
+
+        {/* Big Journey Progress */}
+        <div className="mt-5 rounded-xl p-4" style={{ background: "linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)" }}>
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-4xl font-black sm:text-5xl" style={{ color }}>
+                {monthPct}%
+              </div>
+              <div className="mt-0.5 text-sm font-medium text-muted-foreground">
+                {formatMinutes(monthlyDone)} / {formatMinutes(targets.monthly)}
+              </div>
+            </div>
+            <div className="text-right">
+              {ahead >= 0 ? (
+                <div className="rounded-lg bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                  +{ahead} min z przodu
+                </div>
+              ) : (
+                <div className="rounded-lg bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700">
+                  {ahead} min do nadrobienia
+                </div>
+              )}
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                plan na dzien {dayOfMonth}: {expectedByNow} min
+              </div>
+            </div>
+          </div>
+
+          <div className="relative mt-4">
+            <div className="h-5 overflow-hidden rounded-full" style={{ background: "#BAE6FD" }}>
+              <div
+                className="h-full rounded-full transition-all duration-700 ease-out"
+                style={{
+                  width: `${targets.monthly > 0 ? Math.min((monthlyDone / targets.monthly) * 100, 100) : 0}%`,
+                  background: "linear-gradient(90deg, #0EA5E9 0%, #0284C7 50%, #0369A1 100%)",
+                }}
+              />
+            </div>
+            {[25, 50, 75].map((pctMark) => (
+              <div
+                key={pctMark}
+                className="absolute top-0 h-5 w-px"
+                style={{ left: `${pctMark}%`, background: "#7DD3FC" }}
+              />
+            ))}
+          </div>
+          <div className="mt-1.5 flex justify-between text-[10px] font-medium text-sky-400">
+            <span>0</span>
+            <span>{q1}</span>
+            <span>{q2}</span>
+            <span>{q3}</span>
+            <span>{targets.monthly}</span>
+          </div>
+        </div>
+
+        {/* Goal Breakdown: Month / Week / Day */}
+        <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-2.5 sm:p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-sky-400">
+              {getMonthNominative()}
+            </div>
+            <div className="mt-1 text-lg font-bold" style={{ color }}>
+              {monthlyDone}
+              <span className="text-xs font-normal text-muted-foreground"> / </span>
+              {editingTarget === "monthly" ? (
+                <form className="inline" onSubmit={(e) => {
+                  e.preventDefault();
+                  const n = parseInt(targetDraft);
+                  if (!isNaN(n) && n > 0) onTargetChange("monthly", n);
+                  setEditingTarget(null);
+                }}>
+                  <input autoFocus type="number" min={1} value={targetDraft}
+                    onChange={(e) => setTargetDraft(e.target.value)}
+                    onBlur={() => {
+                      const n = parseInt(targetDraft);
+                      if (!isNaN(n) && n > 0) onTargetChange("monthly", n);
+                      setEditingTarget(null);
+                    }}
+                    className="w-14 rounded border border-sky-300 bg-white px-1 py-0 text-lg font-bold text-right"
+                    style={{ color }} />
+                </form>
+              ) : (
+                <button onClick={() => { setTargetDraft(String(targets.monthly)); setEditingTarget("monthly"); }}
+                  className="cursor-pointer hover:underline" style={{ color }}>
+                  {targets.monthly}
+                </button>
+              )}
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">min</div>
+            <ProgressBar current={monthlyDone} target={targets.monthly} color={color} colorLight={colorLight} height={4} />
+          </div>
+
+          <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-2.5 sm:p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-sky-400">
+              Tydzien
+            </div>
+            <div className="mt-1 text-lg font-bold" style={{ color }}>
+              {weeklyDone}
+              <span className="text-xs font-normal text-muted-foreground"> / </span>
+              {editingTarget === "weekly" ? (
+                <form className="inline" onSubmit={(e) => {
+                  e.preventDefault();
+                  const n = parseInt(targetDraft);
+                  if (!isNaN(n) && n > 0) onTargetChange("weekly", n);
+                  setEditingTarget(null);
+                }}>
+                  <input autoFocus type="number" min={1} value={targetDraft}
+                    onChange={(e) => setTargetDraft(e.target.value)}
+                    onBlur={() => {
+                      const n = parseInt(targetDraft);
+                      if (!isNaN(n) && n > 0) onTargetChange("weekly", n);
+                      setEditingTarget(null);
+                    }}
+                    className="w-14 rounded border border-sky-300 bg-white px-1 py-0 text-lg font-bold text-right"
+                    style={{ color }} />
+                </form>
+              ) : (
+                <button onClick={() => { setTargetDraft(String(weeklyTarget)); setEditingTarget("weekly"); }}
+                  className="cursor-pointer hover:underline" style={{ color }}>
+                  {weeklyTarget}
+                </button>
+              )}
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">min</div>
+            <ProgressBar current={weeklyDone} target={weeklyTarget} color={color} colorLight={colorLight} height={4} />
+          </div>
+
+          <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-2.5 sm:p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-sky-400">
+              Dzisiaj
+            </div>
+            <div className="mt-1 text-lg font-bold" style={{ color }}>
+              {todayDone}
+              <span className="text-xs font-normal text-muted-foreground"> / </span>
+              <span style={{ color }}>{dailyTarget}</span>
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">min</div>
+            <ProgressBar current={todayDone} target={dailyTarget} color={color} colorLight={colorLight} height={4} />
+          </div>
+        </div>
+      </div>
+
+      {/* Audiobooks Card */}
+      <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6" style={{ borderColor: "#BAE6FD" }}>
+        <div className="flex items-center justify-between">
+          <h4 className="font-bold text-foreground">Moje audiobooki</h4>
+          <button
+            onClick={() => setShowAddBook((v) => !v)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
+            style={{ background: color }}
+          >
+            {showAddBook ? "Anuluj" : "+ Nowy audiobook"}
+          </button>
+        </div>
+
+        {bookError && (
+          <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {bookError}
+          </div>
+        )}
+
+        {showAddBook && (
+          <form
+            className="mt-3 flex flex-col gap-2 rounded-xl border border-sky-200 bg-sky-50/50 p-3 sm:flex-row sm:items-end"
+            onSubmit={(e) => { e.preventDefault(); handleAddBook(); }}
+          >
+            <div className="flex-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Tytul
+              </label>
+              <input
+                autoFocus
+                value={newBookTitle}
+                onChange={(e) => setNewBookTitle(e.target.value)}
+                placeholder="Tytul audiobooka"
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+              />
+            </div>
+            <div className="w-full sm:w-28">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Minut
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={newBookMinutes}
+                onChange={(e) => setNewBookMinutes(e.target.value)}
+                placeholder="np. 480"
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+              style={{ background: color }}
+            >
+              {saving ? "..." : "Dodaj audiobook"}
+            </button>
+          </form>
+        )}
+
+        {booksLoading ? (
+          <div className="mt-4 text-center text-xs text-muted-foreground">Ladowanie audiobookow...</div>
+        ) : activeBooks.length === 0 && !showAddBook ? (
+          <div className="mt-4 rounded-xl border border-dashed border-sky-200 bg-sky-50/30 p-6 text-center">
+            <div className="text-2xl">🎧</div>
+            <p className="mt-2 text-sm text-muted-foreground">Dodaj pierwszy audiobook</p>
+            <button
+              onClick={() => setShowAddBook(true)}
+              className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all active:scale-95"
+              style={{ background: color }}
+            >
+              + Dodaj audiobook
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {activeBooks.map((book) => {
+              const bookPct = book.total_pages > 0
+                ? Math.round((book.current_page / book.total_pages) * 100)
+                : 0;
+              const isListening = listeningBookId === book.id;
+
+              return (
+                <div key={book.id} className="rounded-xl border border-sky-100 bg-white p-3 transition-all">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <BookCover url={book.cover_url} title={book.title} size={36} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-foreground">{book.title}</div>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {formatMinutes(book.current_page)} / {formatMinutes(book.total_pages)}
+                          </span>
+                          <span className="text-xs font-medium" style={{ color }}>
+                            {bookPct}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {!isListening && (
+                        <button
+                          onClick={() => { setListeningBookId(book.id); setMinuteInput(""); setListenDate(today()); }}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
+                          style={{ background: color }}
+                        >
+                          Sluchaj
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleArchiveBook(book.id)}
+                        className="rounded p-1 text-xs text-muted-foreground transition-colors hover:text-red-500"
+                        title="Archiwizuj"
+                      >
+                        &#10005;
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-2">
+                    <ProgressBar
+                      current={book.current_page}
+                      target={book.total_pages}
+                      color={color}
+                      colorLight={colorLight}
+                      height={6}
+                    />
+                  </div>
+
+                  {isListening && (
+                    <form
+                      className="mt-3 rounded-lg p-3"
+                      style={{ background: colorLight }}
+                      onSubmit={(e) => { e.preventDefault(); handleLogListening(book.id); }}
+                    >
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Ile minut dzisiaj sluchales?
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          autoFocus
+                          type="number"
+                          min={1}
+                          value={minuteInput}
+                          onChange={(e) => setMinuteInput(e.target.value)}
+                          placeholder="np. 30"
+                          className="w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-sky-300"
+                        />
+                        <input
+                          type="date"
+                          value={listenDate}
+                          onChange={(e) => setListenDate(e.target.value)}
+                          className="w-[130px] rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={saving || !minuteInput}
+                          className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+                          style={{ background: color }}
+                        >
+                          {saving ? "..." : "Zapisz"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setListeningBookId(null)}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Anuluj
+                        </button>
+                      </div>
+                      {minuteInput && parseInt(minuteInput) > 0 && (
+                        <div className="mt-2 text-xs font-medium" style={{ color }}>
+                          +{minuteInput} min sluchania
+                        </div>
+                      )}
+                    </form>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {finishedBooks.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowFinished((v) => !v)}
+              className="mt-3 w-full rounded-lg border border-border py-2 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
+            >
+              {showFinished ? "Ukryj ukonczone" : `Ukonczone audiobooki (${finishedBooks.length})`}
+            </button>
+            {showFinished && (
+              <div className="mt-2 space-y-1.5">
+                {finishedBooks.map((book) => (
+                  <div key={book.id} className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <BookCover url={book.cover_url} title={book.title} size={24} />
+                      <span className="text-sm font-medium text-foreground">{book.title}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{formatMinutes(book.total_pages)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Area Card (for Pisanie) ────────────────────── */
 function AreaCard({
   area,
   entries,
@@ -1195,8 +1761,16 @@ export default function RozwojPage() {
             onEntriesChanged={fetchEntries}
           />
 
-          {/* Sluchanie & Pisanie — standard cards */}
-          {AREAS.filter((a) => a.key !== "czytanie").map((a) => (
+          {/* Sluchanie — audiobook card */}
+          <SluchanieCard
+            entries={entries.filter((e) => e.area === "sluchanie")}
+            targets={targets.sluchanie}
+            onTargetChange={(field, value) => updateTarget("sluchanie", field, value)}
+            onEntriesChanged={fetchEntries}
+          />
+
+          {/* Pisanie — standard card */}
+          {AREAS.filter((a) => a.key === "pisanie").map((a) => (
             <AreaCard
               key={a.key}
               area={a}

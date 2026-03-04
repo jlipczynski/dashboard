@@ -69,12 +69,13 @@ export async function POST(request: Request) {
     })
     .eq("id", book_id);
 
-  // 3. Add pages to rozwoj_entries (czytanie) for this date
-  // Check if entry exists for this date
+  // 3. Add pages/minutes to rozwoj_entries for this date
+  // Use 'sluchanie' area for audiobooks, 'czytanie' for regular books
+  const area = book.type === "listening" ? "sluchanie" : "czytanie";
   const { data: existing } = await supabase
     .from("rozwoj_entries")
     .select("*")
-    .eq("area", "czytanie")
+    .eq("area", area)
     .eq("date", date)
     .single();
 
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
     await supabase
       .from("rozwoj_entries")
       .insert({
-        area: "czytanie",
+        area,
         date,
         amount: pagesRead,
       });
