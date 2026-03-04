@@ -51,14 +51,9 @@ export function calcHealthScore(
     scores.push(Math.min(gymMonthlyDone / gymMonthlyGoal, 1) * 100);
   }
 
-  // If no targets set but there IS activity, show that something is happening
+  // No targets set → can't calculate score
   if (scores.length === 0) {
-    const hasActivity =
-      goals.activeCalories.current > 0 ||
-      goals.cycling.current > 0 ||
-      goals.running.current > 0 ||
-      gymMonthlyDone > 0;
-    return hasActivity ? 10 : 0;
+    return 0;
   }
 
   return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
@@ -103,8 +98,7 @@ export function calcRozwojScore(data: RozwojData | null): number {
   }
 
   if (scores.length === 0) {
-    const hasActivity = areas.some((a) => a.monthlyDone > 0);
-    return hasActivity ? 10 : 0;
+    return 0;
   }
 
   return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);

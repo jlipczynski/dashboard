@@ -58,23 +58,33 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // Sync to localStorage only after hydration (prevents overwriting stored data)
+  // Persist to localStorage on change (after hydration)
   useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // quota exceeded or private mode – ignore
+    if (hydrated) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch {
+        // ignore – localStorage might be full
+      }
     }
   }, [key, value, hydrated]);
 
-  return [value, setValue] as const;
+  return [value, setValue, hydrated] as const;
 }
 
-/**
- * Cached Garmin data stored in localStorage with TTL.
- */
+/* ── Garmin sync ──────────────────────────────────────────────── */
+
 export type CachedGarminData = {
+  activities: {
+    id: number;
+    name: string;
+    type: string;
+    distanceKm: number;
+    durationMin: number;
+    calories: number;
+    date: string;
+    avgHR?: number;
+  }[];
   summary: {
     month: {
       cyclingKm: number;
@@ -88,41 +98,30 @@ export type CachedGarminData = {
       runningKm: number;
       activeCalories: number;
       gymSessions: number;
-      dailyRunning: number[];
-      dailyCycling: number[];
     };
   };
-  activities: {
-    id: number;
-    name: string;
-    type: string;
-    distanceKm: number;
-    durationMin: number;
-    calories: number;
-    date: string;
-    avgHR?: number;
-  }[];
-  syncedAt: string;
+  lastSyncISO: string;
 };
 
 const GARMIN_CACHE_KEY = "dashboard_garmin_cache";
 const GARMIN_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
-export function getCachedGarmin(): CachedGarminData | null {
-  if (typeof window === "undefined") return null;
+function loadGarminCache(): CachedGarminData | null {
   try {
     const raw = localStorage.getItem(GARMIN_CACHE_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw) as CachedGarminData;
-    const age = Date.now() - new Date(data.syncedAt).getTime();
-    if (age > GARMIN_CACHE_TTL) return null; // expired
-    return data;
+    const parsed = JSON.parse(raw);
+    // Check TTL
+    if (Date.now() - new Date(parsed.lastSyncISO).getTime() > GARMIN_CACHE_TTL) {
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 
-export function setCachedGarmin(data: CachedGarminData) {
+function saveGarminCache(data: CachedGarminData) {
   try {
     localStorage.setItem(GARMIN_CACHE_KEY, JSON.stringify(data));
   } catch {
@@ -131,7 +130,7 @@ export function setCachedGarmin(data: CachedGarminData) {
 }
 
 /**
- * useGarminSync – manages Garmin data fetching with local cache.
+ * Hook that manages Garmin data with localStorage caching.
  */
 export function useGarminSync() {
   const [data, setData] = useState<CachedGarminData | null>(null);
@@ -140,19 +139,11 @@ export function useGarminSync() {
 
   // Load from cache on mount
   useEffect(() => {
-    const cached = getCachedGarmin();
+    const cached = loadGarminCache();
     if (cached) setData(cached);
   }, []);
 
-  const sync = useCallback(async (force = false) => {
-    if (!force) {
-      const cached = getCachedGarmin();
-      if (cached) {
-        setData(cached);
-        return cached;
-      }
-    }
-
+  const sync = useCallback(async () => {
     setSyncing(true);
     setError(null);
     try {
@@ -163,15 +154,15 @@ export function useGarminSync() {
         return null;
       }
       const garminData: CachedGarminData = {
-        summary: json.summary,
         activities: json.activities,
-        syncedAt: json.syncedAt,
+        summary: json.summary,
+        lastSyncISO: new Date().toISOString(),
       };
-      setCachedGarmin(garminData);
       setData(garminData);
+      saveGarminCache(garminData);
       return garminData;
-    } catch {
-      setError("Nie udalo sie polaczyc z Garmin");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync failed");
       return null;
     } finally {
       setSyncing(false);
@@ -181,11 +172,8 @@ export function useGarminSync() {
   return { data, syncing, error, sync };
 }
 
-/**
- * useGoalsSync – persists fitness goals to Supabase with localStorage cache.
- * On mount: loads from Supabase (falls back to localStorage).
- * On save: writes to both Supabase and localStorage.
- */
+/* ── Goals sync (Supabase-backed with PATCH semantics) ──────── */
+
 export type GoalsShape = {
   activeCalories: { target: number; current: number; unit: string };
   cycling: { target: number; current: number; unit: string };
@@ -219,7 +207,6 @@ export type GoalsSyncState = {
 const GOALS_CACHE_KEY = "dashboard_goals_v2";
 
 function loadGoalsCache(): GoalsSyncState | null {
-  if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(GOALS_CACHE_KEY);
     if (!raw) return null;
@@ -237,11 +224,48 @@ function saveGoalsCache(state: GoalsSyncState) {
   }
 }
 
+/**
+ * Maps GoalsSyncState keys to their Supabase column names.
+ * Used to build PATCH payloads with only changed fields.
+ */
+const STATE_TO_DB: Record<string, string> = {
+  goals: "goals",
+  gymDays: "gym_days",
+  gymWeeklyGoal: "gym_weekly_goal",
+  gymMonthlyGoal: "gym_monthly_goal",
+  gymMonthlyDone: "gym_monthly_done",
+  runWeeklyGoal: "run_weekly_goal",
+  runMonthlyGoal: "run_monthly_goal",
+  bikeWeeklyGoal: "bike_weekly_goal",
+  bikeMonthlyGoal: "bike_monthly_goal",
+  rozwojTargets: "rozwoj_targets",
+  runEntries: "run_entries",
+  bikeEntries: "bike_entries",
+};
+
+/**
+ * Detect which top-level keys changed between prev and next state.
+ */
+function changedKeys(prev: GoalsSyncState, next: GoalsSyncState): string[] {
+  const keys: string[] = [];
+  for (const k of Object.keys(STATE_TO_DB)) {
+    const p = prev[k as keyof GoalsSyncState];
+    const n = next[k as keyof GoalsSyncState];
+    if (JSON.stringify(p) !== JSON.stringify(n)) {
+      keys.push(k);
+    }
+  }
+  return keys;
+}
+
 export function useGoalsSync(defaults: GoalsSyncState) {
   const [state, setStateRaw] = useState<GoalsSyncState>(defaults);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadedRef = useRef(false);
+  // Snapshot of state after load — used to diff for PATCH
+  const baselineRef = useRef<GoalsSyncState>(defaults);
 
   // Load from Supabase on mount, fallback to localStorage cache
   useEffect(() => {
@@ -250,7 +274,9 @@ export function useGoalsSync(defaults: GoalsSyncState) {
       // First try localStorage cache for instant display
       const cached = loadGoalsCache();
       if (cached && !cancelled) {
-        setStateRaw(mergeWithDefaults(cached, defaults) as GoalsSyncState);
+        const merged = mergeWithDefaults(cached, defaults) as GoalsSyncState;
+        setStateRaw(merged);
+        baselineRef.current = merged;
       }
 
       // Then load from Supabase (source of truth)
@@ -274,56 +300,56 @@ export function useGoalsSync(defaults: GoalsSyncState) {
           };
           setStateRaw(fromDb);
           saveGoalsCache(fromDb);
+          baselineRef.current = fromDb;
         }
       } catch {
         // Supabase unavailable — localStorage cache is fine
       }
-      if (!cancelled) setLoaded(true);
+      if (!cancelled) {
+        setLoaded(true);
+        loadedRef.current = true;
+      }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounced save to Supabase
+  // PATCH: only send fields that actually changed since last save
   const persistToSupabase = useCallback((next: GoalsSyncState) => {
+    const changed = changedKeys(baselineRef.current, next);
+    if (changed.length === 0) return; // nothing to save
+
+    const patch: Record<string, unknown> = {};
+    for (const k of changed) {
+      patch[STATE_TO_DB[k]] = next[k as keyof GoalsSyncState];
+    }
+
     saveGoalsCache(next);
     setSaving(true);
     fetch("/api/goals", {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        goals: next.goals,
-        gym_days: next.gymDays,
-        gym_weekly_goal: next.gymWeeklyGoal,
-        gym_monthly_goal: next.gymMonthlyGoal,
-        gym_monthly_done: next.gymMonthlyDone,
-        run_weekly_goal: next.runWeeklyGoal,
-        run_monthly_goal: next.runMonthlyGoal,
-        bike_weekly_goal: next.bikeWeeklyGoal,
-        bike_monthly_goal: next.bikeMonthlyGoal,
-        rozwoj_targets: next.rozwojTargets,
-        run_entries: next.runEntries,
-        bike_entries: next.bikeEntries,
-      }),
+      body: JSON.stringify(patch),
     })
+      .then((res) => {
+        if (res.ok) {
+          baselineRef.current = next;
+        }
+      })
       .catch(() => {})
       .finally(() => setSaving(false));
   }, []);
-
-  // CRITICAL: track whether initial load completed to prevent overwriting DB with defaults
-  const loadedRef = useRef(false);
-  useEffect(() => { loadedRef.current = loaded; }, [loaded]);
 
   const setState = useCallback(
     (updater: GoalsSyncState | ((prev: GoalsSyncState) => GoalsSyncState)) => {
       setStateRaw((prev) => {
         const next = typeof updater === "function" ? updater(prev) : updater;
-        // Only save to Supabase AFTER initial load to prevent overwriting real data with defaults
+        saveGoalsCache(next);
+        // Only persist AFTER initial load — prevents overwriting real data with defaults
         if (loadedRef.current) {
           if (saveTimer.current) clearTimeout(saveTimer.current);
           saveTimer.current = setTimeout(() => persistToSupabase(next), 500);
         }
-        saveGoalsCache(next);
         return next;
       });
     },
@@ -332,4 +358,3 @@ export function useGoalsSync(defaults: GoalsSyncState) {
 
   return { state, setState, loaded, saving };
 }
-
