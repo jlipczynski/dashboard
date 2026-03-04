@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { unzipSync, strFromU8 } from "fflate";
 import { BackButton } from "@/components/dashboard/back-button";
 import { monthlyGoals, sportAreas } from "@/lib/data";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
@@ -752,8 +753,25 @@ function MfpWidget({
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    onImport(text);
+
+    let csv: string;
+    if (file.name.endsWith(".zip")) {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const unzipped = unzipSync(buf);
+      const csvFile = Object.keys(unzipped).find(
+        (name) => name.toLowerCase().endsWith(".csv") && name.toLowerCase().includes("nutrition")
+      ) || Object.keys(unzipped).find((name) => name.toLowerCase().endsWith(".csv"));
+      if (!csvFile) {
+        onImport("");
+        e.target.value = "";
+        return;
+      }
+      csv = strFromU8(unzipped[csvFile]);
+    } else {
+      csv = await file.text();
+    }
+
+    onImport(csv);
     e.target.value = "";
   };
 
@@ -804,13 +822,13 @@ function MfpWidget({
             📊 Deficyt kaloryczny — 7 dni
           </h4>
           <div className="flex items-center gap-2">
-            <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
+            <input ref={fileRef} type="file" accept=".csv,.zip" onChange={handleFile} className="hidden" />
             <button
               onClick={() => fileRef.current?.click()}
               disabled={importing}
               className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:bg-orange-600 disabled:opacity-50"
             >
-              {importing ? "Importuje..." : "Importuj CSV"}
+              {importing ? "Importuje..." : "Importuj CSV / ZIP"}
             </button>
           </div>
         </div>
