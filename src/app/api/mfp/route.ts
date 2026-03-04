@@ -1,12 +1,47 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import pg from "pg";
 
 export const dynamic = "force-dynamic";
 
-const supabase =
-  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-    : null;
+const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
+
+async function getClient(): Promise<pg.Client> {
+  if (!dbUrl) throw new Error("No DATABASE_URL configured");
+  const client = new pg.Client({
+    connectionString: dbUrl,
+    ssl: { rejectUnauthorized: false },
+  });
+  await client.connect();
+  return client;
+}
+
+async function ensureTable(client: pg.Client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS nutrition_log (
+      id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+      date DATE NOT NULL UNIQUE,
+      calories INT NOT NULL DEFAULT 0,
+      fat_g NUMERIC(6,1) DEFAULT 0,
+      saturated_fat_g NUMERIC(6,1) DEFAULT 0,
+      cholesterol_mg NUMERIC(6,1) DEFAULT 0,
+      sodium_mg NUMERIC(6,1) DEFAULT 0,
+      carbs_g NUMERIC(6,1) DEFAULT 0,
+      fiber_g NUMERIC(6,1) DEFAULT 0,
+      sugar_g NUMERIC(6,1) DEFAULT 0,
+      protein_g NUMERIC(6,1) DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
+  // RLS + policy (idempotent)
+  await client.query(`ALTER TABLE nutrition_log ENABLE ROW LEVEL SECURITY`).catch(() => {});
+  await client.query(`
+    DO $$ BEGIN
+      CREATE POLICY "Allow all on nutrition_log" ON nutrition_log
+        FOR ALL USING (true) WITH CHECK (true);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `).catch(() => {});
+}
 
 type NutritionRow = {
   date: string;
@@ -60,8 +95,12 @@ function parseMfpCsv(csv: string): NutritionRow[] {
   const col = (name: string) => headers.findIndex((h) => h.includes(name));
   const dateIdx = col("date");
   const calIdx = col("calorie");
-  const fatIdx = headers.findIndex((h) => h === "fat" || h === "fat (g)" || h.includes("total fat"));
-  const satFatIdx = headers.findIndex((h) => h.includes("saturated") && !h.includes("poly") && !h.includes("mono"));
+  const fatIdx = headers.findIndex(
+    (h) => h === "fat" || h === "fat (g)" || h.includes("total fat")
+  );
+  const satFatIdx = headers.findIndex(
+    (h) => h.includes("saturated") && !h.includes("poly") && !h.includes("mono")
+  );
   const cholIdx = col("cholesterol");
   const sodiumIdx = col("sodium");
   const carbIdx = col("carbohydrate") !== -1 ? col("carbohydrate") : col("carbs");
@@ -92,9 +131,13 @@ function parseMfpCsv(csv: string): NutritionRow[] {
     const date = parseDate(cols[dateIdx]);
     if (!date) continue;
 
+    const calories = Math.round(num(cols, calIdx));
+    // Skip rows with 0 calories (e.g. "Totals" rows or empty meals)
+    if (calories === 0 && num(cols, proteinIdx) === 0 && num(cols, fatIdx) === 0) continue;
+
     const existing = dailyMap.get(date);
     if (existing) {
-      existing.calories += Math.round(num(cols, calIdx));
+      existing.calories += calories;
       existing.fat_g += num(cols, fatIdx);
       existing.saturated_fat_g += num(cols, satFatIdx);
       existing.cholesterol_mg += num(cols, cholIdx);
@@ -106,7 +149,7 @@ function parseMfpCsv(csv: string): NutritionRow[] {
     } else {
       dailyMap.set(date, {
         date,
-        calories: Math.round(num(cols, calIdx)),
+        calories,
         fat_g: num(cols, fatIdx),
         saturated_fat_g: num(cols, satFatIdx),
         cholesterol_mg: num(cols, cholIdx),
@@ -139,10 +182,11 @@ function parseMfpCsv(csv: string): NutritionRow[] {
 
 // POST: import CSV
 export async function POST(req: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!dbUrl) {
+    return NextResponse.json({ error: "No DATABASE_URL configured" }, { status: 500 });
   }
 
+  let client: pg.Client | null = null;
   try {
     const body = await req.json();
     const csv = body.csv as string;
@@ -152,47 +196,106 @@ export async function POST(req: Request) {
 
     const rows = parseMfpCsv(csv);
     if (rows.length === 0) {
-      // Show first line for debugging
       const firstLine = csv.trim().split(/\r?\n/)[0]?.slice(0, 200) || "(empty)";
-      return NextResponse.json({ error: `Nie znaleziono danych. Naglowki: ${firstLine}` }, { status: 400 });
+      return NextResponse.json(
+        { error: `Nie znaleziono danych. Nagłówki: ${firstLine}` },
+        { status: 400 }
+      );
     }
 
-    // Upsert rows (update existing dates, insert new)
-    const { error } = await supabase.from("nutrition_log").upsert(rows, { onConflict: "date" });
+    client = await getClient();
+    await ensureTable(client);
 
-    if (error) {
-      return NextResponse.json({ error: `DB error: ${error.message}` }, { status: 500 });
+    // Upsert rows using ON CONFLICT
+    const upsertSQL = `
+      INSERT INTO nutrition_log (date, calories, fat_g, saturated_fat_g, cholesterol_mg, sodium_mg, carbs_g, fiber_g, sugar_g, protein_g)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (date) DO UPDATE SET
+        calories = EXCLUDED.calories,
+        fat_g = EXCLUDED.fat_g,
+        saturated_fat_g = EXCLUDED.saturated_fat_g,
+        cholesterol_mg = EXCLUDED.cholesterol_mg,
+        sodium_mg = EXCLUDED.sodium_mg,
+        carbs_g = EXCLUDED.carbs_g,
+        fiber_g = EXCLUDED.fiber_g,
+        sugar_g = EXCLUDED.sugar_g,
+        protein_g = EXCLUDED.protein_g;
+    `;
+
+    for (const r of rows) {
+      await client.query(upsertSQL, [
+        r.date,
+        r.calories,
+        r.fat_g,
+        r.saturated_fat_g,
+        r.cholesterol_mg,
+        r.sodium_mg,
+        r.carbs_g,
+        r.fiber_g,
+        r.sugar_g,
+        r.protein_g,
+      ]);
     }
 
-    return NextResponse.json({ imported: rows.length, from: rows[rows.length - 1].date, to: rows[0].date });
+    return NextResponse.json({
+      imported: rows.length,
+      from: rows[rows.length - 1].date,
+      to: rows[0].date,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: msg }, { status: 500 });
+  } finally {
+    await client?.end().catch(() => {});
   }
 }
 
 // GET: fetch nutrition data (last 30 days by default)
 export async function GET(req: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!dbUrl) {
+    return NextResponse.json({ error: "No DATABASE_URL configured" }, { status: 500 });
   }
 
-  const { searchParams } = new URL(req.url);
-  const days = parseInt(searchParams.get("days") || "30", 10);
+  let client: pg.Client | null = null;
+  try {
+    const { searchParams } = new URL(req.url);
+    const days = parseInt(searchParams.get("days") || "30", 10);
 
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString().split("T")[0];
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const sinceStr = since.toISOString().split("T")[0];
 
-  const { data, error } = await supabase
-    .from("nutrition_log")
-    .select("*")
-    .gte("date", sinceStr)
-    .order("date", { ascending: false });
+    client = await getClient();
+    await ensureTable(client);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const { rows } = await client.query(
+      `SELECT date, calories, fat_g, saturated_fat_g, cholesterol_mg, sodium_mg, carbs_g, fiber_g, sugar_g, protein_g
+       FROM nutrition_log
+       WHERE date >= $1
+       ORDER BY date DESC`,
+      [sinceStr]
+    );
+
+    // Format dates as YYYY-MM-DD strings
+    const entries = rows.map((r) => ({
+      ...r,
+      date: r.date instanceof Date ? r.date.toISOString().split("T")[0] : String(r.date),
+      calories: Number(r.calories),
+      fat_g: Number(r.fat_g),
+      saturated_fat_g: Number(r.saturated_fat_g),
+      cholesterol_mg: Number(r.cholesterol_mg),
+      sodium_mg: Number(r.sodium_mg),
+      carbs_g: Number(r.carbs_g),
+      fiber_g: Number(r.fiber_g),
+      sugar_g: Number(r.sugar_g),
+      protein_g: Number(r.protein_g),
+    }));
+
+    return NextResponse.json({ entries });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  } finally {
+    await client?.end().catch(() => {});
   }
-
-  return NextResponse.json({ entries: data || [] });
 }
