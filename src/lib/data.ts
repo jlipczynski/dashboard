@@ -1,3 +1,5 @@
+import type { SubcategoryStatus } from "@/lib/scores";
+
 export type Pillar = {
   id: string;
   name: string;
@@ -8,6 +10,7 @@ export type Pillar = {
   score: number;
   trend: "rising" | "steady" | "needs-focus";
   href: string;
+  subcategories?: SubcategoryStatus[];
 };
 
 export type SportArea = {

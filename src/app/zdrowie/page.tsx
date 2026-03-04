@@ -793,6 +793,7 @@ function MfpWidget({
   const fileRef = useRef<HTMLInputElement>(null);
   const [editingTarget, setEditingTarget] = useState(false);
   const [targetDraft, setTargetDraft] = useState(String(calorieTarget));
+  const [weekOffset, setWeekOffset] = useState(0); // 0 = current week, 1 = 7 days ago, etc.
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -840,15 +841,18 @@ function MfpWidget({
     e.target.value = "";
   };
 
-  // Build last 7 days (always 7, even without data)
+  // Build 7 days for the current offset (0 = this week, 1 = prev week, etc.)
   const today = new Date().toISOString().split("T")[0];
+  const baseOffset = weekOffset * 7;
   const last7Days: { date: string; entry: NutritionEntry | null }[] = [];
-  for (let i = 6; i >= 0; i--) {
+  for (let i = 6 + baseOffset; i >= baseOffset; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split("T")[0];
     last7Days.push({ date: dateStr, entry: entries.find((e) => e.date === dateStr) || null });
   }
+  const periodStart = last7Days[0]?.date ?? "";
+  const periodEnd = last7Days[last7Days.length - 1]?.date ?? "";
 
   // Helper: effective target for a given day = base target + active calories burned
   const effectiveTarget = (date: string) => calorieTarget + (dailyBurned[date] ?? 0);
@@ -888,7 +892,7 @@ function MfpWidget({
       <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="flex items-center gap-2 font-semibold text-foreground">
-            📊 Deficyt kaloryczny — 7 dni
+            📊 Deficyt kaloryczny
           </h4>
           <div className="flex items-center gap-2">
             <input ref={fileRef} type="file" accept=".csv,.zip" onChange={handleFile} className="hidden" />
@@ -900,6 +904,28 @@ function MfpWidget({
               {importing ? "Importuje..." : "Importuj CSV / ZIP"}
             </button>
           </div>
+        </div>
+
+        {/* Week navigation */}
+        <div className="mt-2 flex items-center justify-between">
+          <button
+            onClick={() => setWeekOffset((o) => o + 1)}
+            className="rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
+          >
+            ← Wcześniej
+          </button>
+          <span className="text-xs font-medium text-muted-foreground">
+            {new Date(periodStart + "T12:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
+            {" — "}
+            {new Date(periodEnd + "T12:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
+          </span>
+          <button
+            onClick={() => setWeekOffset((o) => Math.max(0, o - 1))}
+            disabled={weekOffset === 0}
+            className="rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Później →
+          </button>
         </div>
 
         {importResult && (

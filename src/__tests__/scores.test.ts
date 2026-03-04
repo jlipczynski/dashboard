@@ -10,21 +10,21 @@ describe("calcHealthScore", () => {
   };
 
   it("returns 0 when no targets and no activity", () => {
-    expect(calcHealthScore(emptyGoals, 0, 0)).toBe(0);
+    expect(calcHealthScore(emptyGoals, 0, 0).score).toBe(0);
   });
 
   it("returns 0 when no targets even if activity exists (need goals to score)", () => {
     const goals = { ...emptyGoals, running: { target: 0, current: 23 } };
-    expect(calcHealthScore(goals, 0, 0)).toBe(0);
+    expect(calcHealthScore(goals, 0, 0).score).toBe(0);
   });
 
   it("returns 0 when no targets even with gym sessions (need goals to score)", () => {
-    expect(calcHealthScore(emptyGoals, 3, 0)).toBe(0);
+    expect(calcHealthScore(emptyGoals, 3, 0).score).toBe(0);
   });
 
   it("calculates single goal correctly", () => {
     const goals = { ...emptyGoals, running: { target: 240, current: 24 } };
-    expect(calcHealthScore(goals, 0, 0)).toBe(10); // 24/240 = 10%
+    expect(calcHealthScore(goals, 0, 0).score).toBe(10); // 24/240 = 10%
   });
 
   it("calculates multiple goals as average", () => {
@@ -35,7 +35,7 @@ describe("calcHealthScore", () => {
       running: { target: 240, current: 240 },             // 100%
     };
     // (50 + 50 + 100) / 3 = 66.67 → 67
-    expect(calcHealthScore(goals, 0, 0)).toBe(67);
+    expect(calcHealthScore(goals, 0, 0).score).toBe(67);
   });
 
   it("includes gym in average when target set", () => {
@@ -46,12 +46,12 @@ describe("calcHealthScore", () => {
       running: { target: 100, current: 50 }, // 50%
     };
     // running=50%, gym=8/12=66.67% → (50+66.67)/2 = 58.33 → 58
-    expect(calcHealthScore(goals, 8, 12)).toBe(58);
+    expect(calcHealthScore(goals, 8, 12).score).toBe(58);
   });
 
   it("caps individual goals at 100% (no bonus for exceeding)", () => {
     const goals = { ...emptyGoals, running: { target: 100, current: 200 } };
-    expect(calcHealthScore(goals, 0, 0)).toBe(100);
+    expect(calcHealthScore(goals, 0, 0).score).toBe(100);
   });
 
   it("handles all goals at 100%", () => {
@@ -61,13 +61,13 @@ describe("calcHealthScore", () => {
       cyclingHours: { target: 30, current: 30 },
       running: { target: 240, current: 240 },
     };
-    expect(calcHealthScore(goals, 12, 12)).toBe(100);
+    expect(calcHealthScore(goals, 12, 12).score).toBe(100);
   });
 });
 
 describe("calcRozwojScore", () => {
   it("returns 0 for null data", () => {
-    expect(calcRozwojScore(null)).toBe(0);
+    expect(calcRozwojScore(null).score).toBe(0);
   });
 
   it("returns 0 when no targets even with activity", () => {
@@ -76,7 +76,7 @@ describe("calcRozwojScore", () => {
       sluchanie: { monthlyTarget: 0, monthlyDone: 0 },
       pisanie: { monthlyTarget: 0, monthlyDone: 0 },
     };
-    expect(calcRozwojScore(data)).toBe(0);
+    expect(calcRozwojScore(data).score).toBe(0);
   });
 
   it("calculates average of set targets", () => {
@@ -86,7 +86,7 @@ describe("calcRozwojScore", () => {
       pisanie: { monthlyTarget: 0, monthlyDone: 0 },        // skipped
     };
     // (50 + 100) / 2 = 75
-    expect(calcRozwojScore(data)).toBe(75);
+    expect(calcRozwojScore(data).score).toBe(75);
   });
 });
 
