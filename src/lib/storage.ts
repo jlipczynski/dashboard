@@ -88,7 +88,6 @@ export type CachedGarminData = {
   summary: {
     month: {
       cyclingKm: number;
-      cyclingHours: number;
       runningKm: number;
       activeCalories: number;
       gymSessions: number;
@@ -177,7 +176,6 @@ export function useGarminSync() {
 export type GoalsShape = {
   activeCalories: { target: number; current: number; unit: string };
   cycling: { target: number; current: number; unit: string };
-  cyclingHours: { target: number; current: number; unit: string };
   running: { target: number; current: number; unit: string };
   competition: { name: string; date: string; type: "running" | "cycling"; distance: number };
   competitions: { name: string; date: string; type: "running" | "cycling"; distance: number }[];

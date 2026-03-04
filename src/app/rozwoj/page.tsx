@@ -780,11 +780,13 @@ function SluchanieCard({
   const [booksLoading, setBooksLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [listeningBookId, setListeningBookId] = useState<string | null>(null);
-  const [minuteInput, setMinuteInput] = useState("");
+  const [listenHours, setListenHours] = useState("");
+  const [listenMins, setListenMins] = useState("");
   const [listenDate, setListenDate] = useState(today());
   const [showAddBook, setShowAddBook] = useState(false);
   const [newBookTitle, setNewBookTitle] = useState("");
-  const [newBookMinutes, setNewBookMinutes] = useState("");
+  const [newBookHours, setNewBookHours] = useState("");
+  const [newBookMins, setNewBookMins] = useState("");
   const [showFinished, setShowFinished] = useState(false);
   const [editingTarget, setEditingTarget] = useState<"monthly" | "weekly" | null>(null);
   const [targetDraft, setTargetDraft] = useState("");
@@ -841,8 +843,10 @@ function SluchanieCard({
 
   const handleAddBook = async () => {
     const title = newBookTitle.trim();
-    const minutes = parseInt(newBookMinutes);
-    if (!title || isNaN(minutes) || minutes <= 0) return;
+    const h = parseInt(newBookHours) || 0;
+    const m = parseInt(newBookMins) || 0;
+    const minutes = h * 60 + m;
+    if (!title || minutes <= 0) return;
 
     setSaving(true);
     setBookError(null);
@@ -858,7 +862,8 @@ function SluchanieCard({
         setBookError(data.error);
       } else {
         setNewBookTitle("");
-        setNewBookMinutes("");
+        setNewBookHours("");
+        setNewBookMins("");
         setShowAddBook(false);
         await fetchBooks();
       }
@@ -869,9 +874,11 @@ function SluchanieCard({
   };
 
   const handleLogListening = async (bookId: string) => {
-    const mins = parseInt(minuteInput);
+    const h = parseInt(listenHours) || 0;
+    const m = parseInt(listenMins) || 0;
+    const mins = h * 60 + m;
     const book = books.find((b) => b.id === bookId);
-    if (!book || isNaN(mins) || mins <= 0) return;
+    if (!book || mins <= 0) return;
 
     const newPage = book.current_page + mins;
 
@@ -887,7 +894,8 @@ function SluchanieCard({
       if (data.error) {
         setBookError(data.error);
       } else {
-        setMinuteInput("");
+        setListenHours("");
+        setListenMins("");
         setListeningBookId(null);
         setListenDate(today());
         await fetchBooks();
@@ -1117,16 +1125,30 @@ function SluchanieCard({
                 className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
               />
             </div>
-            <div className="w-full sm:w-28">
+            <div className="w-full sm:w-20">
               <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Minut
+                Godz
               </label>
               <input
                 type="number"
-                min={1}
-                value={newBookMinutes}
-                onChange={(e) => setNewBookMinutes(e.target.value)}
-                placeholder="np. 480"
+                min={0}
+                value={newBookHours}
+                onChange={(e) => setNewBookHours(e.target.value)}
+                placeholder="8"
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+              />
+            </div>
+            <div className="w-full sm:w-20">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Min
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={newBookMins}
+                onChange={(e) => setNewBookMins(e.target.value)}
+                placeholder="0"
                 className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
               />
             </div>
@@ -1183,7 +1205,7 @@ function SluchanieCard({
                     <div className="flex items-center gap-1.5">
                       {!isListening && (
                         <button
-                          onClick={() => { setListeningBookId(book.id); setMinuteInput(""); setListenDate(today()); }}
+                          onClick={() => { setListeningBookId(book.id); setListenHours(""); setListenMins(""); setListenDate(today()); }}
                           className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
                           style={{ background: color }}
                         >
@@ -1217,18 +1239,33 @@ function SluchanieCard({
                       onSubmit={(e) => { e.preventDefault(); handleLogListening(book.id); }}
                     >
                       <div className="text-xs font-medium text-muted-foreground">
-                        Ile minut dzisiaj sluchales?
+                        Ile dzisiaj sluchales?
                       </div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          autoFocus
-                          type="number"
-                          min={1}
-                          value={minuteInput}
-                          onChange={(e) => setMinuteInput(e.target.value)}
-                          placeholder="np. 30"
-                          className="w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-sky-300"
-                        />
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <input
+                            autoFocus
+                            type="number"
+                            min={0}
+                            value={listenHours}
+                            onChange={(e) => setListenHours(e.target.value)}
+                            placeholder="0"
+                            className="w-16 rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          />
+                          <span className="text-xs text-muted-foreground">h</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            value={listenMins}
+                            onChange={(e) => setListenMins(e.target.value)}
+                            placeholder="30"
+                            className="w-16 rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          />
+                          <span className="text-xs text-muted-foreground">min</span>
+                        </div>
                         <input
                           type="date"
                           value={listenDate}
@@ -1237,7 +1274,7 @@ function SluchanieCard({
                         />
                         <button
                           type="submit"
-                          disabled={saving || !minuteInput}
+                          disabled={saving || ((parseInt(listenHours) || 0) * 60 + (parseInt(listenMins) || 0) <= 0)}
                           className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
                           style={{ background: color }}
                         >
@@ -1251,9 +1288,9 @@ function SluchanieCard({
                           Anuluj
                         </button>
                       </div>
-                      {minuteInput && parseInt(minuteInput) > 0 && (
+                      {((parseInt(listenHours) || 0) * 60 + (parseInt(listenMins) || 0)) > 0 && (
                         <div className="mt-2 text-xs font-medium" style={{ color }}>
-                          +{minuteInput} min sluchania
+                          +{formatMinutes((parseInt(listenHours) || 0) * 60 + (parseInt(listenMins) || 0))} sluchania
                         </div>
                       )}
                     </form>
@@ -1567,7 +1604,6 @@ export default function RozwojPage() {
     goals: {
       activeCalories: { ...monthlyGoals.activeCalories },
       cycling: { ...monthlyGoals.cycling },
-      cyclingHours: { ...monthlyGoals.cyclingHours },
       running: { ...monthlyGoals.running },
       competition: { ...monthlyGoals.competition },
       competitions: [],

@@ -92,7 +92,6 @@ export async function GET() {
     const summary = {
       month: {
         cyclingKm: Math.round(sumByType(monthActivities, "cycling", "distanceKm") * 100) / 100,
-        cyclingHours: Math.round(sumByType(monthActivities, "cycling", "durationMin") / 6) / 10,
         runningKm: Math.round(sumByType(monthActivities, "running", "distanceKm") * 100) / 100,
         activeCalories: Math.round(
           monthActivities.reduce((s, a) => s + a.calories, 0)

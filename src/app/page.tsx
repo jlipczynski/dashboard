@@ -14,7 +14,6 @@ export default function Home() {
     goals: {
       activeCalories: { ...monthlyGoals.activeCalories },
       cycling: { ...monthlyGoals.cycling },
-      cyclingHours: { ...monthlyGoals.cyclingHours },
       running: { ...monthlyGoals.running },
       competition: { ...monthlyGoals.competition },
       competitions: [],
@@ -164,7 +163,7 @@ export default function Home() {
             <div className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground space-y-1">
               <p><span className="font-medium text-foreground">Okres:</span> biezacy miesiac (od 1. do dzis)</p>
               <p><span className="font-medium text-foreground">Skala:</span> 0–100 (100 = wszystkie cele na 100%)</p>
-              <p><span className="font-medium text-foreground">Zdrowie:</span> srednia % realizacji: akt. kalorie, rower km, rower h, bieg km, silownia</p>
+              <p><span className="font-medium text-foreground">Zdrowie:</span> srednia % realizacji: akt. kalorie, rower km, bieg km, silownia</p>
               <p><span className="font-medium text-foreground">Rozwoj:</span> srednia % realizacji: czytanie, sluchanie, pisanie (minuty)</p>
               <p><span className="font-medium text-foreground">Ogolny:</span> srednia z aktywnych filarow (tylko te z ustawionymi celami)</p>
               <p className="pt-1 border-t border-border">
