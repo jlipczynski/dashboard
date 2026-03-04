@@ -487,7 +487,6 @@ function CompetitionCard({
   date,
   type,
   distance,
-  currentMonthlyKm,
   onNameChange,
   onDateChange,
   onTypeChange,
@@ -498,7 +497,6 @@ function CompetitionCard({
   date: string;
   type: "running" | "cycling";
   distance: number;
-  currentMonthlyKm: number;
   onNameChange: (v: string) => void;
   onDateChange: (v: string) => void;
   onTypeChange: (v: "running" | "cycling") => void;
@@ -512,11 +510,9 @@ function CompetitionCard({
   const compDate = new Date(date);
   const diffDays = date ? Math.ceil((compDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 0;
   const diffWeeks = Math.ceil(diffDays / 7);
-  const typeIcon = type === "cycling" ? "🚴" : "🏃";
   const typeColor = type === "cycling" ? "#3b82f6" : "#22c55e";
 
   const hasData = name || date;
-  const trainingPct = distance > 0 ? Math.min((currentMonthlyKm / distance) * 100, 100) : 0;
 
   // Urgency color based on days remaining
   const urgencyColor = diffDays <= 7 ? "text-red-500" : diffDays <= 30 ? "text-amber-500" : "text-emerald-500";
@@ -632,32 +628,6 @@ function CompetitionCard({
           </div>
         </div>
 
-        {/* Training progress towards competition distance */}
-        {distance > 0 && (
-          <div className="mt-4 rounded-lg bg-muted/40 p-3">
-            <div className="flex items-center justify-between text-xs mb-2">
-              <span className="font-medium text-muted-foreground">
-                {typeIcon} Trening w tym miesiącu
-              </span>
-              <span className="font-semibold" style={{ color: typeColor }}>
-                {currentMonthlyKm.toFixed(1)} / {distance} km
-              </span>
-            </div>
-            <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${trainingPct}%`,
-                  background: `linear-gradient(90deg, ${typeColor}88, ${typeColor})`,
-                }}
-              />
-            </div>
-            <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>{trainingPct.toFixed(0)}% dystansu zawodów</span>
-              {trainingPct >= 100 && <span className="font-medium text-emerald-500">Gotowy na zawody!</span>}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
