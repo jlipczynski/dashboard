@@ -52,12 +52,42 @@ async function getGarminClient(): Promise<GarminConnect> {
   return client;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const client = await getGarminClient();
 
+    const { searchParams } = new URL(req.url);
+    const days = Math.min(parseInt(searchParams.get("days") || "1", 10), 14);
+
     const today = new Date();
     const dateStr = formatDate(today);
+
+    // ── Fetch daily calorie summaries for the requested range ──
+    let dailyCalories: { date: string; activeCalories: number | null; totalCalories: number | null }[] = [];
+    if (days > 1) {
+      const promises = [];
+      for (let i = 0; i < days; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const ds = formatDate(d);
+        promises.push(
+          (async () => {
+            try {
+              const url = `${client.url.GC_API}/usersummary-service/usersummary/daily/${ds}`;
+              const summary = await client.get<DailySummary>(url);
+              return {
+                date: ds,
+                activeCalories: summary?.activeKilocalories ?? null,
+                totalCalories: summary?.totalKilocalories ?? null,
+              };
+            } catch {
+              return { date: ds, activeCalories: null, totalCalories: null };
+            }
+          })()
+        );
+      }
+      dailyCalories = await Promise.all(promises);
+    }
 
     // ── 1. Daily Summary (active calories, body battery, stress, intensity) ──
     let dailySummary: DailySummary | null = null;
@@ -156,6 +186,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
+      dailyCalories,
       today: {
         date: dateStr,
         // ── Calories ──

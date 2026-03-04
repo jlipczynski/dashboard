@@ -737,6 +737,7 @@ function MfpWidget({
   totalCaloriesBurned,
   calorieTarget,
   onCalorieTargetChange,
+  dailyBurned,
 }: {
   entries: NutritionEntry[];
   onImport: (csv: string) => void;
@@ -745,6 +746,7 @@ function MfpWidget({
   totalCaloriesBurned: number | null;
   calorieTarget: number;
   onCalorieTargetChange: (v: number) => void;
+  dailyBurned: Record<string, number>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [editingTarget, setEditingTarget] = useState(false);
@@ -806,17 +808,23 @@ function MfpWidget({
     last7Days.push({ date: dateStr, entry: entries.find((e) => e.date === dateStr) || null });
   }
 
+  // Helper: effective target for a given day = base target + active calories burned
+  const effectiveTarget = (date: string) => calorieTarget + (dailyBurned[date] ?? 0);
+
   // 7-day stats
   const daysWithData = last7Days.filter((d) => d.entry !== null);
   const totalConsumed = daysWithData.reduce((s, d) => s + d.entry!.calories, 0);
-  const totalTarget = daysWithData.length * calorieTarget;
-  const weeklyDeficit = totalTarget - totalConsumed;
+  const totalEffTarget = daysWithData.reduce((s, d) => s + effectiveTarget(d.date), 0);
+  const weeklyDeficit = totalEffTarget - totalConsumed;
   const fatChangeGrams = Math.round((weeklyDeficit / 7700) * 1000);
   const avgScore = daysWithData.length > 0
-    ? Math.round(daysWithData.reduce((s, d) => s + getDayScore(d.entry!.calories, calorieTarget).score, 0) / daysWithData.length * 10) / 10
+    ? Math.round(daysWithData.reduce((s, d) => s + getDayScore(d.entry!.calories, effectiveTarget(d.date)).score, 0) / daysWithData.length * 10) / 10
     : 0;
 
-  const maxBarValue = Math.max(calorieTarget * 1.3, ...daysWithData.map((d) => d.entry!.calories));
+  const maxBarValue = Math.max(
+    ...daysWithData.map((d) => Math.max(effectiveTarget(d.date) * 1.3, d.entry!.calories)),
+    calorieTarget * 1.3
+  );
 
   // Today
   const todayEntry = entries.find((e) => e.date === today);
@@ -905,11 +913,14 @@ function MfpWidget({
             }
 
             const consumed = entry.calories;
-            const deficit = calorieTarget - consumed;
-            const score = getDayScore(consumed, calorieTarget);
+            const burned = dailyBurned[date] ?? 0;
+            const effTarget = effectiveTarget(date);
+            const deficit = effTarget - consumed;
+            const score = getDayScore(consumed, effTarget);
             const consumedPct = Math.min((consumed / maxBarValue) * 100, 100);
-            const targetPct = Math.min((calorieTarget / maxBarValue) * 100, 100);
-            const isOver = consumed > calorieTarget;
+            const targetPct = Math.min((effTarget / maxBarValue) * 100, 100);
+            const baseTargetPct = Math.min((calorieTarget / maxBarValue) * 100, 100);
+            const isOver = consumed > effTarget;
 
             return (
               <div key={date} className={`rounded-lg px-2 py-1.5 ${isToday ? "bg-orange-50 ring-1 ring-orange-200" : ""}`}>
@@ -919,8 +930,19 @@ function MfpWidget({
                     <span className="text-muted-foreground">{dayNum}</span>
                   </div>
                   <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-gray-100">
-                    <div className="absolute top-0 h-full w-px border-l-2 border-dashed border-gray-400 z-10"
-                      style={{ left: `${targetPct}%` }} />
+                    {/* Base target line (static) */}
+                    <div className="absolute top-0 h-full w-px border-l-2 border-dashed border-gray-300 z-10"
+                      style={{ left: `${baseTargetPct}%` }} />
+                    {/* Effective target line (base + active burned) — only if different from base */}
+                    {burned > 0 && (
+                      <div className="absolute top-0 h-full w-px border-l-2 border-dashed border-orange-400 z-10"
+                        style={{ left: `${targetPct}%` }} />
+                    )}
+                    {/* Active burned bonus zone (between base and effective target) */}
+                    {burned > 0 && (
+                      <div className="absolute h-full opacity-20"
+                        style={{ left: `${baseTargetPct}%`, width: `${targetPct - baseTargetPct}%`, background: "#f97316" }} />
+                    )}
                     {!isOver ? (
                       <div className="h-full rounded-full transition-all duration-500"
                         style={{ width: `${consumedPct}%`, background: "linear-gradient(90deg, #22c55e, #16a34a)" }} />
@@ -933,10 +955,15 @@ function MfpWidget({
                       </>
                     )}
                   </div>
-                  <div className="flex w-32 shrink-0 items-center justify-end gap-1.5 sm:w-44">
+                  <div className="flex w-36 shrink-0 items-center justify-end gap-1.5 sm:w-52">
                     <span className="text-xs tabular-nums text-muted-foreground">
-                      {consumed}<span className="hidden sm:inline">/{calorieTarget}</span>
+                      {consumed}<span className="hidden sm:inline">/{effTarget}</span>
                     </span>
+                    {burned > 0 && (
+                      <span className="text-[10px] tabular-nums text-orange-500" title="Aktywne spalone (Garmin)">
+                        +{burned}
+                      </span>
+                    )}
                     <span className="min-w-[50px] text-right text-xs font-bold tabular-nums"
                       style={{ color: deficit >= 0 ? "#16a34a" : "#ef4444" }}>
                       {deficit >= 0 ? `−${deficit}` : `+${Math.abs(deficit)}`}
@@ -953,6 +980,7 @@ function MfpWidget({
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
           <span>✅ w normie</span><span>👍 dobry deficyt</span><span>🟡 lekko ponad</span>
           <span>🟠 za duzo</span><span>🔴 znacznie ponad</span><span>⚠️ za malo</span>
+          <span className="text-orange-500">┊ +aktywne (Garmin)</span>
         </div>
 
         {/* Weekly summary */}
@@ -1145,6 +1173,9 @@ export default function ZdrowiePage() {
   const [mfpImporting, setMfpImporting] = useState(false);
   const [mfpResult, setMfpResult] = useState<string | null>(null);
 
+  // Daily burned calories from Garmin (date → activeCalories)
+  const [dailyBurned, setDailyBurned] = useState<Record<string, number>>({});
+
   // Calorie target (localStorage)
   const [calorieTarget, setCalorieTarget] = useState(2200);
   useEffect(() => {
@@ -1220,9 +1251,9 @@ export default function ZdrowiePage() {
       setRecentActivities(data.activities);
     }
 
-    // Also fetch wellness data
+    // Also fetch wellness data (with 7 days of calorie history)
     try {
-      const wellnessRes = await fetch("/api/garmin/wellness");
+      const wellnessRes = await fetch("/api/garmin/wellness?days=7");
       const wellnessData = await wellnessRes.json();
       if (!wellnessData.error) {
         setWellness({
@@ -1237,6 +1268,16 @@ export default function ZdrowiePage() {
           distanceKm: wellnessData.today.distanceKm,
           activities: wellnessData.activities ?? [],
         });
+        // Build daily burned map from Garmin data
+        if (wellnessData.dailyCalories) {
+          const burned: Record<string, number> = {};
+          for (const dc of wellnessData.dailyCalories) {
+            if (dc.activeCalories != null) {
+              burned[dc.date] = dc.activeCalories;
+            }
+          }
+          setDailyBurned(burned);
+        }
       }
     } catch {
       // wellness is optional
@@ -1334,6 +1375,7 @@ export default function ZdrowiePage() {
             totalCaloriesBurned={wellness.totalCalories}
             calorieTarget={calorieTarget}
             onCalorieTargetChange={updateCalorieTarget}
+            dailyBurned={dailyBurned}
           />
         </div>
 
