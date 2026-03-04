@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcHealthScore, calcRozwojScore, getTrend } from "../lib/scores";
+import { calcHealthScore, calcRozwojScore, calcPracaScore, getTrend } from "../lib/scores";
 
 describe("calcHealthScore", () => {
   const emptyGoals = {
@@ -83,6 +83,34 @@ describe("calcRozwojScore", () => {
     };
     // (50 + 100) / 2 = 75
     expect(calcRozwojScore(data).score).toBe(75);
+  });
+});
+
+describe("calcPracaScore", () => {
+  it("returns 0 for null data", () => {
+    expect(calcPracaScore(null).score).toBe(0);
+  });
+
+  it("returns 0 when no days elapsed", () => {
+    expect(calcPracaScore({ dailyPlanDays: 0, daysElapsed: 0, weeksWithGoals: 0, weeksElapsed: 0 }).score).toBe(0);
+  });
+
+  it("calculates daily plan percentage", () => {
+    // 5/10 days = 50%, no weeks → only daily plan counts
+    expect(calcPracaScore({ dailyPlanDays: 5, daysElapsed: 10, weeksWithGoals: 0, weeksElapsed: 0 }).score).toBe(50);
+  });
+
+  it("averages daily plan and weekly goals", () => {
+    // daily: 5/10 = 50%, weekly: 2/2 = 100% → (50+100)/2 = 75
+    expect(calcPracaScore({ dailyPlanDays: 5, daysElapsed: 10, weeksWithGoals: 2, weeksElapsed: 2 }).score).toBe(75);
+  });
+
+  it("handles perfect score", () => {
+    expect(calcPracaScore({ dailyPlanDays: 20, daysElapsed: 20, weeksWithGoals: 4, weeksElapsed: 4 }).score).toBe(100);
+  });
+
+  it("caps at 100%", () => {
+    expect(calcPracaScore({ dailyPlanDays: 25, daysElapsed: 20, weeksWithGoals: 5, weeksElapsed: 4 }).score).toBe(100);
   });
 });
 

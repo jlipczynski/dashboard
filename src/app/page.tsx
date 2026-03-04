@@ -5,7 +5,7 @@ import { pillars, monthlyGoals, sportAreas } from "@/lib/data";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { PillarCard } from "@/components/dashboard/pillar-card";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
-import { calcAllScores, type RozwojData } from "@/lib/scores";
+import { calcAllScores, type RozwojData, type PracaData } from "@/lib/scores";
 import { useEffect, useState } from "react";
 
 export default function Home() {
@@ -40,6 +40,7 @@ export default function Home() {
   const gymMonthlyGoal = gs.gymMonthlyGoal;
   const rozwojTargets = gs.rozwojTargets;
   const [rozwojData, setRozwojData] = useState<RozwojData | null>(null);
+  const [pracaData, setPracaData] = useState<PracaData | null>(null);
   // Garmin cached data
   const garmin = useGarminSync();
 
@@ -70,8 +71,41 @@ export default function Home() {
       .catch(() => {});
   }, [rozwojTargets]);
 
+  // Load praca check-ins for pillar score
+  useEffect(() => {
+    fetch("/api/praca?days=31")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.checkins) return;
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+        const todayStr = now.toISOString().split("T")[0];
+        const monthCheckins = (d.checkins as { date: string; dailyPlan: boolean }[])
+          .filter((c) => c.date >= monthStart && c.date <= todayStr);
+        const daysElapsed = now.getDate();
+        const dailyPlanDays = monthCheckins.filter((c) => c.dailyPlan).length;
+
+        // Calculate weeks elapsed this month
+        const weekStarts = new Set<string>();
+        for (let day = 1; day <= daysElapsed; day++) {
+          const dt = new Date(now.getFullYear(), now.getMonth(), day);
+          const dow = dt.getDay();
+          const diff = dow === 0 ? -6 : 1 - dow;
+          const ws = new Date(dt);
+          ws.setDate(ws.getDate() + diff);
+          weekStarts.add(ws.toISOString().split("T")[0]);
+        }
+        const weeksElapsed = weekStarts.size;
+        const weeksWithGoals = (d.weeksWithGoals as string[]) || [];
+        const weeksReviewed = Array.from(weekStarts).filter((ws) => weeksWithGoals.includes(ws)).length;
+
+        setPracaData({ dailyPlanDays, daysElapsed, weeksWithGoals: weeksReviewed, weeksElapsed });
+      })
+      .catch(() => {});
+  }, []);
+
   // Calculate dynamic pillar scores
-  const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal, rozwojData);
+  const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal, rozwojData, pracaData);
 
   // Apply scores to pillars
   const dynamicPillars = pillars.map((p) => {
@@ -164,6 +198,7 @@ export default function Home() {
               <p><span className="font-medium text-foreground">Okres:</span> biezacy miesiac (od 1. do dzis)</p>
               <p><span className="font-medium text-foreground">Skala:</span> 0–100 (100 = wszystkie cele na 100%)</p>
               <p><span className="font-medium text-foreground">Zdrowie:</span> srednia % realizacji: akt. kalorie, rower km, bieg km, silownia</p>
+              <p><span className="font-medium text-foreground">Praca:</span> srednia % realizacji: plan dnia + cele tygodniowe</p>
               <p><span className="font-medium text-foreground">Rozwoj:</span> srednia % realizacji: czytanie, sluchanie, pisanie (minuty)</p>
               <p><span className="font-medium text-foreground">Ogolny:</span> srednia z aktywnych filarow (tylko te z ustawionymi celami)</p>
               <p className="pt-1 border-t border-border">

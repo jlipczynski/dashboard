@@ -169,6 +169,54 @@ export function calcRozwojScore(data: RozwojData | null): { score: number; subca
   };
 }
 
+/**
+ * Work check-in data shape for Praca pillar scoring.
+ */
+export type PracaData = {
+  /** Number of days this month with daily_plan = true */
+  dailyPlanDays: number;
+  /** Number of days elapsed this month (1..today) */
+  daysElapsed: number;
+  /** Number of weeks this month with weekly goals entered */
+  weeksWithGoals: number;
+  /** Number of weeks elapsed this month (including current partial week) */
+  weeksElapsed: number;
+};
+
+/**
+ * Calculate the "Praca" pillar score (0-100)
+ * based on two habits:
+ * 1. Plan dnia — did I make a daily plan? (% of days)
+ * 2. Cele tygodniowe — did I review/enter weekly goals? (% of weeks)
+ */
+export function calcPracaScore(data: PracaData | null): { score: number; subcategories: SubcategoryStatus[] } {
+  const pace = expectedPace();
+  const subcategories: SubcategoryStatus[] = [];
+
+  if (!data || data.daysElapsed === 0) return { score: 0, subcategories };
+
+  const scores: number[] = [];
+
+  // Daily plan check-in rate
+  const planPct = Math.min(data.dailyPlanDays / data.daysElapsed, 1) * 100;
+  scores.push(planPct);
+  subcategories.push(subcatStatus("Plan dnia", "📋", data.dailyPlanDays, data.daysElapsed, "dni", pace));
+
+  // Weekly goal review rate
+  if (data.weeksElapsed > 0) {
+    const weeksPct = Math.min(data.weeksWithGoals / data.weeksElapsed, 1) * 100;
+    scores.push(weeksPct);
+    subcategories.push(subcatStatus("Cele tygodniowe", "🎯", data.weeksWithGoals, data.weeksElapsed, "tyg", pace));
+  }
+
+  if (scores.length === 0) return { score: 0, subcategories };
+
+  return {
+    score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+    subcategories,
+  };
+}
+
 export type PillarScore = {
   score: number;
   trend: "rising" | "steady" | "needs-focus";
@@ -183,7 +231,8 @@ export function calcAllScores(
   goals: MonthlyGoals,
   gymMonthlyDone: number,
   gymMonthlyGoal: number,
-  rozwojData?: RozwojData | null
+  rozwojData?: RozwojData | null,
+  pracaData?: PracaData | null
 ): Record<string, PillarScore> {
   const effectiveGoals = garminData
     ? {
@@ -213,10 +262,11 @@ export function calcAllScores(
   );
 
   const rozwoj = calcRozwojScore(rozwojData ?? null);
+  const praca = calcPracaScore(pracaData ?? null);
 
   return {
     zdrowie: { score: health.score, trend: getTrend(health.score), subcategories: health.subcategories },
-    praca: { score: 0, trend: "steady" as const, subcategories: [] },
+    praca: { score: praca.score, trend: praca.score === 0 ? "steady" as const : getTrend(praca.score), subcategories: praca.subcategories },
     rozwoj: { score: rozwoj.score, trend: rozwoj.score === 0 ? "steady" as const : getTrend(rozwoj.score), subcategories: rozwoj.subcategories },
     relacje: { score: 0, trend: "steady" as const, subcategories: [] },
   };
