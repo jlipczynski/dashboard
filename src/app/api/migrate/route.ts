@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { runMigrationSQL, hasDbUrl } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -187,8 +187,8 @@ async function runMigrations(): Promise<{
   skipped: string[];
   errors: string[];
 }> {
-  if (!supabase) {
-    throw new Error("Supabase not configured");
+  if (!hasDbUrl()) {
+    throw new Error("No DATABASE_URL configured");
   }
 
   const ran: string[] = [];
@@ -197,22 +197,20 @@ async function runMigrations(): Promise<{
 
   for (const migration of MIGRATIONS) {
     try {
-      const { data, error } = await supabase.rpc("run_migration", {
-        p_name: migration.name,
-        p_sql: migration.sql,
-      });
-
-      if (error) {
-        errors.push(`${migration.name}: ${error.message}`);
-      } else if (data === "skipped") {
+      const result = await runMigrationSQL(migration.name, migration.sql);
+      if (result === "skipped") {
         skipped.push(migration.name);
       } else {
         ran.push(migration.name);
       }
     } catch (err) {
-      errors.push(
-        `${migration.name}: ${err instanceof Error ? err.message : "Unknown error"}`
-      );
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      // If object already exists, treat as skipped
+      if (msg.includes("already exists")) {
+        skipped.push(migration.name);
+      } else {
+        errors.push(`${migration.name}: ${msg}`);
+      }
     }
   }
 

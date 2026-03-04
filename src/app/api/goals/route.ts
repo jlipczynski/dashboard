@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { runMigrationSQL, hasDbUrl } from "@/lib/db";
 
 const ROW_ID = "default";
 
@@ -47,20 +48,15 @@ async function ensureTable() {
     return;
   }
 
-  // Table doesn't exist — try creating via run_migration RPC
-  try {
-    await supabase.rpc("run_migration", {
-      p_name: "005_fitness_goals.sql",
-      p_sql: MIGRATION_005_SQL,
-    });
-    // Also run 007 to add extra columns
-    await supabase.rpc("run_migration", {
-      p_name: "007_fitness_goals_extras.sql",
-      p_sql: MIGRATION_007_SQL,
-    });
-    tableReady = true;
-  } catch {
-    // RPC not available
+  // Table missing — create via direct Postgres
+  if (hasDbUrl()) {
+    try {
+      await runMigrationSQL("005_fitness_goals.sql", MIGRATION_005_SQL);
+      await runMigrationSQL("007_fitness_goals_extras.sql", MIGRATION_007_SQL);
+      tableReady = true;
+    } catch {
+      // ignore
+    }
   }
 }
 
