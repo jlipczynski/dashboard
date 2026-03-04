@@ -5,7 +5,6 @@ describe("calcHealthScore", () => {
   const emptyGoals = {
     activeCalories: { target: 0, current: 0 },
     cycling: { target: 0, current: 0 },
-    cyclingHours: { target: 0, current: 0 },
     running: { target: 0, current: 0 },
   };
 
@@ -31,19 +30,26 @@ describe("calcHealthScore", () => {
     const goals = {
       activeCalories: { target: 24000, current: 12000 }, // 50%
       cycling: { target: 1200, current: 600 },           // 50%
-      cyclingHours: { target: 0, current: 0 },            // skipped (no target)
       running: { target: 240, current: 240 },             // 100%
     };
     // (50 + 50 + 100) / 3 = 66.67 → 67
     expect(calcHealthScore(goals, 0, 0).score).toBe(67);
   });
 
+  it("handles all goals at 100%", () => {
+    const goals = {
+      activeCalories: { target: 24000, current: 24000 },
+      cycling: { target: 1200, current: 1200 },
+      running: { target: 240, current: 240 },
+    };
+    expect(calcHealthScore(goals, 12, 12).score).toBe(100);
+  });
+
   it("includes gym in average when target set", () => {
     const goals = {
       activeCalories: { target: 0, current: 0 },
       cycling: { target: 0, current: 0 },
-      cyclingHours: { target: 0, current: 0 },
-      running: { target: 100, current: 50 }, // 50%
+        running: { target: 100, current: 50 }, // 50%
     };
     // running=50%, gym=8/12=66.67% → (50+66.67)/2 = 58.33 → 58
     expect(calcHealthScore(goals, 8, 12).score).toBe(58);
@@ -52,16 +58,6 @@ describe("calcHealthScore", () => {
   it("caps individual goals at 100% (no bonus for exceeding)", () => {
     const goals = { ...emptyGoals, running: { target: 100, current: 200 } };
     expect(calcHealthScore(goals, 0, 0).score).toBe(100);
-  });
-
-  it("handles all goals at 100%", () => {
-    const goals = {
-      activeCalories: { target: 24000, current: 24000 },
-      cycling: { target: 1200, current: 1200 },
-      cyclingHours: { target: 30, current: 30 },
-      running: { target: 240, current: 240 },
-    };
-    expect(calcHealthScore(goals, 12, 12).score).toBe(100);
   });
 });
 

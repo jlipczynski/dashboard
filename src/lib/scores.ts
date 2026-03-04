@@ -3,7 +3,6 @@ import type { CachedGarminData } from "./storage";
 type MonthlyGoals = {
   activeCalories: { target: number; current: number };
   cycling: { target: number; current: number };
-  cyclingHours: { target: number; current: number };
   running: { target: number; current: number };
 };
 
@@ -91,14 +90,6 @@ export function calcHealthScore(
       Math.min(goals.cycling.current / goals.cycling.target, 1) * 100
     );
     subcategories.push(subcatStatus("Rower", "🚴", goals.cycling.current, goals.cycling.target, "km", pace));
-  }
-
-  // Cycling hours
-  if (goals.cyclingHours.target > 0) {
-    scores.push(
-      Math.min(goals.cyclingHours.current / goals.cyclingHours.target, 1) * 100
-    );
-    subcategories.push(subcatStatus("Rower h", "🚴", goals.cyclingHours.current, goals.cyclingHours.target, "h", pace));
   }
 
   // Gym
@@ -203,10 +194,6 @@ export function calcAllScores(
         cycling: {
           ...goals.cycling,
           current: garminData.summary.month.cyclingKm,
-        },
-        cyclingHours: {
-          ...goals.cyclingHours,
-          current: garminData.summary.month.cyclingHours,
         },
         running: {
           ...goals.running,

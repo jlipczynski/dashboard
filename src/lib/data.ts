@@ -81,7 +81,6 @@ export const pillars: Pillar[] = [
 export const monthlyGoals = {
   activeCalories: { target: 0, current: 0, unit: "kcal" },
   cycling: { target: 0, current: 0, unit: "km" },
-  cyclingHours: { target: 0, current: 0, unit: "h" },
   running: { target: 0, current: 0, unit: "km" },
   competition: { name: "", date: "", type: "running" as "running" | "cycling", distance: 0 },
   competitions: [] as { name: string; date: string; type: "running" | "cycling"; distance: number }[],

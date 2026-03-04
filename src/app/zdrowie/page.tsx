@@ -1248,7 +1248,6 @@ export default function ZdrowiePage() {
     goals: {
       activeCalories: { ...monthlyGoals.activeCalories },
       cycling: { ...monthlyGoals.cycling },
-      cyclingHours: { ...monthlyGoals.cyclingHours },
       running: { ...monthlyGoals.running },
       competition: { ...monthlyGoals.competition },
       competitions: [],
@@ -1397,7 +1396,6 @@ export default function ZdrowiePage() {
         ...prev,
         activeCalories: { ...prev.activeCalories, current: data.summary.month.activeCalories },
         cycling: { ...prev.cycling, current: data.summary.month.cyclingKm },
-        cyclingHours: { ...prev.cyclingHours, current: data.summary.month.cyclingHours },
         running: { ...prev.running, current: data.summary.month.runningKm },
       }));
 
@@ -1456,7 +1454,7 @@ export default function ZdrowiePage() {
   const bikeWeekTotal = bikeEntries.reduce((a, b) => a + b, 0);
 
   const updateGoal = (
-    key: "activeCalories" | "cycling" | "cyclingHours" | "running",
+    key: "activeCalories" | "cycling" | "running",
     field: "current" | "target",
     value: number
   ) => {
@@ -1555,15 +1553,6 @@ export default function ZdrowiePage() {
             unit="km"
             color="#3b82f6"
             onTargetChange={setBikeMonthlyGoal}
-          />
-          <MonthlyGoalCard
-            icon="🕐"
-            label="Rower (godziny)"
-            current={goals.cyclingHours.current}
-            target={goals.cyclingHours.target}
-            unit="h"
-            color="#6366f1"
-            onTargetChange={(v) => updateGoal("cyclingHours", "target", v)}
           />
           <MonthlyGoalCard
             icon="🏃"

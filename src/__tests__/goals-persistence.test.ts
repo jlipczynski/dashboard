@@ -31,7 +31,6 @@ describe("Goals API POST (upsert)", () => {
       goals: {
         activeCalories: { target: 24000, current: 3882, unit: "kcal" },
         cycling: { target: 1200, current: 79.5, unit: "km" },
-        cyclingHours: { target: 30, current: 2.6, unit: "h" },
         running: { target: 240, current: 23.07, unit: "km" },
         competition: { name: "Maraton", date: "2026-05-01", type: "running", distance: 42 },
         competitions: [],
@@ -55,7 +54,6 @@ describe("Goals API POST (upsert)", () => {
       goals: {
         activeCalories: { target: 0, current: 0, unit: "kcal" },
         cycling: { target: 0, current: 0, unit: "km" },
-        cyclingHours: { target: 0, current: 0, unit: "h" },
         running: { target: 0, current: 0, unit: "km" },
         competition: { name: "", date: "", type: "running", distance: 0 },
         competitions: [],
