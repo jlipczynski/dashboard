@@ -704,6 +704,21 @@ function WellnessWidget({ data }: { data: WellnessData }) {
   );
 }
 
+/* ── Calorie Scoring ─────────────────────────────────────────── */
+function getDayScore(consumed: number, target: number) {
+  if (target <= 0) return { score: 0, label: "—", color: "#9ca3af", emoji: "—" };
+  const ratio = consumed / target;
+
+  if (ratio <= 0.70) return { score: 2, label: "Za malo", color: "#ef4444", emoji: "⚠️" };
+  if (ratio <= 0.80) return { score: 5, label: "Duzy deficyt", color: "#f59e0b", emoji: "🔶" };
+  if (ratio <= 0.90) return { score: 8, label: "Dobry deficyt", color: "#22c55e", emoji: "👍" };
+  if (ratio <= 1.00) return { score: 10, label: "Idealnie", color: "#16a34a", emoji: "✅" };
+  if (ratio <= 1.05) return { score: 7, label: "Lekko ponad", color: "#eab308", emoji: "🟡" };
+  if (ratio <= 1.15) return { score: 4, label: "Za duzo", color: "#f97316", emoji: "🟠" };
+  if (ratio <= 1.25) return { score: 2, label: "Znacznie ponad", color: "#ef4444", emoji: "🔴" };
+  return { score: 0, label: "Alarm", color: "#dc2626", emoji: "🚨" };
+}
+
 /* ── MFP Nutrition / Calorie Deficit ─────────────────────────── */
 type NutritionEntry = {
   date: string;
@@ -719,14 +734,20 @@ function MfpWidget({
   importing,
   importResult,
   totalCaloriesBurned,
+  calorieTarget,
+  onCalorieTargetChange,
 }: {
   entries: NutritionEntry[];
   onImport: (csv: string) => void;
   importing: boolean;
   importResult: string | null;
   totalCaloriesBurned: number | null;
+  calorieTarget: number;
+  onCalorieTargetChange: (v: number) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [editingTarget, setEditingTarget] = useState(false);
+  const [targetDraft, setTargetDraft] = useState(String(calorieTarget));
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -736,195 +757,267 @@ function MfpWidget({
     e.target.value = "";
   };
 
-  // Last 14 days for the chart
-  const last14 = entries.slice(0, 14).reverse();
-
-  // Today's entry
+  // Build last 7 days (always 7, even without data)
   const today = new Date().toISOString().split("T")[0];
+  const last7Days: { date: string; entry: NutritionEntry | null }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    last7Days.push({ date: dateStr, entry: entries.find((e) => e.date === dateStr) || null });
+  }
+
+  // 7-day stats
+  const daysWithData = last7Days.filter((d) => d.entry !== null);
+  const totalConsumed = daysWithData.reduce((s, d) => s + d.entry!.calories, 0);
+  const totalTarget = daysWithData.length * calorieTarget;
+  const weeklyDeficit = totalTarget - totalConsumed;
+  const fatChangeGrams = Math.round((weeklyDeficit / 7700) * 1000);
+  const avgScore = daysWithData.length > 0
+    ? Math.round(daysWithData.reduce((s, d) => s + getDayScore(d.entry!.calories, calorieTarget).score, 0) / daysWithData.length * 10) / 10
+    : 0;
+
+  const maxBarValue = Math.max(calorieTarget * 1.3, ...daysWithData.map((d) => d.entry!.calories));
+
+  // Today
   const todayEntry = entries.find((e) => e.date === today);
+  const todayDeficit = totalCaloriesBurned !== null && todayEntry
+    ? totalCaloriesBurned - todayEntry.calories : null;
+  const avgCal = entries.length > 0
+    ? Math.round(entries.reduce((s, e) => s + e.calories, 0) / entries.length) : 0;
 
-  // Compute deficit: burned - consumed
-  const todayDeficit =
-    totalCaloriesBurned !== null && todayEntry
-      ? totalCaloriesBurned - todayEntry.calories
-      : null;
-
-  // Average daily calories (all entries)
-  const avgCal =
-    entries.length > 0
-      ? Math.round(entries.reduce((s, e) => s + e.calories, 0) / entries.length)
-      : 0;
-
-  // Chart dimensions
-  const w = 420;
-  const h = 160;
+  // 14-day chart
+  const last14 = entries.slice(0, 14).reverse();
+  const w = 420, h = 160;
   const pad = { top: 20, right: 15, bottom: 28, left: 45 };
   const chartW = w - pad.left - pad.right;
   const chartH = h - pad.top - pad.bottom;
-
-  const maxCal = last14.length > 0 ? Math.max(...last14.map((e) => e.calories), 1) : 2500;
+  const maxCal = last14.length > 0 ? Math.max(...last14.map((e) => e.calories), calorieTarget, 1) : 2500;
   const barW = last14.length > 0 ? chartW / last14.length - 3 : 20;
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h4 className="flex items-center gap-2 font-semibold text-foreground">
-          🍎 Kalorie (MyFitnessPal)
-        </h4>
-        <div className="flex items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv"
-            onChange={handleFile}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={importing}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:bg-orange-600 disabled:opacity-50"
-          >
-            {importing ? "Importuję..." : "Importuj CSV"}
-          </button>
+    <div className="space-y-4">
+      {/* ── 7-Day Deficit Card ── */}
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h4 className="flex items-center gap-2 font-semibold text-foreground">
+            📊 Deficyt kaloryczny — 7 dni
+          </h4>
+          <div className="flex items-center gap-2">
+            <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={importing}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:bg-orange-600 disabled:opacity-50"
+            >
+              {importing ? "Importuje..." : "Importuj CSV"}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {importResult && (
-        <div
-          className={`mt-2 rounded-lg px-3 py-2 text-xs ${
-            importResult.startsWith("!")
-              ? "bg-red-50 text-red-600"
-              : "bg-green-50 text-green-700"
-          }`}
-        >
-          {importResult}
-        </div>
-      )}
+        {importResult && (
+          <div className={`mt-2 rounded-lg px-3 py-2 text-xs ${importResult.startsWith("!") ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
+            {importResult}
+          </div>
+        )}
 
-      {/* Today's summary */}
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-        <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-          <span className="text-xl">🍽️</span>
-          <span className="mt-1 text-lg font-bold text-foreground">
-            {todayEntry ? todayEntry.calories : "—"}
-          </span>
-          <span className="text-[10px] text-muted-foreground">Zjedzone kcal</span>
+        {/* Daily target */}
+        <div className="mt-3 flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Cel dzienny:</span>
+          {editingTarget ? (
+            <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+              e.preventDefault();
+              const n = parseInt(targetDraft);
+              if (!isNaN(n) && n > 0) onCalorieTargetChange(n);
+              setEditingTarget(false);
+            }}>
+              <input autoFocus type="number" min={500} max={5000} value={targetDraft}
+                onChange={(e) => setTargetDraft(e.target.value)}
+                onBlur={() => { const n = parseInt(targetDraft); if (!isNaN(n) && n > 0) onCalorieTargetChange(n); setEditingTarget(false); }}
+                className="w-20 rounded border border-border bg-background px-2 py-0.5 text-sm font-bold" />
+              <span className="text-xs text-muted-foreground">kcal</span>
+            </form>
+          ) : (
+            <button onClick={() => { setTargetDraft(String(calorieTarget)); setEditingTarget(true); }}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-bold text-orange-600 hover:bg-orange-50">
+              {calorieTarget} kcal <span className="text-xs text-muted-foreground">&#9998;</span>
+            </button>
+          )}
         </div>
-        <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-          <span className="text-xl">🔥</span>
-          <span className="mt-1 text-lg font-bold text-foreground">
-            {totalCaloriesBurned !== null ? totalCaloriesBurned : "—"}
-          </span>
-          <span className="text-[10px] text-muted-foreground">Spalone kcal</span>
-        </div>
-        <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-          <span className="text-xl">{todayDeficit !== null && todayDeficit > 0 ? "📉" : "📈"}</span>
-          <span
-            className={`mt-1 text-lg font-bold ${
-              todayDeficit !== null
-                ? todayDeficit > 0
-                  ? "text-green-600"
-                  : "text-red-500"
-                : "text-foreground"
-            }`}
-          >
-            {todayDeficit !== null ? `${todayDeficit > 0 ? "-" : "+"}${Math.abs(todayDeficit)}` : "—"}
-          </span>
-          <span className="text-[10px] text-muted-foreground">Deficyt/nadwyzka</span>
-        </div>
-        <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
-          <span className="text-xl">📊</span>
-          <span className="mt-1 text-lg font-bold text-foreground">{avgCal || "—"}</span>
-          <span className="text-[10px] text-muted-foreground">Srednia kcal/dzien</span>
-        </div>
-      </div>
 
-      {/* Macros for today */}
-      {todayEntry && (
-        <div className="mt-3 flex items-center justify-center gap-6 text-xs">
-          <span>
-            <span className="font-semibold text-blue-600">{todayEntry.protein_g}g</span>{" "}
-            <span className="text-muted-foreground">bialko</span>
-          </span>
-          <span>
-            <span className="font-semibold text-amber-600">{todayEntry.carbs_g}g</span>{" "}
-            <span className="text-muted-foreground">wegle</span>
-          </span>
-          <span>
-            <span className="font-semibold text-red-500">{todayEntry.fat_g}g</span>{" "}
-            <span className="text-muted-foreground">tluszcz</span>
-          </span>
-        </div>
-      )}
+        {/* 7-day horizontal bars */}
+        <div className="mt-4 space-y-1.5">
+          {last7Days.map(({ date, entry }) => {
+            const d = new Date(date + "T12:00:00");
+            const dayName = d.toLocaleDateString("pl-PL", { weekday: "short" }).replace(".", "");
+            const dayNum = d.toLocaleDateString("pl-PL", { day: "numeric", month: "numeric" });
+            const isToday = date === today;
 
-      {/* Bar chart */}
-      {last14.length > 0 && (
-        <svg viewBox={`0 0 ${w} ${h}`} className="mt-4 w-full" style={{ maxWidth: w }}>
-          {/* Y axis grid */}
-          {[0, 0.5, 1].map((frac) => {
-            const y = pad.top + chartH - frac * chartH;
+            if (!entry) {
+              return (
+                <div key={date} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${isToday ? "bg-orange-50" : ""}`}>
+                  <div className="w-16 shrink-0 text-xs">
+                    <span className="font-semibold capitalize">{dayName}</span>{" "}
+                    <span className="text-muted-foreground">{dayNum}</span>
+                  </div>
+                  <div className="flex-1 text-xs text-muted-foreground italic">brak danych</div>
+                </div>
+              );
+            }
+
+            const consumed = entry.calories;
+            const deficit = calorieTarget - consumed;
+            const score = getDayScore(consumed, calorieTarget);
+            const consumedPct = Math.min((consumed / maxBarValue) * 100, 100);
+            const targetPct = Math.min((calorieTarget / maxBarValue) * 100, 100);
+            const isOver = consumed > calorieTarget;
+
             return (
-              <g key={frac}>
-                <line
-                  x1={pad.left}
-                  y1={y}
-                  x2={w - pad.right}
-                  y2={y}
-                  stroke="#e5e7eb"
-                  strokeWidth={0.5}
-                />
-                <text
-                  x={pad.left - 4}
-                  y={y + 3}
-                  textAnchor="end"
-                  className="fill-muted-foreground"
-                  fontSize={8}
-                >
-                  {Math.round(frac * maxCal)}
-                </text>
-              </g>
+              <div key={date} className={`rounded-lg px-2 py-1.5 ${isToday ? "bg-orange-50 ring-1 ring-orange-200" : ""}`}>
+                <div className="flex items-center gap-2">
+                  <div className="w-16 shrink-0 text-xs">
+                    <span className="font-semibold capitalize">{dayName}</span>{" "}
+                    <span className="text-muted-foreground">{dayNum}</span>
+                  </div>
+                  <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <div className="absolute top-0 h-full w-px border-l-2 border-dashed border-gray-400 z-10"
+                      style={{ left: `${targetPct}%` }} />
+                    {!isOver ? (
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${consumedPct}%`, background: "linear-gradient(90deg, #22c55e, #16a34a)" }} />
+                    ) : (
+                      <>
+                        <div className="absolute h-full rounded-l-full"
+                          style={{ width: `${targetPct}%`, background: "linear-gradient(90deg, #22c55e, #16a34a)" }} />
+                        <div className="absolute h-full rounded-r-full"
+                          style={{ left: `${targetPct}%`, width: `${Math.min(consumedPct - targetPct, 100 - targetPct)}%`, background: "linear-gradient(90deg, #ef4444, #dc2626)" }} />
+                      </>
+                    )}
+                  </div>
+                  <div className="flex w-32 shrink-0 items-center justify-end gap-1.5 sm:w-44">
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {consumed}<span className="hidden sm:inline">/{calorieTarget}</span>
+                    </span>
+                    <span className="min-w-[50px] text-right text-xs font-bold tabular-nums"
+                      style={{ color: deficit >= 0 ? "#16a34a" : "#ef4444" }}>
+                      {deficit >= 0 ? `−${deficit}` : `+${Math.abs(deficit)}`}
+                    </span>
+                    <span className="text-sm" title={`${score.score}/10 ${score.label}`}>{score.emoji}</span>
+                  </div>
+                </div>
+              </div>
             );
           })}
-          {/* Bars */}
-          {last14.map((entry, i) => {
-            const barH = (entry.calories / maxCal) * chartH;
-            const x = pad.left + i * (chartW / last14.length) + 1.5;
-            const y = pad.top + chartH - barH;
-            const dayLabel = new Date(entry.date + "T12:00:00").toLocaleDateString("pl-PL", {
-              day: "numeric",
-              month: "numeric",
-            });
-            return (
-              <g key={entry.date}>
-                <rect
-                  x={x}
-                  y={y}
-                  width={barW}
-                  height={barH}
-                  rx={2}
-                  fill={entry.calories > 2200 ? "#ef4444" : "#f97316"}
-                  opacity={0.75}
-                />
-                <text
-                  x={x + barW / 2}
-                  y={h - 5}
-                  textAnchor="middle"
-                  className="fill-muted-foreground"
-                  fontSize={7}
-                >
-                  {dayLabel}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      )}
+        </div>
 
-      {entries.length === 0 && (
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          Brak danych. Wyeksportuj CSV z MyFitnessPal i zaimportuj tutaj.
-        </p>
-      )}
+        {/* Legend */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+          <span>✅ w normie</span><span>👍 dobry deficyt</span><span>🟡 lekko ponad</span>
+          <span>🟠 za duzo</span><span>🔴 znacznie ponad</span><span>⚠️ za malo</span>
+        </div>
+
+        {/* Weekly summary */}
+        {daysWithData.length > 0 && (
+          <div className="mt-4 rounded-xl p-4" style={{ background: weeklyDeficit >= 0 ? "linear-gradient(135deg, #f0fdf4, #dcfce7)" : "linear-gradient(135deg, #fef2f2, #fee2e2)" }}>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Podsumowanie {daysWithData.length} dni
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-3">
+              <div>
+                <div className={`text-xl font-black ${weeklyDeficit >= 0 ? "text-green-700" : "text-red-600"}`}>
+                  {weeklyDeficit >= 0 ? `−${weeklyDeficit}` : `+${Math.abs(weeklyDeficit)}`}
+                </div>
+                <div className="text-[10px] text-muted-foreground">kcal {weeklyDeficit >= 0 ? "deficyt" : "nadwyzka"}</div>
+              </div>
+              <div>
+                <div className={`text-xl font-black ${fatChangeGrams >= 0 ? "text-green-700" : "text-red-600"}`}>
+                  ~{Math.abs(fatChangeGrams)}g
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  tluszczu {fatChangeGrams >= 0 ? "↓" : "↑"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-orange-600">{avgScore}/10</div>
+                <div className="text-[10px] text-muted-foreground">srednia ocena</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Today / Details Card ── */}
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <h4 className="flex items-center gap-2 font-semibold text-foreground">🍎 Dzisiejsze kalorie</h4>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+            <span className="text-xl">🍽️</span>
+            <span className="mt-1 text-lg font-bold text-foreground">{todayEntry ? todayEntry.calories : "—"}</span>
+            <span className="text-[10px] text-muted-foreground">Zjedzone kcal</span>
+          </div>
+          <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+            <span className="text-xl">🔥</span>
+            <span className="mt-1 text-lg font-bold text-foreground">{totalCaloriesBurned !== null ? totalCaloriesBurned : "—"}</span>
+            <span className="text-[10px] text-muted-foreground">Spalone kcal</span>
+          </div>
+          <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+            <span className="text-xl">{todayDeficit !== null && todayDeficit > 0 ? "📉" : "📈"}</span>
+            <span className={`mt-1 text-lg font-bold ${todayDeficit !== null ? (todayDeficit > 0 ? "text-green-600" : "text-red-500") : "text-foreground"}`}>
+              {todayDeficit !== null ? `${todayDeficit > 0 ? "−" : "+"}${Math.abs(todayDeficit)}` : "—"}
+            </span>
+            <span className="text-[10px] text-muted-foreground">Deficyt (Garmin)</span>
+          </div>
+          <div className="flex flex-col items-center rounded-lg bg-muted/50 p-3">
+            <span className="text-xl">📊</span>
+            <span className="mt-1 text-lg font-bold text-foreground">{avgCal || "—"}</span>
+            <span className="text-[10px] text-muted-foreground">Srednia kcal/dzien</span>
+          </div>
+        </div>
+
+        {todayEntry && (
+          <div className="mt-3 flex items-center justify-center gap-6 text-xs">
+            <span><span className="font-semibold text-blue-600">{todayEntry.protein_g}g</span> <span className="text-muted-foreground">bialko</span></span>
+            <span><span className="font-semibold text-amber-600">{todayEntry.carbs_g}g</span> <span className="text-muted-foreground">wegle</span></span>
+            <span><span className="font-semibold text-red-500">{todayEntry.fat_g}g</span> <span className="text-muted-foreground">tluszcz</span></span>
+          </div>
+        )}
+
+        {last14.length > 0 && (
+          <svg viewBox={`0 0 ${w} ${h}`} className="mt-4 w-full" style={{ maxWidth: w }}>
+            {[0, 0.5, 1].map((frac) => {
+              const y = pad.top + chartH - frac * chartH;
+              return (
+                <g key={frac}>
+                  <line x1={pad.left} y1={y} x2={w - pad.right} y2={y} stroke="#e5e7eb" strokeWidth={0.5} />
+                  <text x={pad.left - 4} y={y + 3} textAnchor="end" className="fill-muted-foreground" fontSize={8}>{Math.round(frac * maxCal)}</text>
+                </g>
+              );
+            })}
+            <line x1={pad.left} y1={pad.top + chartH - (calorieTarget / maxCal) * chartH}
+              x2={w - pad.right} y2={pad.top + chartH - (calorieTarget / maxCal) * chartH}
+              stroke="#f97316" strokeWidth={1} strokeDasharray="4 3" opacity={0.6} />
+            {last14.map((entry, i) => {
+              const bH = (entry.calories / maxCal) * chartH;
+              const x = pad.left + i * (chartW / last14.length) + 1.5;
+              const y = pad.top + chartH - bH;
+              const dayLabel = new Date(entry.date + "T12:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "numeric" });
+              return (
+                <g key={entry.date}>
+                  <rect x={x} y={y} width={barW} height={bH} rx={2}
+                    fill={entry.calories > calorieTarget ? "#ef4444" : "#22c55e"} opacity={0.75} />
+                  <text x={x + barW / 2} y={h - 5} textAnchor="middle" className="fill-muted-foreground" fontSize={7}>{dayLabel}</text>
+                </g>
+              );
+            })}
+          </svg>
+        )}
+
+        {entries.length === 0 && (
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            Brak danych. Wyeksportuj CSV z MyFitnessPal i zaimportuj tutaj.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -1012,6 +1105,17 @@ export default function ZdrowiePage() {
   const [mfpEntries, setMfpEntries] = useState<NutritionEntry[]>([]);
   const [mfpImporting, setMfpImporting] = useState(false);
   const [mfpResult, setMfpResult] = useState<string | null>(null);
+
+  // Calorie target (localStorage)
+  const [calorieTarget, setCalorieTarget] = useState(2200);
+  useEffect(() => {
+    const stored = localStorage.getItem("calorie_target");
+    if (stored) setCalorieTarget(Number(stored));
+  }, []);
+  const updateCalorieTarget = (v: number) => {
+    setCalorieTarget(v);
+    localStorage.setItem("calorie_target", String(v));
+  };
 
   // Fetch MFP data on mount
   useEffect(() => {
@@ -1189,6 +1293,8 @@ export default function ZdrowiePage() {
             importing={mfpImporting}
             importResult={mfpResult}
             totalCaloriesBurned={wellness.totalCalories}
+            calorieTarget={calorieTarget}
+            onCalorieTargetChange={updateCalorieTarget}
           />
         </div>
 
