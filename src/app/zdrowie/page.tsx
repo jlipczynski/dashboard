@@ -1142,6 +1142,225 @@ function MfpWidget({
   );
 }
 
+/* ── Competitions table (sortable by date) ─────────────────── */
+type Competition = { name: string; date: string; type: "running" | "cycling"; distance: number };
+
+function CompetitionsTable({
+  competitions,
+  runningKm,
+  cyclingKm,
+  onChange,
+}: {
+  competitions: Competition[];
+  runningKm: number;
+  cyclingKm: number;
+  onChange: (list: Competition[]) => void;
+}) {
+  const [sortAsc, setSortAsc] = useState(true);
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [draft, setDraft] = useState<Competition>({ name: "", date: "", type: "running", distance: 0 });
+
+  const today = new Date();
+  const sorted = [...competitions].map((c, i) => ({ ...c, _idx: i })).sort((a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return sortAsc ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date);
+  });
+
+  const daysUntil = (dateStr: string) => {
+    if (!dateStr) return null;
+    return Math.ceil((new Date(dateStr).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const urgencyColor = (days: number | null) => {
+    if (days === null) return "text-muted-foreground";
+    if (days < 0) return "text-gray-400";
+    if (days <= 7) return "text-red-500";
+    if (days <= 30) return "text-amber-500";
+    return "text-emerald-600";
+  };
+
+  const startEdit = (idx: number) => {
+    setEditIdx(idx);
+    setDraft({ ...competitions[idx] });
+  };
+
+  const saveEdit = () => {
+    if (editIdx === null) return;
+    const list = [...competitions];
+    list[editIdx] = draft;
+    onChange(list);
+    setEditIdx(null);
+  };
+
+  const addRow = () => {
+    onChange([...competitions, { name: "", date: "", type: "running", distance: 0 }]);
+    setEditIdx(competitions.length);
+    setDraft({ name: "", date: "", type: "running", distance: 0 });
+  };
+
+  const removeRow = (idx: number) => {
+    const list = [...competitions];
+    list.splice(idx, 1);
+    onChange(list);
+    if (editIdx === idx) setEditIdx(null);
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <h4 className="flex items-center gap-2 font-semibold text-foreground">🏆 Zawody</h4>
+        <button
+          onClick={addRow}
+          className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+        >
+          + Dodaj
+        </button>
+      </div>
+
+      {sorted.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+          Brak zawodow. Kliknij &quot;+ Dodaj&quot; aby dodac.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                <th className="px-3 py-2 text-left font-medium">Nazwa</th>
+                <th
+                  className="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-foreground transition-colors"
+                  onClick={() => setSortAsc(!sortAsc)}
+                >
+                  Data {sortAsc ? "↑" : "↓"}
+                </th>
+                <th className="px-3 py-2 text-left font-medium">Dni</th>
+                <th className="px-3 py-2 text-left font-medium">Typ</th>
+                <th className="px-3 py-2 text-right font-medium">Dystans</th>
+                <th className="px-3 py-2 text-right font-medium">Trening</th>
+                <th className="px-3 py-2 w-16"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((comp) => {
+                const days = daysUntil(comp.date);
+                const isEditing = editIdx === comp._idx;
+                const km = (comp.type === "cycling" ? cyclingKm : runningKm);
+                const pct = comp.distance > 0 ? Math.min(Math.round((km / comp.distance) * 100), 100) : 0;
+                const isPast = days !== null && days < 0;
+
+                if (isEditing) {
+                  return (
+                    <tr key={comp._idx} className="border-b border-border bg-primary/5">
+                      <td className="px-3 py-2">
+                        <input
+                          autoFocus
+                          value={draft.name}
+                          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                          placeholder="Nazwa zawodow..."
+                          className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="date"
+                          value={draft.date}
+                          onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+                          className="rounded border border-border bg-background px-2 py-1 text-sm"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">—</td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={draft.type}
+                          onChange={(e) => setDraft({ ...draft, type: e.target.value as "running" | "cycling" })}
+                          className="rounded border border-border bg-background px-2 py-1 text-sm"
+                        >
+                          <option value="running">🏃 Bieg</option>
+                          <option value="cycling">🚴 Rower</option>
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          value={draft.distance || ""}
+                          onChange={(e) => setDraft({ ...draft, distance: Number(e.target.value) })}
+                          placeholder="km"
+                          className="w-20 rounded border border-border bg-background px-2 py-1 text-sm text-right"
+                        />
+                      </td>
+                      <td className="px-3 py-2"></td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-1">
+                          <button onClick={saveEdit} className="rounded p-1 text-green-600 hover:bg-green-50" title="Zapisz">✓</button>
+                          <button onClick={() => setEditIdx(null)} className="rounded p-1 text-muted-foreground hover:bg-muted" title="Anuluj">✕</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return (
+                  <tr key={comp._idx} className={`border-b border-border transition-colors hover:bg-muted/20 ${isPast ? "opacity-50" : ""}`}>
+                    <td className="px-3 py-2.5 font-medium text-foreground">
+                      {comp.name || <span className="italic text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted-foreground tabular-nums">
+                      {comp.date
+                        ? new Date(comp.date + "T12:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short", year: "numeric" })
+                        : "—"}
+                    </td>
+                    <td className={`px-3 py-2.5 font-semibold tabular-nums ${urgencyColor(days)}`}>
+                      {days !== null ? (days < 0 ? "minelo" : `${days}d`) : "—"}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                        comp.type === "cycling" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                      }`}>
+                        {comp.type === "cycling" ? "🚴" : "🏃"} {comp.type === "cycling" ? "Rower" : "Bieg"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-medium tabular-nums">
+                      {comp.distance > 0 ? `${comp.distance} km` : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {comp.distance > 0 && !isPast && (
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${pct}%`,
+                                backgroundColor: pct >= 80 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#ef4444",
+                              }}
+                            />
+                          </div>
+                          <span className="text-xs tabular-nums text-muted-foreground w-8 text-right">{pct}%</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex gap-0.5">
+                        <button onClick={() => startEdit(comp._idx)} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="Edytuj">
+                          ✎
+                        </button>
+                        <button onClick={() => removeRow(comp._idx)} className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-500" title="Usun">
+                          ✕
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main page ──────────────────────────────────────────────── */
 export default function ZdrowiePage() {
 
@@ -1552,79 +1771,25 @@ export default function ZdrowiePage() {
           </div>
         </div>
 
-        {/* ── Competitions (multiple, editable) ─────────────────── */}
-        <div className="mt-4 space-y-3">
-          {/* Render all competitions from the array */}
-          {(goals.competitions && goals.competitions.length > 0
-            ? goals.competitions
-            : goals.competition.name || goals.competition.date
-              ? [goals.competition]
-              : []
-          ).map((comp, idx) => (
-            <div key={idx} className="relative">
-              <CompetitionCard
-                name={comp.name}
-                date={comp.date}
-                type={comp.type ?? "running"}
-                distance={comp.distance ?? 0}
-                currentMonthlyKm={
-                  (comp.type ?? "running") === "running"
-                    ? goals.running.current
-                    : goals.cycling.current
-                }
-                onNameChange={(v) => {
-                  setGoals((prev) => {
-                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
-                    list[idx] = { ...list[idx], name: v };
-                    return { ...prev, competitions: list, competition: list[0] || prev.competition };
-                  });
-                }}
-                onDateChange={(v) => {
-                  setGoals((prev) => {
-                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
-                    list[idx] = { ...list[idx], date: v };
-                    return { ...prev, competitions: list, competition: list[0] || prev.competition };
-                  });
-                }}
-                onTypeChange={(v) => {
-                  setGoals((prev) => {
-                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
-                    list[idx] = { ...list[idx], type: v };
-                    return { ...prev, competitions: list, competition: list[0] || prev.competition };
-                  });
-                }}
-                onDistanceChange={(v) => {
-                  setGoals((prev) => {
-                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
-                    list[idx] = { ...list[idx], distance: v };
-                    return { ...prev, competitions: list, competition: list[0] || prev.competition };
-                  });
-                }}
-                onRemove={() => {
-                  setGoals((prev) => {
-                    const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
-                    list.splice(idx, 1);
-                    return { ...prev, competitions: list, competition: list[0] || { name: "", date: "", type: "running", distance: 0 } };
-                  });
-                }}
-              />
-            </div>
-          ))}
-
-          {/* Add competition button */}
-          <button
-            onClick={() => {
-              setGoals((prev) => {
-                const list = [...(prev.competitions?.length ? prev.competitions : prev.competition.name || prev.competition.date ? [prev.competition] : [])];
-                list.push({ name: "", date: "", type: "running", distance: 0 });
-                return { ...prev, competitions: list, competition: list[0] || prev.competition };
-              });
-            }}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-card/50 px-4 py-4 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-          >
-            + Dodaj zawody
-          </button>
-        </div>
+        {/* ── Competitions table (sortable) ─────────────────────── */}
+        <CompetitionsTable
+          competitions={
+            goals.competitions && goals.competitions.length > 0
+              ? goals.competitions
+              : goals.competition.name || goals.competition.date
+                ? [goals.competition]
+                : []
+          }
+          runningKm={goals.running.current}
+          cyclingKm={goals.cycling.current}
+          onChange={(list) => {
+            setGoals((prev) => ({
+              ...prev,
+              competitions: list,
+              competition: list[0] || { name: "", date: "", type: "running" as const, distance: 0 },
+            }));
+          }}
+        />
 
         {/* ── Gym tracker ──────────────────────────────────────── */}
         <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🏅 Moj sport w ujeciu tygodniowym</h3>
