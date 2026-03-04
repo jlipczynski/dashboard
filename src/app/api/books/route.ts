@@ -1,11 +1,78 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { runMigrationSQL, hasDbUrl } from "@/lib/db";
+
+const BOOKS_SQL = `
+CREATE TABLE IF NOT EXISTS books (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  total_pages INT NOT NULL DEFAULT 0,
+  current_page INT NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'reading' CHECK (status IN ('reading', 'finished', 'archived')),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE books ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on books" ON books
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_books_status ON books (status);
+
+CREATE TABLE IF NOT EXISTS book_readings (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  book_id UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  page_from INT NOT NULL DEFAULT 0,
+  page_to INT NOT NULL,
+  pages_read INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE book_readings ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on book_readings" ON book_readings
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_book_readings_book_date ON book_readings (book_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_book_readings_date ON book_readings (date DESC);
+`;
+
+let tableReady = false;
+
+async function ensureTable() {
+  if (tableReady || !supabase) return;
+
+  const { error } = await supabase.from("books").select("id").limit(1);
+  if (!error) {
+    tableReady = true;
+    return;
+  }
+
+  if (!error.message.includes("does not exist")) {
+    tableReady = true;
+    return;
+  }
+
+  // Table missing — create via direct Postgres
+  if (hasDbUrl()) {
+    try {
+      await runMigrationSQL("008_books.sql", BOOKS_SQL);
+      tableReady = true;
+    } catch {
+      // ignore — will fail on next query with clear error
+    }
+  }
+}
 
 // GET /api/books?status=reading
 export async function GET(request: Request) {
   if (!supabase) {
     return NextResponse.json({ books: [] });
   }
+
+  await ensureTable();
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
@@ -23,7 +90,7 @@ export async function GET(request: Request) {
 
   if (error) {
     if (error.message.includes("does not exist")) {
-      return NextResponse.json({ books: [], warning: "Tabela books nie istnieje. Wejdz na /api/migrate." });
+      return NextResponse.json({ books: [] });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -36,6 +103,8 @@ export async function POST(request: Request) {
   if (!supabase) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
+
+  await ensureTable();
 
   const body = await request.json();
   const { title, total_pages } = body;
@@ -62,6 +131,8 @@ export async function PATCH(request: Request) {
   if (!supabase) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
+
+  await ensureTable();
 
   const body = await request.json();
   const { id, ...updates } = body;
@@ -96,6 +167,8 @@ export async function DELETE(request: Request) {
   if (!supabase) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
+
+  await ensureTable();
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

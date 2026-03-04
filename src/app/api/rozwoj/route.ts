@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { runMigrationSQL, hasDbUrl } from "@/lib/db";
 
 const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS rozwoj_entries (
@@ -25,7 +26,6 @@ let tableReady = false;
 async function ensureTable() {
   if (tableReady || !supabase) return;
 
-  // Quick check — if table exists, mark ready
   const { error } = await supabase.from("rozwoj_entries").select("id").limit(1);
   if (!error) {
     tableReady = true;
@@ -33,19 +33,18 @@ async function ensureTable() {
   }
 
   if (!error.message.includes("does not exist")) {
-    tableReady = true; // some other error, table likely exists
+    tableReady = true;
     return;
   }
 
-  // Table doesn't exist — try to create via run_migration RPC (exists on this Supabase instance)
-  try {
-    await supabase.rpc("run_migration", {
-      p_name: "006_rozwoj_entries.sql",
-      p_sql: MIGRATION_SQL,
-    });
-    tableReady = true;
-  } catch {
-    // RPC not available
+  // Table missing — create via direct Postgres
+  if (hasDbUrl()) {
+    try {
+      await runMigrationSQL("006_rozwoj_entries.sql", MIGRATION_SQL);
+      tableReady = true;
+    } catch {
+      // ignore
+    }
   }
 }
 
