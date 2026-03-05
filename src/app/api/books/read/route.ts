@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { querySQL, hasDbUrl } from "@/lib/db";
 
 // POST /api/books/read — log a reading session
 // Body: { book_id, page_number, date }
-// Calculates pages_read = page_number - book.current_page
-// Updates book.current_page, creates book_readings entry, updates rozwoj_entries
 export async function POST(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!hasDbUrl()) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 500 });
   }
 
   const body = await request.json();
@@ -19,96 +17,77 @@ export async function POST(request: Request) {
 
   const pageNum = Number(page_number);
 
-  // Get current book state
-  const { data: book, error: bookErr } = await supabase
-    .from("books")
-    .select("*")
-    .eq("id", book_id)
-    .single();
+  try {
+    // Get current book state
+    const books = await querySQL(
+      "SELECT * FROM books WHERE id = $1",
+      [book_id]
+    );
 
-  if (bookErr || !book) {
-    return NextResponse.json({ error: "Ksiazka nie znaleziona" }, { status: 404 });
-  }
+    if (books.length === 0) {
+      return NextResponse.json({ error: "Ksiazka nie znaleziona" }, { status: 404 });
+    }
 
-  const pageFrom = book.current_page;
-  const pagesRead = pageNum - pageFrom;
+    const book = books[0] as Record<string, unknown>;
+    const pageFrom = Number(book.current_page);
+    const pagesRead = pageNum - pageFrom;
 
-  if (pagesRead <= 0) {
-    // Just update position (correction), no pages counted toward goal
-    await supabase
-      .from("books")
-      .update({ current_page: pageNum, updated_at: new Date().toISOString() })
-      .eq("id", book_id);
+    if (pagesRead <= 0) {
+      await querySQL(
+        "UPDATE books SET current_page = $1, updated_at = $2 WHERE id = $3",
+        [pageNum, new Date().toISOString(), book_id]
+      );
+      return NextResponse.json({ ok: true, pages_read: 0, corrected: true });
+    }
 
-    return NextResponse.json({ ok: true, pages_read: 0, corrected: true });
-  }
+    // 1. Create book_readings entry
+    await querySQL(
+      `INSERT INTO book_readings (book_id, date, page_from, page_to, pages_read)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [book_id, date, pageFrom, pageNum, pagesRead]
+    );
 
-  // 1. Create book_readings entry
-  const { error: readErr } = await supabase
-    .from("book_readings")
-    .insert({
-      book_id,
-      date,
-      page_from: pageFrom,
-      page_to: pageNum,
+    // 2. Update book's current_page (and auto-finish if at end)
+    const newStatus = pageNum >= Number(book.total_pages) ? "finished" : "reading";
+    await querySQL(
+      "UPDATE books SET current_page = $1, status = $2, updated_at = $3 WHERE id = $4",
+      [pageNum, newStatus, new Date().toISOString(), book_id]
+    );
+
+    // 3. Add pages/minutes to rozwoj_entries for this date
+    const area = book.type === "listening" ? "sluchanie" : "czytanie";
+    const existing = await querySQL(
+      "SELECT * FROM rozwoj_entries WHERE area = $1 AND date = $2",
+      [area, date]
+    );
+
+    if (existing.length > 0) {
+      const entry = existing[0] as Record<string, unknown>;
+      await querySQL(
+        "UPDATE rozwoj_entries SET amount = $1, updated_at = $2 WHERE id = $3",
+        [Number(entry.amount) + pagesRead, new Date().toISOString(), entry.id]
+      );
+    } else {
+      await querySQL(
+        "INSERT INTO rozwoj_entries (area, date, amount) VALUES ($1, $2, $3)",
+        [area, date, pagesRead]
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
       pages_read: pagesRead,
+      book_finished: newStatus === "finished",
     });
-
-  if (readErr) {
-    return NextResponse.json({ error: readErr.message }, { status: 500 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  // 2. Update book's current_page (and auto-finish if at end)
-  const newStatus = pageNum >= book.total_pages ? "finished" : "reading";
-  await supabase
-    .from("books")
-    .update({
-      current_page: pageNum,
-      status: newStatus,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", book_id);
-
-  // 3. Add pages/minutes to rozwoj_entries for this date
-  // Use 'sluchanie' area for audiobooks, 'czytanie' for regular books
-  const area = book.type === "listening" ? "sluchanie" : "czytanie";
-  const { data: existing } = await supabase
-    .from("rozwoj_entries")
-    .select("*")
-    .eq("area", area)
-    .eq("date", date)
-    .single();
-
-  if (existing) {
-    // Add to existing amount
-    await supabase
-      .from("rozwoj_entries")
-      .update({
-        amount: existing.amount + pagesRead,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-  } else {
-    // Create new entry
-    await supabase
-      .from("rozwoj_entries")
-      .insert({
-        area,
-        date,
-        amount: pagesRead,
-      });
-  }
-
-  return NextResponse.json({
-    ok: true,
-    pages_read: pagesRead,
-    book_finished: newStatus === "finished",
-  });
 }
 
 // GET /api/books/read?book_id=...&days=90 — get reading history for a book
 export async function GET(request: Request) {
-  if (!supabase) {
+  if (!hasDbUrl()) {
     return NextResponse.json({ readings: [] });
   }
 
@@ -120,24 +99,27 @@ export async function GET(request: Request) {
   since.setDate(since.getDate() - days);
   const sinceStr = since.toISOString().split("T")[0];
 
-  let query = supabase
-    .from("book_readings")
-    .select("*, books(title)")
-    .gte("date", sinceStr)
-    .order("date", { ascending: false });
+  try {
+    let sql = `SELECT br.*, b.title as book_title
+               FROM book_readings br
+               JOIN books b ON b.id = br.book_id
+               WHERE br.date >= $1`;
+    const params: unknown[] = [sinceStr];
 
-  if (bookId) {
-    query = query.eq("book_id", bookId);
-  }
+    if (bookId) {
+      sql += " AND br.book_id = $2";
+      params.push(bookId);
+    }
 
-  const { data, error } = await query;
+    sql += " ORDER BY br.date DESC";
 
-  if (error) {
-    if (error.message.includes("does not exist")) {
+    const readings = await querySQL(sql, params);
+    return NextResponse.json({ readings });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    if (msg.includes("does not exist")) {
       return NextResponse.json({ readings: [] });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  return NextResponse.json({ readings: data });
 }

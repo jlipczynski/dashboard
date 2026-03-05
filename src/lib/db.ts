@@ -36,6 +36,18 @@ export async function runSQL(sql: string): Promise<void> {
   }
 }
 
+export async function querySQL<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
+  const client = new pg.Client(getClientConfig());
+
+  await client.connect();
+  try {
+    const { rows } = await client.query(sql, params);
+    return rows as T[];
+  } finally {
+    await client.end();
+  }
+}
+
 export async function runMigrationSQL(name: string, sql: string): Promise<"ran" | "skipped"> {
   const client = new pg.Client(getClientConfig());
 
