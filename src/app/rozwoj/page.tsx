@@ -788,6 +788,10 @@ function SluchanieCard({
   const [newBookHours, setNewBookHours] = useState("");
   const [newBookMins, setNewBookMins] = useState("");
   const [showFinished, setShowFinished] = useState(false);
+  const [editingBookId, setEditingBookId] = useState<string | null>(null);
+  const [editBookTitle, setEditBookTitle] = useState("");
+  const [editBookHours, setEditBookHours] = useState("");
+  const [editBookMins, setEditBookMins] = useState("");
   const [editingTarget, setEditingTarget] = useState<"monthly" | "weekly" | null>(null);
   const [targetDraft, setTargetDraft] = useState("");
   const [bookError, setBookError] = useState<string | null>(null);
@@ -914,6 +918,59 @@ function SluchanieCard({
       body: JSON.stringify({ id, status: "archived" }),
     });
     await fetchBooks();
+  };
+
+  const startEditingBook = (book: Book) => {
+    setEditingBookId(book.id);
+    setEditBookTitle(book.title);
+    const h = Math.floor(book.total_pages / 60);
+    const m = book.total_pages % 60;
+    setEditBookHours(String(h));
+    setEditBookMins(String(m));
+  };
+
+  const handleEditBook = async (bookId: string) => {
+    const title = editBookTitle.trim();
+    const h = parseInt(editBookHours) || 0;
+    const m = parseInt(editBookMins) || 0;
+    const totalMinutes = h * 60 + m;
+    if (!title || totalMinutes <= 0) return;
+
+    setSaving(true);
+    setBookError(null);
+    try {
+      const book = books.find((b) => b.id === bookId);
+      const newStatus = book && book.current_page < totalMinutes ? "reading" : undefined;
+      const updates: Record<string, unknown> = { id: bookId, title, total_pages: totalMinutes };
+      if (newStatus) updates.status = newStatus;
+
+      const res = await fetch("/api/books", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setBookError(data.error);
+      } else {
+        setEditingBookId(null);
+        await fetchBooks();
+      }
+    } catch {
+      setBookError("Blad edycji audiobooka");
+    }
+    setSaving(false);
+  };
+
+  const handleReactivateBook = async (id: string) => {
+    setSaving(true);
+    await fetch("/api/books", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: "reading" }),
+    });
+    await fetchBooks();
+    setSaving(false);
   };
 
   function formatMinutes(mins: number) {
@@ -1184,6 +1241,7 @@ function SluchanieCard({
                 ? Math.round((book.current_page / book.total_pages) * 100)
                 : 0;
               const isListening = listeningBookId === book.id;
+              const isEditing = editingBookId === book.id;
 
               return (
                 <div key={book.id} className="rounded-xl border border-sky-100 bg-white p-3 transition-all">
@@ -1203,14 +1261,23 @@ function SluchanieCard({
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {!isListening && (
-                        <button
-                          onClick={() => { setListeningBookId(book.id); setListenHours(""); setListenMins(""); setListenDate(today()); }}
-                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
-                          style={{ background: color }}
-                        >
-                          Sluchaj
-                        </button>
+                      {!isListening && !isEditing && (
+                        <>
+                          <button
+                            onClick={() => { setListeningBookId(book.id); setEditingBookId(null); setListenHours(""); setListenMins(""); setListenDate(today()); }}
+                            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
+                            style={{ background: color }}
+                          >
+                            Sluchaj
+                          </button>
+                          <button
+                            onClick={() => { startEditingBook(book); setListeningBookId(null); }}
+                            className="rounded p-1 text-xs text-muted-foreground transition-colors hover:text-sky-600"
+                            title="Edytuj"
+                          >
+                            &#9998;
+                          </button>
+                        </>
                       )}
                       <button
                         onClick={() => handleArchiveBook(book.id)}
@@ -1221,6 +1288,63 @@ function SluchanieCard({
                       </button>
                     </div>
                   </div>
+
+                  {isEditing && (
+                    <form
+                      className="mt-3 rounded-lg p-3"
+                      style={{ background: colorLight }}
+                      onSubmit={(e) => { e.preventDefault(); handleEditBook(book.id); }}
+                    >
+                      <div className="text-xs font-medium text-muted-foreground">Edytuj audiobook</div>
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tytul</label>
+                          <input
+                            autoFocus
+                            value={editBookTitle}
+                            onChange={(e) => setEditBookTitle(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div className="w-full sm:w-20">
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Godz</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={editBookHours}
+                            onChange={(e) => setEditBookHours(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div className="w-full sm:w-20">
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Min</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            value={editBookMins}
+                            onChange={(e) => setEditBookMins(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+                          style={{ background: color }}
+                        >
+                          {saving ? "..." : "Zapisz"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingBookId(null)}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Anuluj
+                        </button>
+                      </div>
+                    </form>
+                  )}
 
                   <div className="mt-2">
                     <ProgressBar
@@ -1313,6 +1437,7 @@ function SluchanieCard({
               <div className="mt-2 space-y-1.5">
                 {finishedBooks.map((book) => {
                   const isListening = listeningBookId === book.id;
+                  const isEditing = editingBookId === book.id;
                   return (
                     <div key={book.id} className="rounded-xl border border-green-100 bg-green-50 p-3 transition-all">
                       <div className="flex items-center justify-between gap-2">
@@ -1326,17 +1451,90 @@ function SluchanieCard({
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          {!isListening && (
-                            <button
-                              onClick={() => { setListeningBookId(book.id); setListenHours(""); setListenMins(""); setListenDate(today()); }}
-                              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
-                              style={{ background: color }}
-                            >
-                              Sluchaj
-                            </button>
+                          {!isListening && !isEditing && (
+                            <>
+                              <button
+                                onClick={() => { setListeningBookId(book.id); setEditingBookId(null); setListenHours(""); setListenMins(""); setListenDate(today()); }}
+                                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
+                                style={{ background: color }}
+                              >
+                                Sluchaj
+                              </button>
+                              <button
+                                onClick={() => { startEditingBook(book); setListeningBookId(null); }}
+                                className="rounded-lg border border-sky-200 px-3 py-1.5 text-xs font-semibold transition-all active:scale-95"
+                                style={{ color }}
+                              >
+                                Edytuj
+                              </button>
+                              <button
+                                onClick={() => handleReactivateBook(book.id)}
+                                className="rounded p-1 text-xs text-muted-foreground transition-colors hover:text-green-600"
+                                title="Przywroc do aktywnych"
+                              >
+                                &#8634;
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>
+
+                      {isEditing && (
+                        <form
+                          className="mt-3 rounded-lg p-3"
+                          style={{ background: colorLight }}
+                          onSubmit={(e) => { e.preventDefault(); handleEditBook(book.id); }}
+                        >
+                          <div className="text-xs font-medium text-muted-foreground">Edytuj audiobook</div>
+                          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                            <div className="flex-1">
+                              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tytul</label>
+                              <input
+                                autoFocus
+                                value={editBookTitle}
+                                onChange={(e) => setEditBookTitle(e.target.value)}
+                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+                              />
+                            </div>
+                            <div className="w-full sm:w-20">
+                              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Godz</label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={editBookHours}
+                                onChange={(e) => setEditBookHours(e.target.value)}
+                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+                              />
+                            </div>
+                            <div className="w-full sm:w-20">
+                              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Min</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={59}
+                                value={editBookMins}
+                                onChange={(e) => setEditBookMins(e.target.value)}
+                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+                              />
+                            </div>
+                            <button
+                              type="submit"
+                              disabled={saving}
+                              className="shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+                              style={{ background: color }}
+                            >
+                              {saving ? "..." : "Zapisz"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingBookId(null)}
+                              className="text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              Anuluj
+                            </button>
+                          </div>
+                        </form>
+                      )}
 
                       {isListening && (
                         <form
