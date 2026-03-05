@@ -1311,15 +1311,99 @@ function SluchanieCard({
             </button>
             {showFinished && (
               <div className="mt-2 space-y-1.5">
-                {finishedBooks.map((book) => (
-                  <div key={book.id} className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <BookCover url={book.cover_url} title={book.title} size={24} />
-                      <span className="text-sm font-medium text-foreground">{book.title}</span>
+                {finishedBooks.map((book) => {
+                  const isListening = listeningBookId === book.id;
+                  return (
+                    <div key={book.id} className="rounded-xl border border-green-100 bg-green-50 p-3 transition-all">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <BookCover url={book.cover_url} title={book.title} size={24} />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-sm font-medium text-foreground">{book.title}</span>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {formatMinutes(book.current_page)} / {formatMinutes(book.total_pages)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {!isListening && (
+                            <button
+                              onClick={() => { setListeningBookId(book.id); setListenHours(""); setListenMins(""); setListenDate(today()); }}
+                              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-95"
+                              style={{ background: color }}
+                            >
+                              Sluchaj
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {isListening && (
+                        <form
+                          className="mt-3 rounded-lg p-3"
+                          style={{ background: colorLight }}
+                          onSubmit={(e) => { e.preventDefault(); handleLogListening(book.id); }}
+                        >
+                          <div className="text-xs font-medium text-muted-foreground">
+                            Ile dzisiaj sluchales?
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              <input
+                                autoFocus
+                                type="number"
+                                min={0}
+                                value={listenHours}
+                                onChange={(e) => setListenHours(e.target.value)}
+                                placeholder="0"
+                                className="w-16 rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-sky-300"
+                              />
+                              <span className="text-xs text-muted-foreground">h</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min={0}
+                                max={59}
+                                value={listenMins}
+                                onChange={(e) => setListenMins(e.target.value)}
+                                placeholder="30"
+                                className="w-16 rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-sky-300"
+                              />
+                              <span className="text-xs text-muted-foreground">min</span>
+                            </div>
+                            <input
+                              type="date"
+                              value={listenDate}
+                              onChange={(e) => setListenDate(e.target.value)}
+                              className="w-[130px] rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground focus:outline-none"
+                            />
+                            <button
+                              type="submit"
+                              disabled={saving || ((parseInt(listenHours) || 0) * 60 + (parseInt(listenMins) || 0) <= 0)}
+                              className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+                              style={{ background: color }}
+                            >
+                              {saving ? "..." : "Zapisz"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setListeningBookId(null)}
+                              className="text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              Anuluj
+                            </button>
+                          </div>
+                          {((parseInt(listenHours) || 0) * 60 + (parseInt(listenMins) || 0)) > 0 && (
+                            <div className="mt-2 text-xs font-medium" style={{ color }}>
+                              +{formatMinutes((parseInt(listenHours) || 0) * 60 + (parseInt(listenMins) || 0))} sluchania
+                            </div>
+                          )}
+                        </form>
+                      )}
                     </div>
-                    <span className="text-xs text-muted-foreground">{formatMinutes(book.total_pages)}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
