@@ -116,7 +116,7 @@ export async function GET(request: Request) {
 
   let query = supabase
     .from("book_readings")
-    .select("*, books(title)")
+    .select("*, books(title, type)")
     .gte("date", sinceStr)
     .order("date", { ascending: false });
 
