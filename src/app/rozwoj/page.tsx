@@ -280,7 +280,7 @@ function CzytanieCard({
     .filter((e) => e.date === today())
     .reduce((s, e) => s + e.amount, 0);
 
-  const monthPct = targets.monthly > 0 ? Math.min(Math.round((monthlyDone / targets.monthly) * 100), 100) : 0;
+  const monthPct = targets.monthly > 0 ? Math.round((monthlyDone / targets.monthly) * 100) : 0;
   const dailyTarget = targets.monthly > 0 ? Math.ceil(targets.monthly / daysInMonth) : 0;
   const weeklyTarget = targets.weekly;
   const expectedByNow = dailyTarget * (dayOfMonth - 1) + dailyTarget; // including today
@@ -789,22 +789,20 @@ function CzytanieCard({
               >
                 <span className="text-xs text-muted-foreground">{formatDate(entry.date)}</span>
                 {editingId === entry.id ? (
-                  <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+                  <form className="inline-flex items-center gap-1" onSubmit={async (e) => {
                     e.preventDefault();
                     const n = parseInt(editDraft);
                     if (!isNaN(n) && n > 0) {
-                      onEditEntry("czytanie", entry.date, n);
-                      onEntriesChanged();
+                      await onEditEntry("czytanie", entry.date, n);
                     }
                     setEditingId(null);
                   }}>
-                    <input autoFocus type="number" min={0} value={editDraft}
+                    <input autoFocus type="number" min={1} value={editDraft}
                       onChange={(e) => setEditDraft(e.target.value)}
-                      onBlur={() => {
+                      onBlur={async () => {
                         const n = parseInt(editDraft);
                         if (!isNaN(n) && n > 0) {
-                          onEditEntry("czytanie", entry.date, n);
-                          onEntriesChanged();
+                          await onEditEntry("czytanie", entry.date, n);
                         }
                         setEditingId(null);
                       }}
@@ -814,13 +812,13 @@ function CzytanieCard({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => { setEditDraft(String(entry.amount)); setEditingId(entry.id); }}
-                      className="text-sm font-semibold transition-colors hover:opacity-70"
+                      className="cursor-pointer text-sm font-semibold underline decoration-dotted underline-offset-2 transition-colors hover:opacity-70"
                       style={{ color }}
                     >
                       {entry.amount} str.
                     </button>
                     <button
-                      onClick={() => { onDeleteEntry(entry.id); onEntriesChanged(); }}
+                      onClick={async () => { await onDeleteEntry(entry.id); }}
                       className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
                       title="Usun"
                     >
@@ -912,7 +910,7 @@ function SluchanieCard({
     .filter((e) => e.date === today())
     .reduce((s, e) => s + e.amount, 0);
 
-  const monthPct = targets.monthly > 0 ? Math.min(Math.round((monthlyDone / targets.monthly) * 100), 100) : 0;
+  const monthPct = targets.monthly > 0 ? Math.round((monthlyDone / targets.monthly) * 100) : 0;
   const dailyTarget = targets.monthly > 0 ? Math.ceil(targets.monthly / daysInMonth) : 0;
   const weeklyTarget = targets.weekly;
   const expectedByNow = dailyTarget * dayOfMonth;
@@ -1709,22 +1707,20 @@ function SluchanieCard({
               >
                 <span className="text-xs text-muted-foreground">{formatDate(entry.date)}</span>
                 {editingEntryId === entry.id ? (
-                  <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+                  <form className="inline-flex items-center gap-1" onSubmit={async (e) => {
                     e.preventDefault();
                     const n = parseInt(editEntryDraft);
                     if (!isNaN(n) && n > 0) {
-                      onEditEntry("sluchanie", entry.date, n);
-                      onEntriesChanged();
+                      await onEditEntry("sluchanie", entry.date, n);
                     }
                     setEditingEntryId(null);
                   }}>
-                    <input autoFocus type="number" min={0} value={editEntryDraft}
+                    <input autoFocus type="number" min={1} value={editEntryDraft}
                       onChange={(e) => setEditEntryDraft(e.target.value)}
-                      onBlur={() => {
+                      onBlur={async () => {
                         const n = parseInt(editEntryDraft);
                         if (!isNaN(n) && n > 0) {
-                          onEditEntry("sluchanie", entry.date, n);
-                          onEntriesChanged();
+                          await onEditEntry("sluchanie", entry.date, n);
                         }
                         setEditingEntryId(null);
                       }}
@@ -1734,13 +1730,13 @@ function SluchanieCard({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => { setEditEntryDraft(String(entry.amount)); setEditingEntryId(entry.id); }}
-                      className="text-sm font-semibold transition-colors hover:opacity-70"
+                      className="cursor-pointer text-sm font-semibold underline decoration-dotted underline-offset-2 transition-colors hover:opacity-70"
                       style={{ color }}
                     >
                       {formatMinutes(entry.amount)}
                     </button>
                     <button
-                      onClick={() => { onDeleteEntry(entry.id); onEntriesChanged(); }}
+                      onClick={async () => { await onDeleteEntry(entry.id); }}
                       className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
                       title="Usun"
                     >
@@ -1980,17 +1976,17 @@ function AreaCard({
             >
               <span className="text-xs text-muted-foreground">{formatDate(entry.date)}</span>
               {editingId === entry.id ? (
-                <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+                <form className="inline-flex items-center gap-1" onSubmit={async (e) => {
                   e.preventDefault();
                   const n = parseInt(editDraft);
-                  if (!isNaN(n) && n > 0) onEditEntry(area.key, entry.date, n);
+                  if (!isNaN(n) && n > 0) await onEditEntry(area.key, entry.date, n);
                   setEditingId(null);
                 }}>
-                  <input autoFocus type="number" min={0} value={editDraft}
+                  <input autoFocus type="number" min={1} value={editDraft}
                     onChange={(e) => setEditDraft(e.target.value)}
-                    onBlur={() => {
+                    onBlur={async () => {
                       const n = parseInt(editDraft);
-                      if (!isNaN(n) && n > 0) onEditEntry(area.key, entry.date, n);
+                      if (!isNaN(n) && n > 0) await onEditEntry(area.key, entry.date, n);
                       setEditingId(null);
                     }}
                     className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-right" />
@@ -1999,13 +1995,13 @@ function AreaCard({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => { setEditDraft(String(entry.amount)); setEditingId(entry.id); }}
-                    className="text-sm font-semibold transition-colors hover:opacity-70"
+                    className="cursor-pointer text-sm font-semibold underline decoration-dotted underline-offset-2 transition-colors hover:opacity-70"
                     style={{ color: area.color }}
                   >
                     {entry.amount} {area.unitShort}
                   </button>
                   <button
-                    onClick={() => onDeleteEntry(entry.id)}
+                    onClick={async () => { await onDeleteEntry(entry.id); }}
                     className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
                     title="Usun"
                   >
