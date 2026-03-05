@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-import { runSQL, runMigrationSQL, hasDbUrl } from "@/lib/db";
+import { runSQL, querySQL, hasDbUrl } from "@/lib/db";
 
 const BOOKS_SQL = `
 CREATE TABLE IF NOT EXISTS books (
@@ -42,55 +41,24 @@ CREATE INDEX IF NOT EXISTS idx_book_readings_book_date ON book_readings (book_id
 CREATE INDEX IF NOT EXISTS idx_book_readings_date ON book_readings (date DESC);
 `;
 
-const BOOKS_TYPE_COVER_SQL = `
-ALTER TABLE books ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'reading' CHECK (type IN ('reading', 'listening'));
-ALTER TABLE books ADD COLUMN IF NOT EXISTS cover_url TEXT;
-CREATE INDEX IF NOT EXISTS idx_books_type ON books (type);
-`;
-
 let tableReady = false;
 
 async function ensureTable() {
-  if (tableReady || !supabase) return;
+  if (tableReady) return;
+  if (!hasDbUrl()) return;
 
-  const { error } = await supabase.from("books").select("id").limit(1);
-  if (!error) {
-    // Table exists — ensure type/cover_url columns exist (migration 009)
-    if (hasDbUrl()) {
-      try {
-        await runMigrationSQL("009_books_type_cover.sql", BOOKS_TYPE_COVER_SQL);
-      } catch {
-        // columns likely already exist
-      }
-    }
+  try {
+    await runSQL(BOOKS_SQL);
     tableReady = true;
-    return;
-  }
-
-  if (!error.message.includes("does not exist") && !error.message.includes("schema cache")) {
+  } catch {
+    // table likely already exists
     tableReady = true;
-    return;
-  }
-
-  // Table missing — force-create via direct Postgres (bypass _migrations check
-  // since the migration may be recorded but table was never actually created)
-  if (hasDbUrl()) {
-    try {
-      await runSQL(BOOKS_SQL);
-      await runSQL(BOOKS_TYPE_COVER_SQL);
-      // Record in _migrations so future runs skip correctly
-      await runMigrationSQL("008_books.sql", "SELECT 1");
-      await runMigrationSQL("009_books_type_cover.sql", "SELECT 1");
-      tableReady = true;
-    } catch {
-      // ignore — will fail on next query with clear error
-    }
   }
 }
 
 // GET /api/books?status=reading
 export async function GET(request: Request) {
-  if (!supabase) {
+  if (!hasDbUrl()) {
     return NextResponse.json({ books: [] });
   }
 
@@ -99,31 +67,32 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
 
-  let query = supabase
-    .from("books")
-    .select("*")
-    .order("updated_at", { ascending: false });
+  try {
+    let sql = "SELECT * FROM books";
+    const params: unknown[] = [];
 
-  if (status) {
-    query = query.eq("status", status);
-  }
+    if (status) {
+      sql += " WHERE status = $1";
+      params.push(status);
+    }
 
-  const { data, error } = await query;
+    sql += " ORDER BY updated_at DESC";
 
-  if (error) {
-    if (error.message.includes("does not exist")) {
+    const books = await querySQL(sql, params);
+    return NextResponse.json({ books });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    if (msg.includes("does not exist")) {
       return NextResponse.json({ books: [] });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  return NextResponse.json({ books: data });
 }
 
 // POST /api/books — create a new book
 export async function POST(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!hasDbUrl()) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 500 });
   }
 
   await ensureTable();
@@ -135,32 +104,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing title or total_pages" }, { status: 400 });
   }
 
-  const insert: Record<string, unknown> = {
-    title,
-    total_pages: Number(total_pages),
-    current_page: 0,
-    status: "reading",
-  };
-  if (type === "reading" || type === "listening") insert.type = type;
-  if (cover_url) insert.cover_url = cover_url;
-
-  const { data, error } = await supabase
-    .from("books")
-    .insert(insert)
-    .select()
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    const bookType = type === "listening" ? "listening" : "reading";
+    const rows = await querySQL(
+      `INSERT INTO books (title, total_pages, current_page, status, type, cover_url)
+       VALUES ($1, $2, 0, 'reading', $3, $4)
+       RETURNING *`,
+      [title, Number(total_pages), bookType, cover_url || null]
+    );
+    return NextResponse.json({ book: rows[0] });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  return NextResponse.json({ book: data });
 }
 
 // PATCH /api/books — update a book
 export async function PATCH(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!hasDbUrl()) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 500 });
   }
 
   await ensureTable();
@@ -172,32 +134,36 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }
 
-  const allowed: Record<string, unknown> = {};
-  if (updates.title !== undefined) allowed.title = updates.title;
-  if (updates.total_pages !== undefined) allowed.total_pages = Number(updates.total_pages);
-  if (updates.status !== undefined) allowed.status = updates.status;
-  if (updates.current_page !== undefined) allowed.current_page = Number(updates.current_page);
-  if (updates.cover_url !== undefined) allowed.cover_url = updates.cover_url;
-  allowed.updated_at = new Date().toISOString();
+  const setClauses: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
 
-  const { data, error } = await supabase
-    .from("books")
-    .update(allowed)
-    .eq("id", id)
-    .select()
-    .single();
+  if (updates.title !== undefined) { setClauses.push(`title = $${idx++}`); params.push(updates.title); }
+  if (updates.total_pages !== undefined) { setClauses.push(`total_pages = $${idx++}`); params.push(Number(updates.total_pages)); }
+  if (updates.status !== undefined) { setClauses.push(`status = $${idx++}`); params.push(updates.status); }
+  if (updates.current_page !== undefined) { setClauses.push(`current_page = $${idx++}`); params.push(Number(updates.current_page)); }
+  if (updates.cover_url !== undefined) { setClauses.push(`cover_url = $${idx++}`); params.push(updates.cover_url); }
+  setClauses.push(`updated_at = $${idx++}`);
+  params.push(new Date().toISOString());
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  params.push(id);
+
+  try {
+    const rows = await querySQL(
+      `UPDATE books SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING *`,
+      params
+    );
+    return NextResponse.json({ book: rows[0] });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  return NextResponse.json({ book: data });
 }
 
 // DELETE /api/books?id=...
 export async function DELETE(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!hasDbUrl()) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 500 });
   }
 
   await ensureTable();
@@ -209,11 +175,11 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }
 
-  const { error } = await supabase.from("books").delete().eq("id", id);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    await querySQL("DELETE FROM books WHERE id = $1", [id]);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true });
 }
