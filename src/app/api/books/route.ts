@@ -67,7 +67,7 @@ async function ensureTable() {
     return;
   }
 
-  if (!error.message.includes("does not exist")) {
+  if (!error.message.includes("does not exist") && !error.message.includes("schema cache")) {
     tableReady = true;
     return;
   }
