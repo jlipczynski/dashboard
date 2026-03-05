@@ -654,7 +654,7 @@ function CzytanieCard({
           <div className="mt-3 space-y-2">
             {activeBooks.map((book) => {
               const bookPct = book.total_pages > 0
-                ? Math.round((book.current_page / book.total_pages) * 100)
+                ? Math.min(100, Math.round((book.current_page / book.total_pages) * 100))
                 : 0;
               const isReading = readingBookId === book.id;
 
@@ -832,7 +832,7 @@ function CzytanieCard({
                       if (!confirm(`Usunac wpis: ${reading.pages_read} str. z ${formatDate(reading.date)}?`)) return;
                       try {
                         const res = await fetch(`/api/books/read?id=${reading.id}`, { method: "DELETE" });
-                        if (res.ok) { fetchBookReadings(); onEntriesChanged(); }
+                        if (res.ok) { fetchBooks(); fetchBookReadings(); onEntriesChanged(); }
                       } catch { /* ignore */ }
                     }}
                     className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
@@ -991,7 +991,7 @@ function SluchanieCard({
     const book = books.find((b) => b.id === bookId);
     if (!book || mins <= 0) return;
 
-    const newPage = book.current_page + mins;
+    const newPage = Math.min(book.current_page + mins, book.total_pages);
 
     setSaving(true);
     setBookError(null);
@@ -1346,7 +1346,7 @@ function SluchanieCard({
           <div className="mt-3 space-y-2">
             {activeBooks.map((book) => {
               const bookPct = book.total_pages > 0
-                ? Math.round((book.current_page / book.total_pages) * 100)
+                ? Math.min(100, Math.round((book.current_page / book.total_pages) * 100))
                 : 0;
               const isListening = listeningBookId === book.id;
               const isEditing = editingBookId === book.id;
@@ -1360,7 +1360,7 @@ function SluchanieCard({
                         <div className="truncate text-sm font-semibold text-foreground">{book.title}</div>
                         <div className="mt-0.5 flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">
-                            {formatMinutes(book.current_page)} / {formatMinutes(book.total_pages)}
+                            {formatMinutes(Math.min(book.current_page, book.total_pages))} / {formatMinutes(book.total_pages)}
                           </span>
                           <span className="text-xs font-medium" style={{ color }}>
                             {bookPct}%
@@ -1554,7 +1554,7 @@ function SluchanieCard({
                           <div className="min-w-0 flex-1">
                             <span className="text-sm font-medium text-foreground">{book.title}</span>
                             <div className="mt-0.5 text-xs text-muted-foreground">
-                              {formatMinutes(book.current_page)} / {formatMinutes(book.total_pages)}
+                              {formatMinutes(Math.min(book.current_page, book.total_pages))} / {formatMinutes(book.total_pages)}
                             </div>
                           </div>
                         </div>
@@ -1753,7 +1753,7 @@ function SluchanieCard({
                       if (!confirm(`Usunac wpis: ${formatMinutes(reading.pages_read)} z ${formatDate(reading.date)}?`)) return;
                       try {
                         const res = await fetch(`/api/books/read?id=${reading.id}`, { method: "DELETE" });
-                        if (res.ok) { fetchBookReadings(); onEntriesChanged(); }
+                        if (res.ok) { fetchBooks(); fetchBookReadings(); onEntriesChanged(); }
                       } catch { /* ignore */ }
                     }}
                     className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
