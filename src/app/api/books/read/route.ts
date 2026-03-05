@@ -28,13 +28,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Ksiazka nie znaleziona" }, { status: 404 });
   }
 
+  // Cap page_number at total_pages to prevent exceeding book length
+  const cappedPageNum = Math.min(pageNum, book.total_pages);
   const pageFrom = book.current_page;
-  const pagesRead = pageNum - pageFrom;
+  const pagesRead = cappedPageNum - pageFrom;
 
   if (pagesRead <= 0) {
     await supabase
       .from("books")
-      .update({ current_page: pageNum, updated_at: new Date().toISOString() })
+      .update({ current_page: cappedPageNum, updated_at: new Date().toISOString() })
       .eq("id", book_id);
 
     return NextResponse.json({ ok: true, pages_read: 0, corrected: true });
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
       book_id,
       date,
       page_from: pageFrom,
-      page_to: pageNum,
+      page_to: cappedPageNum,
       pages_read: pagesRead,
     });
 
@@ -56,11 +58,11 @@ export async function POST(request: Request) {
   }
 
   // 2. Update book's current_page (and auto-finish if at end)
-  const newStatus = pageNum >= book.total_pages ? "finished" : "reading";
+  const newStatus = cappedPageNum >= book.total_pages ? "finished" : "reading";
   await supabase
     .from("books")
     .update({
-      current_page: pageNum,
+      current_page: cappedPageNum,
       status: newStatus,
       updated_at: new Date().toISOString(),
     })
@@ -190,6 +192,37 @@ export async function DELETE(request: Request) {
         .eq("id", existing.id);
     }
   }
+
+  // Recalculate book's current_page from remaining readings
+  const bookId = reading.book_id;
+  const { data: remainingReadings } = await supabase
+    .from("book_readings")
+    .select("pages_read")
+    .eq("book_id", bookId);
+
+  const totalRead = (remainingReadings || []).reduce(
+    (sum: number, r: { pages_read: number }) => sum + r.pages_read,
+    0
+  );
+
+  // Get book to check total_pages for status
+  const { data: book } = await supabase
+    .from("books")
+    .select("total_pages")
+    .eq("id", bookId)
+    .single();
+
+  const newStatus =
+    book && totalRead >= book.total_pages ? "finished" : "reading";
+
+  await supabase
+    .from("books")
+    .update({
+      current_page: totalRead,
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", bookId);
 
   return NextResponse.json({ ok: true });
 }
