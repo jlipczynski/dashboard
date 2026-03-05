@@ -87,6 +87,25 @@ export async function PATCH(request: Request) {
   if (updates.cover_url !== undefined) allowed.cover_url = updates.cover_url;
   allowed.updated_at = new Date().toISOString();
 
+  // When total_pages changes without explicit status, recalculate status
+  if (updates.total_pages !== undefined && updates.status === undefined) {
+    const { data: current } = await supabase
+      .from("books")
+      .select("current_page, status")
+      .eq("id", id)
+      .single();
+
+    if (current) {
+      const newTotal = Number(updates.total_pages);
+      const currentPage = updates.current_page !== undefined ? Number(updates.current_page) : current.current_page;
+      if (currentPage >= newTotal) {
+        allowed.status = "finished";
+      } else if (current.status === "finished") {
+        allowed.status = "reading";
+      }
+    }
+  }
+
   const { data, error } = await supabase
     .from("books")
     .update(allowed)

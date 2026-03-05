@@ -25,6 +25,17 @@ type Book = {
   updated_at: string;
 };
 
+type BookReading = {
+  id: string;
+  book_id: string;
+  date: string;
+  page_from: number;
+  page_to: number;
+  pages_read: number;
+  created_at: string;
+  books: { title: string; type: string } | null;
+};
+
 type Targets = {
   czytanie: { monthly: number; weekly: number };
   sluchanie: { monthly: number; weekly: number };
@@ -224,9 +235,23 @@ function CzytanieCard({
   const [showHistory, setShowHistory] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [bookReadings, setBookReadings] = useState<BookReading[]>([]);
 
   const color = "#8B5CF6";
   const colorLight = "#F5F3FF";
+
+  // Fetch book readings history
+  const fetchBookReadings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/books/read?days=365");
+      const data = await res.json();
+      if (data.readings) {
+        setBookReadings(data.readings.filter((r: BookReading) =>
+          !r.books || r.books.type !== "listening"
+        ));
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // Fetch books (with localStorage cache as safety net)
   const fetchBooks = useCallback(async () => {
@@ -263,6 +288,7 @@ function CzytanieCard({
   }, []);
 
   useEffect(() => { fetchBooks(); }, [fetchBooks]);
+  useEffect(() => { fetchBookReadings(); }, [fetchBookReadings]);
 
   // Calculations
   const monthStart = getMonthStart();
@@ -346,6 +372,7 @@ function CzytanieCard({
         setReadingBookId(null);
         setReadDate(today());
         await fetchBooks();
+        await fetchBookReadings();
         onEntriesChanged();
       }
     } catch {
@@ -768,64 +795,37 @@ function CzytanieCard({
         )}
       </div>
 
-      {/* ── History of rozwoj_entries for czytanie ── */}
+      {/* ── History of book readings for czytanie ── */}
       <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6" style={{ borderColor: "#DDD6FE" }}>
         <button
           onClick={() => setShowHistory((v) => !v)}
           className="w-full rounded-lg border border-border py-2 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
         >
-          {showHistory ? "Ukryj historie wpisow" : `Historia wpisow (${entries.length})`}
+          {showHistory ? "Ukryj historie wpisow" : `Historia wpisow (${bookReadings.length})`}
         </button>
 
         {showHistory && (
           <div className="mt-2 max-h-64 space-y-1 overflow-y-auto">
-            {entries.length === 0 && (
+            {bookReadings.length === 0 && (
               <p className="py-4 text-center text-xs text-muted-foreground">Brak wpisow</p>
             )}
-            {[...entries].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((entry) => (
+            {[...bookReadings].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((reading) => (
               <div
-                key={entry.id}
+                key={reading.id}
                 className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2"
               >
-                <span className="text-xs text-muted-foreground">{formatDate(entry.date)}</span>
-                {editingId === entry.id ? (
-                  <form className="inline-flex items-center gap-1" onSubmit={async (e) => {
-                    e.preventDefault();
-                    const n = parseInt(editDraft);
-                    if (!isNaN(n) && n > 0) {
-                      await onEditEntry("czytanie", entry.date, n);
-                    }
-                    setEditingId(null);
-                  }}>
-                    <input autoFocus type="number" min={1} value={editDraft}
-                      onChange={(e) => setEditDraft(e.target.value)}
-                      onBlur={async () => {
-                        const n = parseInt(editDraft);
-                        if (!isNaN(n) && n > 0) {
-                          await onEditEntry("czytanie", entry.date, n);
-                        }
-                        setEditingId(null);
-                      }}
-                      className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-right" />
-                  </form>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => { setEditDraft(String(entry.amount)); setEditingId(entry.id); }}
-                      className="cursor-pointer text-sm font-semibold underline decoration-dotted underline-offset-2 transition-colors hover:opacity-70"
-                      style={{ color }}
-                    >
-                      {entry.amount} str.
-                    </button>
-                    <button
-                      onClick={async () => { await onDeleteEntry(entry.id); }}
-                      className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
-                      title="Usun"
-                    >
-                      &#10005;
-                    </button>
-                  </div>
-                )}
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-muted-foreground">{formatDate(reading.date)}</span>
+                  {reading.books?.title && (
+                    <span className="text-xs font-medium text-foreground/70">{reading.books.title}</span>
+                  )}
+                </div>
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color }}
+                >
+                  {reading.pages_read} str.
+                </span>
               </div>
             ))}
           </div>
@@ -873,6 +873,7 @@ function SluchanieCard({
   const [showHistory, setShowHistory] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editEntryDraft, setEditEntryDraft] = useState("");
+  const [bookReadings, setBookReadings] = useState<BookReading[]>([]);
 
   const color = "#0EA5E9";
   const colorLight = "#F0F9FF";
@@ -893,7 +894,20 @@ function SluchanieCard({
     }
   }, []);
 
+  const fetchBookReadings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/books/read?days=365");
+      const data = await res.json();
+      if (data.readings) {
+        setBookReadings(data.readings.filter((r: BookReading) =>
+          r.books?.type === "listening"
+        ));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => { fetchBooks(); }, [fetchBooks]);
+  useEffect(() => { fetchBookReadings(); }, [fetchBookReadings]);
 
   const monthStart = getMonthStart();
   const weekStart = getWeekStart();
@@ -981,6 +995,7 @@ function SluchanieCard({
         setListeningBookId(null);
         setListenDate(today());
         await fetchBooks();
+        await fetchBookReadings();
         onEntriesChanged();
       }
     } catch {
@@ -1686,64 +1701,37 @@ function SluchanieCard({
         )}
       </div>
 
-      {/* ── History of rozwoj_entries for sluchanie ── */}
+      {/* ── History of book readings for sluchanie ── */}
       <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6" style={{ borderColor: "#BAE6FD" }}>
         <button
           onClick={() => setShowHistory((v) => !v)}
           className="w-full rounded-lg border border-border py-2 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
         >
-          {showHistory ? "Ukryj historie wpisow" : `Historia wpisow (${entries.length})`}
+          {showHistory ? "Ukryj historie wpisow" : `Historia wpisow (${bookReadings.length})`}
         </button>
 
         {showHistory && (
           <div className="mt-2 max-h-64 space-y-1 overflow-y-auto">
-            {entries.length === 0 && (
+            {bookReadings.length === 0 && (
               <p className="py-4 text-center text-xs text-muted-foreground">Brak wpisow</p>
             )}
-            {[...entries].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((entry) => (
+            {[...bookReadings].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((reading) => (
               <div
-                key={entry.id}
+                key={reading.id}
                 className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2"
               >
-                <span className="text-xs text-muted-foreground">{formatDate(entry.date)}</span>
-                {editingEntryId === entry.id ? (
-                  <form className="inline-flex items-center gap-1" onSubmit={async (e) => {
-                    e.preventDefault();
-                    const n = parseInt(editEntryDraft);
-                    if (!isNaN(n) && n > 0) {
-                      await onEditEntry("sluchanie", entry.date, n);
-                    }
-                    setEditingEntryId(null);
-                  }}>
-                    <input autoFocus type="number" min={1} value={editEntryDraft}
-                      onChange={(e) => setEditEntryDraft(e.target.value)}
-                      onBlur={async () => {
-                        const n = parseInt(editEntryDraft);
-                        if (!isNaN(n) && n > 0) {
-                          await onEditEntry("sluchanie", entry.date, n);
-                        }
-                        setEditingEntryId(null);
-                      }}
-                      className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-right" />
-                  </form>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => { setEditEntryDraft(String(entry.amount)); setEditingEntryId(entry.id); }}
-                      className="cursor-pointer text-sm font-semibold underline decoration-dotted underline-offset-2 transition-colors hover:opacity-70"
-                      style={{ color }}
-                    >
-                      {formatMinutes(entry.amount)}
-                    </button>
-                    <button
-                      onClick={async () => { await onDeleteEntry(entry.id); }}
-                      className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
-                      title="Usun"
-                    >
-                      &#10005;
-                    </button>
-                  </div>
-                )}
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-muted-foreground">{formatDate(reading.date)}</span>
+                  {reading.books?.title && (
+                    <span className="text-xs font-medium text-foreground/70">{reading.books.title}</span>
+                  )}
+                </div>
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color }}
+                >
+                  {formatMinutes(reading.pages_read)}
+                </span>
               </div>
             ))}
           </div>
