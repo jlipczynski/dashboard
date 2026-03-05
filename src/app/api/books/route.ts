@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { runMigrationSQL, hasDbUrl } from "@/lib/db";
+import { runSQL, runMigrationSQL, hasDbUrl } from "@/lib/db";
 
 const BOOKS_SQL = `
 CREATE TABLE IF NOT EXISTS books (
@@ -72,11 +72,15 @@ async function ensureTable() {
     return;
   }
 
-  // Table missing — create via direct Postgres (includes type/cover_url)
+  // Table missing — force-create via direct Postgres (bypass _migrations check
+  // since the migration may be recorded but table was never actually created)
   if (hasDbUrl()) {
     try {
-      await runMigrationSQL("008_books.sql", BOOKS_SQL);
-      await runMigrationSQL("009_books_type_cover.sql", BOOKS_TYPE_COVER_SQL);
+      await runSQL(BOOKS_SQL);
+      await runSQL(BOOKS_TYPE_COVER_SQL);
+      // Record in _migrations so future runs skip correctly
+      await runMigrationSQL("008_books.sql", "SELECT 1");
+      await runMigrationSQL("009_books_type_cover.sql", "SELECT 1");
       tableReady = true;
     } catch {
       // ignore — will fail on next query with clear error
