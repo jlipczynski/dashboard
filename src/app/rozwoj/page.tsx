@@ -225,7 +225,7 @@ function CzytanieCard({
   const fetchBooks = useCallback(async () => {
     // Load cache first so user sees data immediately
     try {
-      const cached = localStorage.getItem("dashboard_books_cache");
+      const cached = localStorage.getItem("dashboard_books_reading_cache");
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed.books?.length > 0) setBooks(parsed.books);
@@ -240,11 +240,11 @@ function CzytanieCard({
         return;
       }
       if (data.books) {
-        setBooks(data.books);
+        const readingBooks = data.books.filter((b: Book) => b.type !== "listening");
+        setBooks(readingBooks);
         setBookError(null);
-        // Update cache only if we got actual data
-        if (data.books.length > 0) {
-          localStorage.setItem("dashboard_books_cache", JSON.stringify({ books: data.books }));
+        if (readingBooks.length > 0) {
+          localStorage.setItem("dashboard_books_reading_cache", JSON.stringify({ books: readingBooks }));
         }
       }
     } catch (err) {

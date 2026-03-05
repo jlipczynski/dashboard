@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS books (
   total_pages INT NOT NULL DEFAULT 0,
   current_page INT NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'reading' CHECK (status IN ('reading', 'finished', 'archived')),
+  type TEXT NOT NULL DEFAULT 'reading' CHECK (type IN ('reading', 'listening')),
+  cover_url TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -19,6 +21,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_books_status ON books (status);
+CREATE INDEX IF NOT EXISTS idx_books_type ON books (type);
 
 CREATE TABLE IF NOT EXISTS book_readings (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -39,6 +42,12 @@ CREATE INDEX IF NOT EXISTS idx_book_readings_book_date ON book_readings (book_id
 CREATE INDEX IF NOT EXISTS idx_book_readings_date ON book_readings (date DESC);
 `;
 
+const BOOKS_TYPE_COVER_SQL = `
+ALTER TABLE books ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'reading' CHECK (type IN ('reading', 'listening'));
+ALTER TABLE books ADD COLUMN IF NOT EXISTS cover_url TEXT;
+CREATE INDEX IF NOT EXISTS idx_books_type ON books (type);
+`;
+
 let tableReady = false;
 
 async function ensureTable() {
@@ -46,6 +55,14 @@ async function ensureTable() {
 
   const { error } = await supabase.from("books").select("id").limit(1);
   if (!error) {
+    // Table exists — ensure type/cover_url columns exist (migration 009)
+    if (hasDbUrl()) {
+      try {
+        await runMigrationSQL("009_books_type_cover.sql", BOOKS_TYPE_COVER_SQL);
+      } catch {
+        // columns likely already exist
+      }
+    }
     tableReady = true;
     return;
   }
@@ -55,10 +72,11 @@ async function ensureTable() {
     return;
   }
 
-  // Table missing — create via direct Postgres
+  // Table missing — create via direct Postgres (includes type/cover_url)
   if (hasDbUrl()) {
     try {
       await runMigrationSQL("008_books.sql", BOOKS_SQL);
+      await runMigrationSQL("009_books_type_cover.sql", BOOKS_TYPE_COVER_SQL);
       tableReady = true;
     } catch {
       // ignore — will fail on next query with clear error
