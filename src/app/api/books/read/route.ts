@@ -138,6 +138,104 @@ export async function GET(request: Request) {
   return NextResponse.json({ readings: data });
 }
 
+// PATCH /api/books/read — edit a book reading's pages_read
+// Body: { id, pages_read }
+export async function PATCH(request: Request) {
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  }
+
+  const body = await request.json();
+  const { id, pages_read } = body;
+
+  if (!id || pages_read === undefined || pages_read <= 0) {
+    return NextResponse.json({ error: "Missing id or invalid pages_read" }, { status: 400 });
+  }
+
+  // Get the existing reading
+  const { data: reading, error: readErr } = await supabase
+    .from("book_readings")
+    .select("*, books(type)")
+    .eq("id", id)
+    .single();
+
+  if (readErr || !reading) {
+    return NextResponse.json({ error: "Wpis nie znaleziony" }, { status: 404 });
+  }
+
+  const oldPagesRead = reading.pages_read;
+  const diff = pages_read - oldPagesRead;
+
+  // Update book_readings entry
+  const newPageTo = reading.page_from + pages_read;
+  const { error: updateErr } = await supabase
+    .from("book_readings")
+    .update({
+      pages_read,
+      page_to: newPageTo,
+    })
+    .eq("id", id);
+
+  if (updateErr) {
+    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+  }
+
+  // Update rozwoj_entries
+  if (diff !== 0) {
+    const area = reading.books?.type === "listening" ? "sluchanie" : "czytanie";
+    const { data: existing } = await supabase
+      .from("rozwoj_entries")
+      .select("*")
+      .eq("area", area)
+      .eq("date", reading.date)
+      .single();
+
+    if (existing) {
+      const newAmount = Math.max(0, existing.amount + diff);
+      if (newAmount <= 0) {
+        await supabase.from("rozwoj_entries").delete().eq("id", existing.id);
+      } else {
+        await supabase
+          .from("rozwoj_entries")
+          .update({ amount: newAmount, updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+      }
+    }
+  }
+
+  // Recalculate book's current_page from all readings
+  const bookId = reading.book_id;
+  const { data: allReadings } = await supabase
+    .from("book_readings")
+    .select("pages_read")
+    .eq("book_id", bookId);
+
+  const totalRead = (allReadings || []).reduce(
+    (sum: number, r: { pages_read: number }) => sum + r.pages_read,
+    0
+  );
+
+  const { data: book } = await supabase
+    .from("books")
+    .select("total_pages")
+    .eq("id", bookId)
+    .single();
+
+  const newStatus =
+    book && totalRead >= book.total_pages ? "finished" : "reading";
+
+  await supabase
+    .from("books")
+    .update({
+      current_page: totalRead,
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", bookId);
+
+  return NextResponse.json({ ok: true });
+}
+
 // DELETE /api/books/read?id=... — delete a book reading and subtract from rozwoj_entries
 export async function DELETE(request: Request) {
   if (!supabase) {

@@ -821,12 +821,51 @@ function CzytanieCard({
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span
-                    className="text-sm font-semibold"
-                    style={{ color }}
-                  >
-                    {reading.pages_read} str.
-                  </span>
+                  {editingId === reading.id ? (
+                    <form className="inline" onSubmit={async (e) => {
+                      e.preventDefault();
+                      const n = parseInt(editDraft);
+                      if (!isNaN(n) && n > 0) {
+                        try {
+                          const res = await fetch("/api/books/read", {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: reading.id, pages_read: n }),
+                          });
+                          if (res.ok) { fetchBooks(); fetchBookReadings(); onEntriesChanged(); }
+                        } catch { /* ignore */ }
+                      }
+                      setEditingId(null);
+                    }}>
+                      <input autoFocus type="number" min={1} value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        onBlur={async () => {
+                          const n = parseInt(editDraft);
+                          if (!isNaN(n) && n > 0 && n !== reading.pages_read) {
+                            try {
+                              const res = await fetch("/api/books/read", {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: reading.id, pages_read: n }),
+                              });
+                              if (res.ok) { fetchBooks(); fetchBookReadings(); onEntriesChanged(); }
+                            } catch { /* ignore */ }
+                          }
+                          setEditingId(null);
+                        }}
+                        className="w-16 rounded border border-purple-300 bg-white px-1 py-0 text-sm font-semibold text-right"
+                        style={{ color }}
+                      />
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => { setEditingId(reading.id); setEditDraft(String(reading.pages_read)); }}
+                      className="text-sm font-semibold cursor-pointer hover:underline"
+                      style={{ color }}
+                    >
+                      {reading.pages_read} str.
+                    </button>
+                  )}
                   <button
                     onClick={async () => {
                       if (!confirm(`Usunac wpis: ${reading.pages_read} str. z ${formatDate(reading.date)}?`)) return;
@@ -1742,12 +1781,51 @@ function SluchanieCard({
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span
-                    className="text-sm font-semibold"
-                    style={{ color }}
-                  >
-                    {formatMinutes(reading.pages_read)}
-                  </span>
+                  {editingEntryId === reading.id ? (
+                    <form className="inline" onSubmit={async (e) => {
+                      e.preventDefault();
+                      const n = parseInt(editEntryDraft);
+                      if (!isNaN(n) && n > 0) {
+                        try {
+                          const res = await fetch("/api/books/read", {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: reading.id, pages_read: n }),
+                          });
+                          if (res.ok) { fetchBooks(); fetchBookReadings(); onEntriesChanged(); }
+                        } catch { /* ignore */ }
+                      }
+                      setEditingEntryId(null);
+                    }}>
+                      <input autoFocus type="number" min={1} value={editEntryDraft}
+                        onChange={(e) => setEditEntryDraft(e.target.value)}
+                        onBlur={async () => {
+                          const n = parseInt(editEntryDraft);
+                          if (!isNaN(n) && n > 0 && n !== reading.pages_read) {
+                            try {
+                              const res = await fetch("/api/books/read", {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: reading.id, pages_read: n }),
+                              });
+                              if (res.ok) { fetchBooks(); fetchBookReadings(); onEntriesChanged(); }
+                            } catch { /* ignore */ }
+                          }
+                          setEditingEntryId(null);
+                        }}
+                        className="w-16 rounded border border-sky-300 bg-white px-1 py-0 text-sm font-semibold text-right"
+                        style={{ color }}
+                      />
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => { setEditingEntryId(reading.id); setEditEntryDraft(String(reading.pages_read)); }}
+                      className="text-sm font-semibold cursor-pointer hover:underline"
+                      style={{ color }}
+                    >
+                      {formatMinutes(reading.pages_read)}
+                    </button>
+                  )}
                   <button
                     onClick={async () => {
                       if (!confirm(`Usunac wpis: ${formatMinutes(reading.pages_read)} z ${formatDate(reading.date)}?`)) return;
