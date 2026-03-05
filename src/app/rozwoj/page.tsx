@@ -820,12 +820,27 @@ function CzytanieCard({
                     <span className="text-xs font-medium text-foreground/70">{reading.books.title}</span>
                   )}
                 </div>
-                <span
-                  className="text-sm font-semibold"
-                  style={{ color }}
-                >
-                  {reading.pages_read} str.
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-sm font-semibold"
+                    style={{ color }}
+                  >
+                    {reading.pages_read} str.
+                  </span>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Usunac wpis: ${reading.pages_read} str. z ${formatDate(reading.date)}?`)) return;
+                      try {
+                        const res = await fetch(`/api/books/read?id=${reading.id}`, { method: "DELETE" });
+                        if (res.ok) { fetchBookReadings(); onEntriesChanged(); }
+                      } catch { /* ignore */ }
+                    }}
+                    className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
+                    title="Usun"
+                  >
+                    &#10005;
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1726,12 +1741,27 @@ function SluchanieCard({
                     <span className="text-xs font-medium text-foreground/70">{reading.books.title}</span>
                   )}
                 </div>
-                <span
-                  className="text-sm font-semibold"
-                  style={{ color }}
-                >
-                  {formatMinutes(reading.pages_read)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-sm font-semibold"
+                    style={{ color }}
+                  >
+                    {formatMinutes(reading.pages_read)}
+                  </span>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Usunac wpis: ${formatMinutes(reading.pages_read)} z ${formatDate(reading.date)}?`)) return;
+                      try {
+                        const res = await fetch(`/api/books/read?id=${reading.id}`, { method: "DELETE" });
+                        if (res.ok) { fetchBookReadings(); onEntriesChanged(); }
+                      } catch { /* ignore */ }
+                    }}
+                    className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
+                    title="Usun"
+                  >
+                    &#10005;
+                  </button>
+                </div>
               </div>
             ))}
           </div>
