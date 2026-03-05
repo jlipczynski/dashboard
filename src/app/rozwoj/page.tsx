@@ -198,11 +198,15 @@ function CzytanieCard({
   targets,
   onTargetChange,
   onEntriesChanged,
+  onEditEntry,
+  onDeleteEntry,
 }: {
   entries: Entry[];
   targets: { monthly: number; weekly: number };
   onTargetChange: (field: "monthly" | "weekly", value: number) => void;
   onEntriesChanged: () => void;
+  onEditEntry: (area: AreaKey, date: string, amount: number) => void;
+  onDeleteEntry: (id: string) => void;
 }) {
   const [books, setBooks] = useState<Book[]>([]);
   const [booksLoading, setBooksLoading] = useState(true);
@@ -217,6 +221,9 @@ function CzytanieCard({
   const [editingTarget, setEditingTarget] = useState<"monthly" | "weekly" | null>(null);
   const [targetDraft, setTargetDraft] = useState("");
   const [bookError, setBookError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
   const color = "#8B5CF6";
   const colorLight = "#F5F3FF";
@@ -760,6 +767,72 @@ function CzytanieCard({
           </>
         )}
       </div>
+
+      {/* ── History of rozwoj_entries for czytanie ── */}
+      <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6" style={{ borderColor: "#DDD6FE" }}>
+        <button
+          onClick={() => setShowHistory((v) => !v)}
+          className="w-full rounded-lg border border-border py-2 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
+        >
+          {showHistory ? "Ukryj historie wpisow" : `Historia wpisow (${entries.length})`}
+        </button>
+
+        {showHistory && (
+          <div className="mt-2 max-h-64 space-y-1 overflow-y-auto">
+            {entries.length === 0 && (
+              <p className="py-4 text-center text-xs text-muted-foreground">Brak wpisow</p>
+            )}
+            {[...entries].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((entry) => (
+              <div
+                key={entry.id}
+                className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2"
+              >
+                <span className="text-xs text-muted-foreground">{formatDate(entry.date)}</span>
+                {editingId === entry.id ? (
+                  <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+                    e.preventDefault();
+                    const n = parseInt(editDraft);
+                    if (!isNaN(n) && n > 0) {
+                      onEditEntry("czytanie", entry.date, n);
+                      onEntriesChanged();
+                    }
+                    setEditingId(null);
+                  }}>
+                    <input autoFocus type="number" min={0} value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      onBlur={() => {
+                        const n = parseInt(editDraft);
+                        if (!isNaN(n) && n > 0) {
+                          onEditEntry("czytanie", entry.date, n);
+                          onEntriesChanged();
+                        }
+                        setEditingId(null);
+                      }}
+                      className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-right" />
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setEditDraft(String(entry.amount)); setEditingId(entry.id); }}
+                      className="text-sm font-semibold transition-colors hover:opacity-70"
+                      style={{ color }}
+                    >
+                      {entry.amount} str.
+                    </button>
+                    <button
+                      onClick={() => { onDeleteEntry(entry.id); onEntriesChanged(); }}
+                      className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
+                      title="Usun"
+                    >
+                      &#10005;
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -770,11 +843,15 @@ function SluchanieCard({
   targets,
   onTargetChange,
   onEntriesChanged,
+  onEditEntry,
+  onDeleteEntry,
 }: {
   entries: Entry[];
   targets: { monthly: number; weekly: number };
   onTargetChange: (field: "monthly" | "weekly", value: number) => void;
   onEntriesChanged: () => void;
+  onEditEntry: (area: AreaKey, date: string, amount: number) => void;
+  onDeleteEntry: (id: string) => void;
 }) {
   const [books, setBooks] = useState<Book[]>([]);
   const [booksLoading, setBooksLoading] = useState(true);
@@ -795,6 +872,9 @@ function SluchanieCard({
   const [editingTarget, setEditingTarget] = useState<"monthly" | "weekly" | null>(null);
   const [targetDraft, setTargetDraft] = useState("");
   const [bookError, setBookError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editEntryDraft, setEditEntryDraft] = useState("");
 
   const color = "#0EA5E9";
   const colorLight = "#F0F9FF";
@@ -1607,6 +1687,72 @@ function SluchanieCard({
           </>
         )}
       </div>
+
+      {/* ── History of rozwoj_entries for sluchanie ── */}
+      <div className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6" style={{ borderColor: "#BAE6FD" }}>
+        <button
+          onClick={() => setShowHistory((v) => !v)}
+          className="w-full rounded-lg border border-border py-2 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
+        >
+          {showHistory ? "Ukryj historie wpisow" : `Historia wpisow (${entries.length})`}
+        </button>
+
+        {showHistory && (
+          <div className="mt-2 max-h-64 space-y-1 overflow-y-auto">
+            {entries.length === 0 && (
+              <p className="py-4 text-center text-xs text-muted-foreground">Brak wpisow</p>
+            )}
+            {[...entries].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((entry) => (
+              <div
+                key={entry.id}
+                className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2"
+              >
+                <span className="text-xs text-muted-foreground">{formatDate(entry.date)}</span>
+                {editingEntryId === entry.id ? (
+                  <form className="inline-flex items-center gap-1" onSubmit={(e) => {
+                    e.preventDefault();
+                    const n = parseInt(editEntryDraft);
+                    if (!isNaN(n) && n > 0) {
+                      onEditEntry("sluchanie", entry.date, n);
+                      onEntriesChanged();
+                    }
+                    setEditingEntryId(null);
+                  }}>
+                    <input autoFocus type="number" min={0} value={editEntryDraft}
+                      onChange={(e) => setEditEntryDraft(e.target.value)}
+                      onBlur={() => {
+                        const n = parseInt(editEntryDraft);
+                        if (!isNaN(n) && n > 0) {
+                          onEditEntry("sluchanie", entry.date, n);
+                          onEntriesChanged();
+                        }
+                        setEditingEntryId(null);
+                      }}
+                      className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-right" />
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setEditEntryDraft(String(entry.amount)); setEditingEntryId(entry.id); }}
+                      className="text-sm font-semibold transition-colors hover:opacity-70"
+                      style={{ color }}
+                    >
+                      {formatMinutes(entry.amount)}
+                    </button>
+                    <button
+                      onClick={() => { onDeleteEntry(entry.id); onEntriesChanged(); }}
+                      className="rounded p-0.5 text-xs text-muted-foreground transition-colors hover:text-red-500"
+                      title="Usun"
+                    >
+                      &#10005;
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2077,6 +2223,8 @@ export default function RozwojPage() {
             targets={targets.czytanie}
             onTargetChange={(field, value) => updateTarget("czytanie", field, value)}
             onEntriesChanged={fetchEntries}
+            onEditEntry={editEntry}
+            onDeleteEntry={deleteEntry}
           />
 
           {/* Sluchanie — audiobook card */}
@@ -2085,6 +2233,8 @@ export default function RozwojPage() {
             targets={targets.sluchanie}
             onTargetChange={(field, value) => updateTarget("sluchanie", field, value)}
             onEntriesChanged={fetchEntries}
+            onEditEntry={editEntry}
+            onDeleteEntry={deleteEntry}
           />
 
           {/* Pisanie — standard card */}
