@@ -135,3 +135,61 @@ export async function GET(request: Request) {
 
   return NextResponse.json({ readings: data });
 }
+
+// DELETE /api/books/read?id=... — delete a book reading and subtract from rozwoj_entries
+export async function DELETE(request: Request) {
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  }
+
+  // Get the reading first so we can subtract from rozwoj_entries
+  const { data: reading, error: readErr } = await supabase
+    .from("book_readings")
+    .select("*, books(type)")
+    .eq("id", id)
+    .single();
+
+  if (readErr || !reading) {
+    return NextResponse.json({ error: "Wpis nie znaleziony" }, { status: 404 });
+  }
+
+  // Delete the book reading
+  const { error: delErr } = await supabase
+    .from("book_readings")
+    .delete()
+    .eq("id", id);
+
+  if (delErr) {
+    return NextResponse.json({ error: delErr.message }, { status: 500 });
+  }
+
+  // Subtract from rozwoj_entries
+  const area = reading.books?.type === "listening" ? "sluchanie" : "czytanie";
+  const { data: existing } = await supabase
+    .from("rozwoj_entries")
+    .select("*")
+    .eq("area", area)
+    .eq("date", reading.date)
+    .single();
+
+  if (existing) {
+    const newAmount = existing.amount - reading.pages_read;
+    if (newAmount <= 0) {
+      await supabase.from("rozwoj_entries").delete().eq("id", existing.id);
+    } else {
+      await supabase
+        .from("rozwoj_entries")
+        .update({ amount: newAmount, updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+    }
+  }
+
+  return NextResponse.json({ ok: true });
+}
