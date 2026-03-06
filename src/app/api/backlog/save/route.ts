@@ -64,7 +64,9 @@ export async function GET(req: Request) {
     .select("*")
     .order("created_at", { ascending: false })
 
-  if (status !== "all") {
+  if (status === "active") {
+    query = query.in("status", ["backlog", "this_week"])
+  } else if (status !== "all") {
     query = query.eq("status", status)
   }
 
@@ -93,6 +95,44 @@ export async function PATCH(req: Request) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // When moving to this_week, create a weekly_tasks record
+  if (updates.status === "this_week") {
+    const { data: item } = await supabase
+      .from("backlog_items")
+      .select("*")
+      .eq("id", id)
+      .single()
+
+    if (item) {
+      const today = new Date()
+      const day = today.getDay()
+      const monday = new Date(today)
+      monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1))
+      const weekStart = monday.toISOString().split("T")[0]
+
+      const pillarToProject: Record<number, string> = {
+        1: "zdrowie",
+        2: "rozwoj",
+        3: "relacje",
+        4: item.project || "inne",
+        5: "duchowosc",
+      }
+
+      await supabase.from("weekly_tasks").insert({
+        task: item.title,
+        project: item.pillar ? pillarToProject[item.pillar] : "inne",
+        priority: item.priority || "C",
+        sub_priority: 1,
+        wig_id: item.is_wig ? "wig" : "",
+        deadline: item.due_date || null,
+        status: "todo",
+        week_start: weekStart,
+        notes: item.description || "",
+        backlog_item_id: item.id,
+      })
+    }
   }
 
   return NextResponse.json({ ok: true })

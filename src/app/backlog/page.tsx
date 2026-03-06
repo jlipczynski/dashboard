@@ -30,6 +30,8 @@ const PRIORITY_COLORS: Record<BacklogPriority, string> = {
 }
 
 type ProcessingStage = "idle" | "downloading" | "transcribing" | "classifying" | "done" | "error"
+type AudioSortMode = "newest" | "oldest" | "name"
+type AudioFilterMode = "all" | "unprocessed" | "processed"
 
 const STAGE_LABELS: Record<ProcessingStage, string> = {
   idle: "",
@@ -69,6 +71,7 @@ function BacklogPageInner() {
   const [transcript, setTranscript] = useState("")
   const [processedItems, setProcessedItems] = useState<BacklogItem[]>([])
   const [processedFileName, setProcessedFileName] = useState("")
+  const [processedFileIdForSave, setProcessedFileIdForSave] = useState("")
   const [showTranscript, setShowTranscript] = useState(false)
 
   const [saving, setSaving] = useState(false)
@@ -83,6 +86,11 @@ function BacklogPageInner() {
   const [filterType, setFilterType] = useState<BacklogItemType | "all">("all")
   const [filterPillar, setFilterPillar] = useState<number | 0>(0)
   const [filterPriority, setFilterPriority] = useState<BacklogPriority | "all">("all")
+  const [filterStatus, setFilterStatus] = useState<"all" | "backlog" | "this_week" | "done" | "archived">("all")
+
+  const [processedFileIds, setProcessedFileIds] = useState<Set<string>>(new Set())
+  const [audioSort, setAudioSort] = useState<AudioSortMode>("newest")
+  const [audioFilter, setAudioFilter] = useState<AudioFilterMode>("all")
 
   const fetchDriveFiles = useCallback(async () => {
     setLoadingFiles(true)
@@ -102,7 +110,7 @@ function BacklogPageInner() {
   const fetchBacklog = useCallback(async () => {
     setLoadingBacklog(true)
     try {
-      const res = await fetch("/api/backlog/save?status=backlog")
+      const res = await fetch("/api/backlog/save?status=all")
       const data = await res.json()
       if (res.ok) setBacklogItems(data.items || [])
     } catch {
@@ -112,12 +120,25 @@ function BacklogPageInner() {
     }
   }, [])
 
+  const fetchProcessedFiles = useCallback(async () => {
+    try {
+      const res = await fetch("/api/backlog/audio-processed")
+      const data = await res.json()
+      if (res.ok) {
+        setProcessedFileIds(new Set((data.processed || []).map((p: { file_id: string }) => p.file_id)))
+      }
+    } catch {
+      // silent
+    }
+  }, [])
+
   useEffect(() => {
     if (session) {
       fetchDriveFiles()
       fetchBacklog()
+      fetchProcessedFiles()
     }
-  }, [session, fetchDriveFiles, fetchBacklog])
+  }, [session, fetchDriveFiles, fetchBacklog, fetchProcessedFiles])
 
   async function handleProcess(file: DriveFile) {
     setProcessingFileId(file.id)
@@ -126,6 +147,7 @@ function BacklogPageInner() {
     setProcessedItems([])
     setTranscript("")
     setProcessedFileName(file.name)
+    setProcessedFileIdForSave(file.id)
     setSaveSuccess("")
 
     try {
@@ -183,6 +205,21 @@ function BacklogPageInner() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       setSaveSuccess(`Zapisano ${data.saved} wpisow`)
+
+      // Mark audio file as processed
+      if (processedFileIdForSave) {
+        await fetch("/api/backlog/audio-processed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file_id: processedFileIdForSave,
+            filename: processedFileName,
+            items_count: data.saved,
+          }),
+        })
+        setProcessedFileIds((prev) => new Set(prev).add(processedFileIdForSave))
+      }
+
       setProcessedItems([])
       setTranscript("")
       fetchBacklog()
@@ -252,10 +289,23 @@ function BacklogPageInner() {
     setAudioRef(audio)
   }
 
+  const sortedFilteredDriveFiles = driveFiles
+    .filter((file) => {
+      if (audioFilter === "unprocessed") return !processedFileIds.has(file.id)
+      if (audioFilter === "processed") return processedFileIds.has(file.id)
+      return true
+    })
+    .sort((a, b) => {
+      if (audioSort === "oldest") return new Date(a.createdTime).getTime() - new Date(b.createdTime).getTime()
+      if (audioSort === "name") return a.name.localeCompare(b.name)
+      return new Date(b.createdTime).getTime() - new Date(a.createdTime).getTime()
+    })
+
   const filteredBacklog = backlogItems.filter((item) => {
     if (filterType !== "all" && item.type !== filterType) return false
     if (filterPillar !== 0 && item.pillar !== filterPillar) return false
     if (filterPriority !== "all" && item.priority !== filterPriority) return false
+    if (filterStatus !== "all" && item.status !== filterStatus) return false
     return true
   })
 
@@ -313,13 +363,33 @@ function BacklogPageInner() {
             <section className="mb-8">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-gray-900">Pliki do przetworzenia</h2>
-                <button
-                  onClick={fetchDriveFiles}
-                  disabled={loadingFiles}
-                  className="text-sm text-gray-500 hover:text-gray-700"
-                >
-                  Odswiez
-                </button>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={audioSort}
+                    onChange={(e) => setAudioSort(e.target.value as AudioSortMode)}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                  >
+                    <option value="newest">Najnowsze</option>
+                    <option value="oldest">Najstarsze</option>
+                    <option value="name">Nazwa A-Z</option>
+                  </select>
+                  <select
+                    value={audioFilter}
+                    onChange={(e) => setAudioFilter(e.target.value as AudioFilterMode)}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                  >
+                    <option value="all">Wszystkie</option>
+                    <option value="unprocessed">Nieprzetworzone</option>
+                    <option value="processed">Przetworzone</option>
+                  </select>
+                  <button
+                    onClick={fetchDriveFiles}
+                    disabled={loadingFiles}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Odswiez
+                  </button>
+                </div>
               </div>
 
               {filesError && (
@@ -332,41 +402,50 @@ function BacklogPageInner() {
                 <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
                   Ladowanie plikow z Drive...
                 </div>
-              ) : driveFiles.length === 0 ? (
+              ) : sortedFilteredDriveFiles.length === 0 ? (
                 <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-400">
-                  Brak plikow audio w folderze &quot;Backlog Audio&quot;
+                  {driveFiles.length === 0
+                    ? <>Brak plikow audio w folderze &quot;Backlog Audio&quot;</>
+                    : "Brak plikow pasujacych do filtra"}
                 </div>
               ) : (
                 <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                  {driveFiles.map((file) => (
-                    <div key={file.id} className="flex items-center justify-between px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg">🎙</span>
-                        <div>
-                          <div className="font-medium text-gray-900 text-sm">{file.name}</div>
-                          <div className="text-xs text-gray-400">
-                            {formatFileSize(file.size)} &middot; {formatDate(file.createdTime)}
+                  {sortedFilteredDriveFiles.map((file) => {
+                    const isProcessed = processedFileIds.has(file.id)
+                    return (
+                      <div key={file.id} className="flex items-center justify-between px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg">🎙</span>
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5">
+                              {file.name}
+                              {isProcessed && <span title="Już przetworzone">✅</span>}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {formatFileSize(file.size)} &middot; {formatDate(file.createdTime)}
+                            </div>
                           </div>
                         </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handlePlayAudio(file.id)}
+                            className="text-sm px-2 py-1.5 rounded-md border border-gray-200 hover:bg-gray-50 transition-colors"
+                            title={playingFileId === file.id ? "Zatrzymaj" : "Odtwórz"}
+                          >
+                            {playingFileId === file.id ? "\u23F8" : "\u25B6"}
+                          </button>
+                          <button
+                            onClick={() => handleProcess(file)}
+                            disabled={processingFileId !== null || isProcessed}
+                            className="text-sm font-medium px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            title={isProcessed ? "Już przetworzone" : "Przetwórz plik"}
+                          >
+                            {processingFileId === file.id ? STAGE_LABELS[processingStage] : "Przetwórz"}
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handlePlayAudio(file.id)}
-                          className="text-sm px-2 py-1.5 rounded-md border border-gray-200 hover:bg-gray-50 transition-colors"
-                          title={playingFileId === file.id ? "Zatrzymaj" : "Odtwórz"}
-                        >
-                          {playingFileId === file.id ? "\u23F8" : "\u25B6"}
-                        </button>
-                        <button
-                          onClick={() => handleProcess(file)}
-                          disabled={processingFileId !== null}
-                          className="text-sm font-medium px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {processingFileId === file.id ? STAGE_LABELS[processingStage] : "Przetwórz"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </section>
@@ -618,6 +697,20 @@ function BacklogPageInner() {
                     </option>
                   ))}
                 </select>
+
+                <select
+                  value={filterStatus}
+                  onChange={(e) =>
+                    setFilterStatus(e.target.value as "all" | "backlog" | "this_week" | "done" | "archived")
+                  }
+                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                >
+                  <option value="all">Wszystkie statusy</option>
+                  <option value="backlog">Backlog</option>
+                  <option value="this_week">Ten tydzien</option>
+                  <option value="done">Gotowe</option>
+                  <option value="archived">Archiwum</option>
+                </select>
               </div>
 
               {loadingBacklog ? (
@@ -635,6 +728,21 @@ function BacklogPageInner() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            {item.status === "this_week" && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+                                📅 Ten tydzien
+                              </span>
+                            )}
+                            {item.status === "done" && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+                                ✓ Gotowe
+                              </span>
+                            )}
+                            {item.status === "archived" && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">
+                                Archiwum
+                              </span>
+                            )}
                             {item.is_wig && (
                               <span className="text-xs font-bold text-amber-600" title="WIG">
                                 ◆
@@ -667,13 +775,19 @@ function BacklogPageInner() {
                           )}
                         </div>
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleStatusChange(item.id!, "this_week")}
-                            className="text-xs text-blue-600 hover:text-blue-800 whitespace-nowrap px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                            title="Przenies do tego tygodnia"
-                          >
-                            → Ten tydzien
-                          </button>
+                          {item.status === "this_week" ? (
+                            <span className="text-xs text-gray-400 whitespace-nowrap px-2 py-1">
+                              ✓ W planie
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleStatusChange(item.id!, "this_week")}
+                              className="text-xs text-blue-600 hover:text-blue-800 whitespace-nowrap px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                              title="Przenies do tego tygodnia"
+                            >
+                              → Ten tydzien
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDeleteBacklogItem(item.id!)}
                             className="text-gray-300 hover:text-red-500 transition-colors text-sm px-1"
