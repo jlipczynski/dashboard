@@ -5,24 +5,11 @@ const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
 function getClientConfig(): pg.ClientConfig {
   if (!dbUrl) throw new Error("No DATABASE_URL configured");
 
-  // Parse URL manually to handle special chars in password (like !)
-  try {
-    const u = new URL(dbUrl);
-    return {
-      host: u.hostname,
-      port: parseInt(u.port || "5432", 10),
-      user: decodeURIComponent(u.username),
-      password: decodeURIComponent(u.password),
-      database: u.pathname.replace("/", ""),
-      ssl: { rejectUnauthorized: false },
-    };
-  } catch {
-    // Fallback to connection string if URL parsing fails
-    return {
-      connectionString: dbUrl,
-      ssl: { rejectUnauthorized: false },
-    };
-  }
+  // Let pg handle URL parsing — avoids double-decoding issues with special chars in password
+  return {
+    connectionString: dbUrl,
+    ssl: { rejectUnauthorized: false },
+  };
 }
 
 export async function runSQL(sql: string): Promise<void> {
