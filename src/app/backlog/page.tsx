@@ -76,6 +76,9 @@ function BacklogPageInner() {
   const [backlogItems, setBacklogItems] = useState<BacklogItem[]>([])
   const [loadingBacklog, setLoadingBacklog] = useState(false)
 
+  const [playingFileId, setPlayingFileId] = useState<string | null>(null)
+  const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null)
+
   const [filterType, setFilterType] = useState<BacklogItemType | "all">("all")
   const [filterPillar, setFilterPillar] = useState<number | 0>(0)
   const [filterPriority, setFilterPriority] = useState<BacklogPriority | "all">("all")
@@ -216,6 +219,34 @@ function BacklogPageInner() {
     }
   }
 
+  function handlePlayAudio(fileId: string) {
+    // Stop current playback
+    if (audioRef) {
+      audioRef.pause()
+      audioRef.src = ""
+      setAudioRef(null)
+    }
+
+    // If clicking the same file, just stop
+    if (playingFileId === fileId) {
+      setPlayingFileId(null)
+      return
+    }
+
+    const audio = new Audio(`/api/backlog/drive-audio?fileId=${encodeURIComponent(fileId)}`)
+    audio.onended = () => {
+      setPlayingFileId(null)
+      setAudioRef(null)
+    }
+    audio.onerror = () => {
+      setPlayingFileId(null)
+      setAudioRef(null)
+    }
+    audio.play()
+    setPlayingFileId(fileId)
+    setAudioRef(audio)
+  }
+
   const filteredBacklog = backlogItems.filter((item) => {
     if (filterType !== "all" && item.type !== filterType) return false
     if (filterPillar !== 0 && item.pillar !== filterPillar) return false
@@ -308,13 +339,22 @@ function BacklogPageInner() {
                           </div>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleProcess(file)}
-                        disabled={processingFileId !== null}
-                        className="text-sm font-medium px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {processingFileId === file.id ? STAGE_LABELS[processingStage] : "Przetwórz"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handlePlayAudio(file.id)}
+                          className="text-sm px-2 py-1.5 rounded-md border border-gray-200 hover:bg-gray-50 transition-colors"
+                          title={playingFileId === file.id ? "Zatrzymaj" : "Odtwórz"}
+                        >
+                          {playingFileId === file.id ? "◼" : "▶"}
+                        </button>
+                        <button
+                          onClick={() => handleProcess(file)}
+                          disabled={processingFileId !== null}
+                          className="text-sm font-medium px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {processingFileId === file.id ? STAGE_LABELS[processingStage] : "Przetwórz"}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
