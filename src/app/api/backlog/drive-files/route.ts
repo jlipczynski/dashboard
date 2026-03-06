@@ -1,0 +1,54 @@
+import { NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/google-auth"
+
+export const dynamic = "force-dynamic"
+
+const AUDIO_MIME_TYPES = [
+  "audio/x-m4a",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/wav",
+  "audio/ogg",
+  "audio/aac",
+]
+
+export async function GET() {
+  const session = await getServerSession(authOptions)
+  const accessToken = (session as unknown as Record<string, unknown>)?.accessToken as string | undefined
+
+  if (!accessToken) {
+    return NextResponse.json({ error: "Nie zalogowany do Google" }, { status: 401 })
+  }
+
+  const folderId = process.env.GOOGLE_DRIVE_BACKLOG_FOLDER_ID
+  if (!folderId) {
+    return NextResponse.json({ error: "Brak GOOGLE_DRIVE_BACKLOG_FOLDER_ID" }, { status: 500 })
+  }
+
+  const mimeQuery = AUDIO_MIME_TYPES.map((m) => `mimeType='${m}'`).join(" or ")
+  const query = `'${folderId}' in parents and (${mimeQuery}) and trashed=false`
+
+  const params = new URLSearchParams({
+    q: query,
+    fields: "files(id,name,mimeType,createdTime,size)",
+    orderBy: "createdTime desc",
+    pageSize: "100",
+  })
+
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  )
+
+  if (!res.ok) {
+    const err = await res.text()
+    return NextResponse.json(
+      { error: `Google Drive API error: ${err}` },
+      { status: res.status }
+    )
+  }
+
+  const data = await res.json()
+  return NextResponse.json({ files: data.files || [] })
+}
