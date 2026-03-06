@@ -15,7 +15,7 @@ const AUDIO_MIME_TYPES = [
 
 export async function GET() {
   const session = await getServerSession(authOptions)
-  const accessToken = (session as unknown as Record<string, unknown>)?.accessToken as string | undefined
+  const accessToken = session?.accessToken
 
   if (!accessToken) {
     return NextResponse.json({ error: "Nie zalogowany do Google" }, { status: 401 })
