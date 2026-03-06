@@ -1399,8 +1399,13 @@ export default function ZdrowiePage() {
         running: { ...prev.running, current: data.summary.month.runningKm },
       }));
 
-      // Update weekly entries
-      // Weekly entries from Garmin are not yet supported — keep manual entries
+      // Update weekly entries from Garmin daily breakdown
+      if (data.summary.week.dailyRunning) {
+        setRunEntries(data.summary.week.dailyRunning);
+      }
+      if (data.summary.week.dailyCycling) {
+        setBikeEntries(data.summary.week.dailyCycling);
+      }
 
       // Update gym
       setGymMonthlyDone(data.summary.month.gymSessions);

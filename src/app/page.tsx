@@ -250,6 +250,21 @@ export default function Home() {
           <span className="text-muted-foreground">→</span>
         </Link>
 
+        {/* Backlog link */}
+        <Link
+          href="/backlog"
+          className="mt-3 flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-sm transition-all hover:shadow-md hover:border-primary/20 sm:p-4"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎙</span>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Backlog</p>
+              <p className="text-xs text-muted-foreground">Pomysly i rzeczy do zrobienia</p>
+            </div>
+          </div>
+          <span className="text-muted-foreground">→</span>
+        </Link>
+
         {/* Pillar cards */}
         <div className="mt-6 grid gap-4 sm:mt-8 sm:grid-cols-2 sm:gap-6">
           {dynamicPillars.map((pillar) => (
