@@ -25,7 +25,7 @@ export const authOptions: AuthOptions = {
       return token
     },
     async session({ session, token }) {
-      (session as unknown as Record<string, unknown>).accessToken = token.accessToken as string
+      session.accessToken = token.accessToken as string
       return session
     },
   },

@@ -11,7 +11,7 @@ const WHISPER_MAX_SIZE = 25 * 1024 * 1024
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
-  const accessToken = (session as unknown as Record<string, unknown>)?.accessToken as string | undefined
+  const accessToken = session?.accessToken
 
   if (!accessToken) {
     return NextResponse.json({ error: "Nie zalogowany do Google" }, { status: 401 })
