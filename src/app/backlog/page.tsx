@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useSession, signIn, signOut, SessionProvider } from "next-auth/react"
 import { useState, useEffect, useCallback } from "react"
 import type { BacklogItem, DriveFile, BacklogItemType, BacklogPriority } from "@/types/backlog"
@@ -220,20 +221,24 @@ function BacklogPageInner() {
   }
 
   function handlePlayAudio(fileId: string) {
-    // Stop current playback
+    // If clicking the same file, pause it
+    if (playingFileId === fileId && audioRef) {
+      audioRef.pause()
+      audioRef.src = ""
+      setAudioRef(null)
+      setPlayingFileId(null)
+      return
+    }
+
+    // Stop any current playback
     if (audioRef) {
       audioRef.pause()
       audioRef.src = ""
       setAudioRef(null)
     }
 
-    // If clicking the same file, just stop
-    if (playingFileId === fileId) {
-      setPlayingFileId(null)
-      return
-    }
-
-    const audio = new Audio(`/api/backlog/drive-audio?fileId=${encodeURIComponent(fileId)}`)
+    const url = `/api/backlog/drive-audio?fileId=${encodeURIComponent(fileId)}`
+    const audio = new Audio(url)
     audio.onended = () => {
       setPlayingFileId(null)
       setAudioRef(null)
@@ -267,7 +272,12 @@ function BacklogPageInner() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Backlog glosowy</h1>
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+              &larr; Dashboard
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900">Backlog glosowy</h1>
+          </div>
           {session ? (
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-500">{session.user?.email}</span>
@@ -345,7 +355,7 @@ function BacklogPageInner() {
                           className="text-sm px-2 py-1.5 rounded-md border border-gray-200 hover:bg-gray-50 transition-colors"
                           title={playingFileId === file.id ? "Zatrzymaj" : "Odtwórz"}
                         >
-                          {playingFileId === file.id ? "◼" : "▶"}
+                          {playingFileId === file.id ? "\u23F8" : "\u25B6"}
                         </button>
                         <button
                           onClick={() => handleProcess(file)}
