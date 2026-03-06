@@ -1,6 +1,18 @@
 import type { AuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
 
+// Ensure NEXTAUTH_URL is set on Vercel even if not configured in dashboard.
+// Without this, NextAuth falls back to VERCEL_URL which is a deployment-specific
+// URL (e.g. dashboard-abc123.vercel.app) instead of the production domain,
+// causing redirect_uri_mismatch with Google OAuth.
+if (!process.env.NEXTAUTH_URL) {
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  } else if (process.env.VERCEL_URL) {
+    process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_URL}`
+  }
+}
+
 export const authOptions: AuthOptions = {
   providers: [
     GoogleProvider({
