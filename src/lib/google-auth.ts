@@ -22,6 +22,34 @@ console.log("[AUTH DEBUG]", {
   computed_callback: `${process.env.NEXTAUTH_URL}/api/auth/callback/google`,
 })
 
+async function refreshAccessToken(token: any) {
+  try {
+    const url =
+      "https://oauth2.googleapis.com/token?" +
+      new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        grant_type: "refresh_token",
+        refresh_token: token.refreshToken,
+      })
+
+    const response = await fetch(url, { method: "POST" })
+    const refreshedTokens = await response.json()
+
+    if (!response.ok) throw refreshedTokens
+
+    return {
+      ...token,
+      accessToken: refreshedTokens.access_token,
+      accessTokenExpires: Date.now() + refreshedTokens.expires_in * 1000,
+      refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
+    }
+  } catch (error) {
+    console.error("[AUTH] Failed to refresh access token", error)
+    return { ...token, error: "RefreshAccessTokenError" }
+  }
+}
+
 export const authOptions: AuthOptions = {
   debug: true,
   providers: [
@@ -40,14 +68,25 @@ export const authOptions: AuthOptions = {
   ],
   callbacks: {
     async jwt({ token, account }) {
+      // First login — save tokens
       if (account) {
-        token.accessToken = account.access_token
-        token.refreshToken = account.refresh_token
+        return {
+          ...token,
+          accessToken: account.access_token,
+          refreshToken: account.refresh_token,
+          accessTokenExpires: Date.now() + (account.expires_in as number) * 1000,
+        }
       }
-      return token
+      // Token still valid
+      if (Date.now() < (token.accessTokenExpires as number)) {
+        return token
+      }
+      // Token expired — refresh
+      return refreshAccessToken(token)
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string
+      session.error = token.error as string | undefined
       return session
     },
   },

@@ -57,6 +57,304 @@ function formatDate(dateStr: string) {
   })
 }
 
+/* ─────────────────────────────────────────────
+   Editable item row — shared between modes
+   ───────────────────────────────────────────── */
+function EditableItemRow({
+  item,
+  index,
+  onUpdate,
+  onRemove,
+}: {
+  item: BacklogItem
+  index: number
+  onUpdate: (idx: number, updates: Partial<BacklogItem>) => void
+  onRemove: (idx: number) => void
+}) {
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 space-y-2">
+          {/* Type + Priority + Pillar row */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={item.type}
+              onChange={(e) => onUpdate(index, { type: e.target.value as BacklogItemType })}
+              className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
+            >
+              {Object.entries(TYPE_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+
+            <select
+              value={item.priority}
+              onChange={(e) => onUpdate(index, { priority: e.target.value as BacklogPriority })}
+              className={`text-xs font-bold border rounded px-1.5 py-0.5 ${PRIORITY_COLORS[item.priority]}`}
+            >
+              {(["A", "B", "C", "D", "E"] as const).map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+
+            <select
+              value={item.pillar || ""}
+              onChange={(e) => onUpdate(index, { pillar: e.target.value ? parseInt(e.target.value) : null })}
+              className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
+            >
+              <option value="">Filar...</option>
+              {Object.entries(PILLAR_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+
+            {item.pillar === 4 && (
+              <select
+                value={item.project || ""}
+                onChange={(e) => onUpdate(index, { project: (e.target.value || null) as BacklogItem["project"] })}
+                className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
+              >
+                <option value="">Projekt...</option>
+                <option value="ovoc">Ovoc</option>
+                <option value="plantacja">Plantacja</option>
+                <option value="inne">Inne</option>
+              </select>
+            )}
+
+            <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={item.is_wig}
+                onChange={(e) => onUpdate(index, { is_wig: e.target.checked })}
+                className="rounded"
+              />
+              WIG
+            </label>
+          </div>
+
+          {/* Title */}
+          <input
+            type="text"
+            value={item.title}
+            onChange={(e) => onUpdate(index, { title: e.target.value })}
+            className="w-full text-sm font-medium text-gray-900 border border-gray-200 rounded px-2 py-1"
+          />
+
+          {/* Description */}
+          <input
+            type="text"
+            value={item.description || ""}
+            onChange={(e) => onUpdate(index, { description: e.target.value || null })}
+            placeholder="Opis (opcjonalnie)"
+            className="w-full text-xs text-gray-600 border border-gray-100 rounded px-2 py-1"
+          />
+
+          {/* Due date */}
+          <input
+            type="date"
+            value={item.due_date || ""}
+            onChange={(e) => onUpdate(index, { due_date: e.target.value || null })}
+            className="text-xs border border-gray-200 rounded px-2 py-0.5 text-gray-600"
+          />
+        </div>
+
+        <button
+          onClick={() => onRemove(index)}
+          className="text-gray-300 hover:text-red-500 transition-colors text-lg leading-none"
+          title="Usun"
+        >
+          &times;
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   Short recording review (< 400 words)
+   ───────────────────────────────────────────── */
+function ShortRecordingReview({
+  transcript,
+  items,
+  saving,
+  onUpdate,
+  onRemove,
+  onSave,
+}: {
+  transcript: string
+  items: BacklogItem[]
+  saving: boolean
+  onUpdate: (idx: number, updates: Partial<BacklogItem>) => void
+  onRemove: (idx: number) => void
+  onSave: () => void
+}) {
+  const [showTranscript, setShowTranscript] = useState(false)
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200">
+      {/* Transcript (collapsible) */}
+      {transcript && (
+        <div className="px-4 py-3 border-b border-gray-100">
+          <button
+            onClick={() => setShowTranscript(!showTranscript)}
+            className="text-sm text-gray-500 hover:text-gray-700 font-medium"
+          >
+            {showTranscript ? "Zwiń transkrypcję" : "Pokaż transkrypcję"}
+          </button>
+          {showTranscript && (
+            <p className="mt-2 text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">
+              {transcript}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Editable items */}
+      <div className="divide-y divide-gray-100">
+        {items.map((item, idx) => (
+          <EditableItemRow
+            key={idx}
+            item={item}
+            index={idx}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+          />
+        ))}
+      </div>
+
+      {/* Save button */}
+      {items.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-100">
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="w-full bg-gray-900 text-white py-2 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 transition-colors"
+          >
+            {saving
+              ? "Zapisywanie..."
+              : `Zapisz wszystkie do backlogu (${items.length})`}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   Long recording review (≥ 400 words)
+   Two-panel layout on desktop, tabs on mobile
+   ───────────────────────────────────────────── */
+function LongRecordingReview({
+  transcript,
+  items,
+  saving,
+  onUpdate,
+  onRemove,
+  onSave,
+}: {
+  transcript: string
+  items: BacklogItem[]
+  saving: boolean
+  onUpdate: (idx: number, updates: Partial<BacklogItem>) => void
+  onRemove: (idx: number) => void
+  onSave: () => void
+}) {
+  const [mobileTab, setMobileTab] = useState<"transcript" | "items">("items")
+
+  return (
+    <>
+      {/* Mobile tabs */}
+      <div className="flex md:hidden border-b border-gray-200 mb-3">
+        <button
+          onClick={() => setMobileTab("transcript")}
+          className={`flex-1 py-2 text-sm font-medium text-center border-b-2 transition-colors ${
+            mobileTab === "transcript"
+              ? "border-gray-900 text-gray-900"
+              : "border-transparent text-gray-400 hover:text-gray-600"
+          }`}
+        >
+          Transkrypcja
+        </button>
+        <button
+          onClick={() => setMobileTab("items")}
+          className={`flex-1 py-2 text-sm font-medium text-center border-b-2 transition-colors ${
+            mobileTab === "items"
+              ? "border-gray-900 text-gray-900"
+              : "border-transparent text-gray-400 hover:text-gray-600"
+          }`}
+        >
+          Wpisy ({items.length})
+        </button>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4">
+        {/* Transcript panel */}
+        <div
+          className={`md:w-1/2 bg-white rounded-lg border border-gray-200 overflow-hidden ${
+            mobileTab !== "transcript" ? "hidden md:block" : ""
+          }`}
+        >
+          <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Transkrypcja surowa
+            </span>
+          </div>
+          <div className="px-4 py-3 max-h-[600px] overflow-y-auto">
+            <p
+              className="text-xs text-gray-500 whitespace-pre-wrap leading-relaxed select-text"
+              style={{ fontFamily: "'Space Mono', monospace" }}
+            >
+              {transcript}
+            </p>
+          </div>
+        </div>
+
+        {/* Items panel */}
+        <div
+          className={`md:w-1/2 bg-white rounded-lg border border-gray-200 overflow-hidden ${
+            mobileTab !== "items" ? "hidden md:block" : ""
+          }`}
+        >
+          <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Propozycje wpisów (AI)
+            </span>
+          </div>
+          <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
+            {items.map((item, idx) => (
+              <EditableItemRow
+                key={idx}
+                item={item}
+                index={idx}
+                onUpdate={onUpdate}
+                onRemove={onRemove}
+              />
+            ))}
+          </div>
+
+          {/* Save button */}
+          {items.length > 0 && (
+            <div className="px-4 py-3 border-t border-gray-100">
+              <button
+                onClick={onSave}
+                disabled={saving}
+                className="w-full bg-gray-900 text-white py-2 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 transition-colors"
+              >
+                {saving
+                  ? "Zapisywanie..."
+                  : `Zapisz wszystkie do backlogu (${items.length})`}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   Main page
+   ───────────────────────────────────────────── */
 function BacklogPageInner() {
   const { data: session, status: sessionStatus } = useSession()
 
@@ -72,7 +370,6 @@ function BacklogPageInner() {
   const [processedItems, setProcessedItems] = useState<BacklogItem[]>([])
   const [processedFileName, setProcessedFileName] = useState("")
   const [processedFileIdForSave, setProcessedFileIdForSave] = useState("")
-  const [showTranscript, setShowTranscript] = useState(false)
 
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState("")
@@ -199,6 +496,7 @@ function BacklogPageInner() {
         body: JSON.stringify({
           items: processedItems,
           audioFileName: processedFileName,
+          audioFileId: processedFileIdForSave,
           transcript,
         }),
       })
@@ -206,18 +504,11 @@ function BacklogPageInner() {
       if (!res.ok) throw new Error(data.error)
       setSaveSuccess(`Zapisano ${data.saved} wpisow`)
 
-      // Mark audio file as processed
+      // Update local state
       if (processedFileIdForSave) {
-        await fetch("/api/backlog/audio-processed", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            file_id: processedFileIdForSave,
-            filename: processedFileName,
-            items_count: data.saved,
-          }),
-        })
         setProcessedFileIds((prev) => new Set(prev).add(processedFileIdForSave))
+        // Remove file from the drive list since it's now processed
+        setDriveFiles((prev) => prev.filter((f) => f.id !== processedFileIdForSave))
       }
 
       setProcessedItems([])
@@ -289,6 +580,39 @@ function BacklogPageInner() {
     setAudioRef(audio)
   }
 
+  function handlePlayBacklogAudio(audioFileId: string) {
+    const url = `/api/backlog/audio/${encodeURIComponent(audioFileId)}`
+
+    // If clicking same file, toggle pause
+    if (playingFileId === audioFileId && audioRef) {
+      audioRef.pause()
+      audioRef.src = ""
+      setAudioRef(null)
+      setPlayingFileId(null)
+      return
+    }
+
+    // Stop any current playback
+    if (audioRef) {
+      audioRef.pause()
+      audioRef.src = ""
+      setAudioRef(null)
+    }
+
+    const audio = new Audio(url)
+    audio.onended = () => {
+      setPlayingFileId(null)
+      setAudioRef(null)
+    }
+    audio.onerror = () => {
+      setPlayingFileId(null)
+      setAudioRef(null)
+    }
+    audio.play()
+    setPlayingFileId(audioFileId)
+    setAudioRef(audio)
+  }
+
   const sortedFilteredDriveFiles = driveFiles
     .filter((file) => {
       if (audioFilter === "unprocessed") return !processedFileIds.has(file.id)
@@ -308,6 +632,10 @@ function BacklogPageInner() {
     if (filterStatus !== "all" && item.status !== filterStatus) return false
     return true
   })
+
+  // Determine review mode based on transcript word count
+  const wordCount = transcript.split(/\s+/).filter(Boolean).length
+  const isLongRecording = wordCount >= 400
 
   if (sessionStatus === "loading") {
     return (
@@ -340,6 +668,21 @@ function BacklogPageInner() {
             </div>
           ) : null}
         </div>
+
+        {/* Session expired banner */}
+        {session?.error === "RefreshAccessTokenError" && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 flex items-center justify-between">
+            <span className="text-sm text-amber-800">
+              Sesja wygasla — zaloguj sie ponownie
+            </span>
+            <button
+              onClick={() => signIn("google")}
+              className="text-sm font-medium text-amber-700 hover:text-amber-900 underline"
+            >
+              Zaloguj ponownie
+            </button>
+          </div>
+        )}
 
         {/* Not logged in */}
         {!session && (
@@ -472,180 +815,37 @@ function BacklogPageInner() {
               </div>
             )}
 
-            {/* Processed results */}
+            {/* Processed results — short or long mode */}
             {(processedItems.length > 0 || transcript) && (
               <section className="mb-8">
                 <h2 className="text-lg font-semibold text-gray-900 mb-3">
                   Podglad przetworzonych
+                  {isLongRecording && (
+                    <span className="text-xs font-normal text-gray-400 ml-2">
+                      ({wordCount} slow — tryb podgladu)
+                    </span>
+                  )}
                 </h2>
-                <div className="bg-white rounded-lg border border-gray-200">
-                  {/* Transcript */}
-                  {transcript && (
-                    <div className="px-4 py-3 border-b border-gray-100">
-                      <button
-                        onClick={() => setShowTranscript(!showTranscript)}
-                        className="text-sm text-gray-500 hover:text-gray-700 font-medium"
-                      >
-                        {showTranscript ? "Zwiń transkrypcję" : "Pokaż transkrypcję"}
-                      </button>
-                      {showTranscript && (
-                        <p className="mt-2 text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">
-                          {transcript}
-                        </p>
-                      )}
-                    </div>
-                  )}
 
-                  {/* Editable items */}
-                  <div className="divide-y divide-gray-100">
-                    {processedItems.map((item, idx) => (
-                      <div key={idx} className="px-4 py-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 space-y-2">
-                            {/* Type + Priority + Pillar row */}
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <select
-                                value={item.type}
-                                onChange={(e) =>
-                                  updateProcessedItem(idx, {
-                                    type: e.target.value as BacklogItemType,
-                                  })
-                                }
-                                className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
-                              >
-                                {Object.entries(TYPE_LABELS).map(([k, v]) => (
-                                  <option key={k} value={k}>
-                                    {v}
-                                  </option>
-                                ))}
-                              </select>
-
-                              <select
-                                value={item.priority}
-                                onChange={(e) =>
-                                  updateProcessedItem(idx, {
-                                    priority: e.target.value as BacklogPriority,
-                                  })
-                                }
-                                className={`text-xs font-bold border rounded px-1.5 py-0.5 ${PRIORITY_COLORS[item.priority]}`}
-                              >
-                                {(["A", "B", "C", "D", "E"] as const).map((p) => (
-                                  <option key={p} value={p}>
-                                    {p}
-                                  </option>
-                                ))}
-                              </select>
-
-                              <select
-                                value={item.pillar || ""}
-                                onChange={(e) =>
-                                  updateProcessedItem(idx, {
-                                    pillar: e.target.value ? parseInt(e.target.value) : null,
-                                  })
-                                }
-                                className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
-                              >
-                                <option value="">Filar...</option>
-                                {Object.entries(PILLAR_LABELS).map(([k, v]) => (
-                                  <option key={k} value={k}>
-                                    {v}
-                                  </option>
-                                ))}
-                              </select>
-
-                              {item.pillar === 4 && (
-                                <select
-                                  value={item.project || ""}
-                                  onChange={(e) =>
-                                    updateProcessedItem(idx, {
-                                      project: (e.target.value || null) as BacklogItem["project"],
-                                    })
-                                  }
-                                  className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
-                                >
-                                  <option value="">Projekt...</option>
-                                  <option value="ovoc">Ovoc</option>
-                                  <option value="plantacja">Plantacja</option>
-                                  <option value="inne">Inne</option>
-                                </select>
-                              )}
-
-                              <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={item.is_wig}
-                                  onChange={(e) =>
-                                    updateProcessedItem(idx, { is_wig: e.target.checked })
-                                  }
-                                  className="rounded"
-                                />
-                                WIG
-                              </label>
-                            </div>
-
-                            {/* Title */}
-                            <input
-                              type="text"
-                              value={item.title}
-                              onChange={(e) =>
-                                updateProcessedItem(idx, { title: e.target.value })
-                              }
-                              className="w-full text-sm font-medium text-gray-900 border border-gray-200 rounded px-2 py-1"
-                            />
-
-                            {/* Description */}
-                            <input
-                              type="text"
-                              value={item.description || ""}
-                              onChange={(e) =>
-                                updateProcessedItem(idx, {
-                                  description: e.target.value || null,
-                                })
-                              }
-                              placeholder="Opis (opcjonalnie)"
-                              className="w-full text-xs text-gray-600 border border-gray-100 rounded px-2 py-1"
-                            />
-
-                            {/* Due date */}
-                            <input
-                              type="date"
-                              value={item.due_date || ""}
-                              onChange={(e) =>
-                                updateProcessedItem(idx, {
-                                  due_date: e.target.value || null,
-                                })
-                              }
-                              className="text-xs border border-gray-200 rounded px-2 py-0.5 text-gray-600"
-                            />
-                          </div>
-
-                          <button
-                            onClick={() => removeProcessedItem(idx)}
-                            className="text-gray-300 hover:text-red-500 transition-colors text-lg leading-none"
-                            title="Usun"
-                          >
-                            &times;
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Save button */}
-                  {processedItems.length > 0 && (
-                    <div className="px-4 py-3 border-t border-gray-100">
-                      <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="w-full bg-gray-900 text-white py-2 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 transition-colors"
-                      >
-                        {saving
-                          ? "Zapisywanie..."
-                          : `Zapisz wszystkie do backlogu (${processedItems.length})`}
-                      </button>
-                    </div>
-                  )}
-                </div>
+                {isLongRecording ? (
+                  <LongRecordingReview
+                    transcript={transcript}
+                    items={processedItems}
+                    saving={saving}
+                    onUpdate={updateProcessedItem}
+                    onRemove={removeProcessedItem}
+                    onSave={handleSave}
+                  />
+                ) : (
+                  <ShortRecordingReview
+                    transcript={transcript}
+                    items={processedItems}
+                    saving={saving}
+                    onUpdate={updateProcessedItem}
+                    onRemove={removeProcessedItem}
+                    onSave={handleSave}
+                  />
+                )}
               </section>
             )}
 
@@ -762,6 +962,20 @@ function BacklogPageInner() {
                                   {item.project ? ` / ${item.project}` : ""}
                                 </span>
                               </>
+                            )}
+                            {/* Audio icon for items from audio recordings */}
+                            {item.audio_file_id && (
+                              <button
+                                onClick={() => handlePlayBacklogAudio(item.audio_file_id!)}
+                                className={`text-xs px-1 py-0.5 rounded transition-colors ${
+                                  playingFileId === item.audio_file_id
+                                    ? "text-blue-600"
+                                    : "text-gray-400 hover:text-gray-600"
+                                }`}
+                                title={playingFileId === item.audio_file_id ? "Zatrzymaj nagranie" : "Odtwórz nagranie"}
+                              >
+                                🎙
+                              </button>
                             )}
                           </div>
                           <div className="text-sm font-medium text-gray-900">{item.title}</div>

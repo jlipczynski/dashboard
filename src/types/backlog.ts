@@ -14,6 +14,7 @@ export interface BacklogItem {
   due_date?: string | null
   status: BacklogStatus
   audio_filename?: string
+  audio_file_id?: string
   source_transcript?: string
   created_at?: string
 }
