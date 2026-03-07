@@ -12,9 +12,10 @@ function getSupabaseAdmin() {
 }
 
 export async function POST(req: Request) {
-  const { items, audioFileName, transcript } = (await req.json()) as {
+  const { items, audioFileName, audioFileId, transcript } = (await req.json()) as {
     items: BacklogItem[]
     audioFileName: string
+    audioFileId?: string
     transcript: string
   }
 
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
     due_date: item.due_date || null,
     status: item.status || "backlog",
     audio_filename: audioFileName,
+    audio_file_id: audioFileId || null,
     source_transcript: transcript,
   }))
 
@@ -45,6 +47,15 @@ export async function POST(req: Request) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Mark audio file as processed
+  if (audioFileId) {
+    await supabase.from("backlog_audio_processed").upsert({
+      file_id: audioFileId,
+      filename: audioFileName,
+      items_count: data.length,
+    })
   }
 
   return NextResponse.json({

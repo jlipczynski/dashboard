@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
+import { createClient } from "@supabase/supabase-js"
 import { authOptions } from "@/lib/google-auth"
 
 export const dynamic = "force-dynamic"
@@ -12,6 +13,13 @@ const AUDIO_MIME_TYPES = [
   "audio/ogg",
   "audio/aac",
 ]
+
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error("Missing Supabase config")
+  return createClient(url, key)
+}
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -50,5 +58,16 @@ export async function GET() {
   }
 
   const data = await res.json()
-  return NextResponse.json({ files: data.files || [] })
+  const files = data.files || []
+
+  // Filter out already-processed files
+  const supabase = getSupabaseAdmin()
+  const { data: processed } = await supabase
+    .from("backlog_audio_processed")
+    .select("file_id")
+
+  const processedIds = new Set((processed || []).map((r: any) => r.file_id))
+  const unprocessed = files.filter((f: any) => !processedIds.has(f.id))
+
+  return NextResponse.json({ files: unprocessed })
 }
