@@ -3,6 +3,22 @@ import { GarminConnect } from "@gooin/garmin-connect";
 
 export const dynamic = "force-dynamic";
 
+const ACTIVITY_TYPES = {
+  running: ['running', 'trail_running', 'treadmill_running', 'track_running', 'ultra_running', 'indoor_running'],
+  cycling: ['cycling', 'road_cycling', 'indoor_cycling', 'mountain_biking', 'virtual_ride', 'gravel_cycling'],
+  strength: ['strength_training', 'fitness_equipment', 'indoor_cardio', 'gym_and_fitness_equipment', 'strength'],
+};
+
+function classifyActivity(typeKey: string): 'running' | 'cycling' | 'strength' | null {
+  const key = typeKey.toLowerCase();
+  for (const [category, types] of Object.entries(ACTIVITY_TYPES)) {
+    if (types.some((t) => key === t || key.includes(t))) {
+      return category as 'running' | 'cycling' | 'strength';
+    }
+  }
+  return null;
+}
+
 type ActivityRaw = {
   activityId: number;
   activityName: string;
@@ -80,42 +96,40 @@ export async function GET() {
       (a) => new Date(a.date) >= weekStart
     );
 
-    const sumByType = (
+    const sumByCategory = (
       list: typeof activities,
-      type: string,
+      category: 'running' | 'cycling' | 'strength',
       field: "distanceKm" | "durationMin" | "calories"
     ) =>
       list
-        .filter((a) => a.type.toLowerCase().includes(type))
+        .filter((a) => classifyActivity(a.type) === category)
         .reduce((sum, a) => sum + a[field], 0);
+
+    const countByCategory = (
+      list: typeof activities,
+      category: 'running' | 'cycling' | 'strength'
+    ) => list.filter((a) => classifyActivity(a.type) === category).length;
 
     const summary = {
       month: {
-        cyclingKm: Math.round(sumByType(monthActivities, "cycling", "distanceKm") * 100) / 100,
-        runningKm: Math.round(sumByType(monthActivities, "running", "distanceKm") * 100) / 100,
+        cyclingKm: Math.round(sumByCategory(monthActivities, "cycling", "distanceKm") * 100) / 100,
+        runningKm: Math.round(sumByCategory(monthActivities, "running", "distanceKm") * 100) / 100,
         activeCalories: Math.round(
           monthActivities.reduce((s, a) => s + a.calories, 0)
         ),
-        gymSessions: monthActivities.filter(
-          (a) =>
-            a.type.toLowerCase().includes("strength") ||
-            a.type.toLowerCase().includes("training")
-        ).length,
+        gymSessions: countByCategory(monthActivities, "strength"),
       },
       week: {
-        cyclingKm: Math.round(sumByType(weekActivities, "cycling", "distanceKm") * 100) / 100,
-        runningKm: Math.round(sumByType(weekActivities, "running", "distanceKm") * 100) / 100,
+        cyclingKm: Math.round(sumByCategory(weekActivities, "cycling", "distanceKm") * 100) / 100,
+        runningKm: Math.round(sumByCategory(weekActivities, "running", "distanceKm") * 100) / 100,
         activeCalories: Math.round(
           weekActivities.reduce((s, a) => s + a.calories, 0)
         ),
-        gymSessions: weekActivities.filter(
-          (a) =>
-            a.type.toLowerCase().includes("strength") ||
-            a.type.toLowerCase().includes("training")
-        ).length,
+        gymSessions: countByCategory(weekActivities, "strength"),
         // Daily breakdown for charts (Mon-Sun)
         dailyRunning: getDailyBreakdown(weekActivities, "running", weekStart),
         dailyCycling: getDailyBreakdown(weekActivities, "cycling", weekStart),
+        dailyGym: getDailyGymBreakdown(weekActivities, weekStart),
       },
     };
 
@@ -135,16 +149,31 @@ export async function GET() {
 
 function getDailyBreakdown(
   activities: { type: string; distanceKm: number; date: string }[],
-  type: string,
+  category: 'running' | 'cycling',
   weekStart: Date
 ): number[] {
   const days = [0, 0, 0, 0, 0, 0, 0]; // Mon-Sun
   for (const a of activities) {
-    if (!a.type.toLowerCase().includes(type)) continue;
+    if (classifyActivity(a.type) !== category) continue;
     const d = new Date(a.date);
     let dayIdx = d.getDay() - 1; // 0=Mon
     if (dayIdx < 0) dayIdx = 6; // Sunday = 6
     days[dayIdx] += a.distanceKm;
   }
   return days.map((v) => Math.round(v * 100) / 100);
+}
+
+function getDailyGymBreakdown(
+  activities: { type: string; date: string }[],
+  weekStart: Date
+): boolean[] {
+  const days = [false, false, false, false, false, false, false]; // Mon-Sun
+  for (const a of activities) {
+    if (classifyActivity(a.type) !== 'strength') continue;
+    const d = new Date(a.date);
+    let dayIdx = d.getDay() - 1;
+    if (dayIdx < 0) dayIdx = 6;
+    days[dayIdx] = true;
+  }
+  return days;
 }
