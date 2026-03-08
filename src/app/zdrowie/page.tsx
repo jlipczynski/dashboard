@@ -722,16 +722,20 @@ function WellnessWidget({ data }: { data: WellnessData }) {
 /* ── Calorie Scoring ─────────────────────────────────────────── */
 function getDayScore(consumed: number, target: number) {
   if (target <= 0) return { score: 0, label: "—", color: "#9ca3af", emoji: "—" };
-  const ratio = consumed / target;
+  const deficit = target - consumed;
 
-  if (ratio <= 0.70) return { score: 2, label: "Za malo", color: "#ef4444", emoji: "⚠️" };
-  if (ratio <= 0.80) return { score: 5, label: "Duzy deficyt", color: "#f59e0b", emoji: "🔶" };
-  if (ratio <= 0.90) return { score: 8, label: "Dobry deficyt", color: "#22c55e", emoji: "👍" };
-  if (ratio <= 1.00) return { score: 10, label: "Idealnie", color: "#16a34a", emoji: "✅" };
-  if (ratio <= 1.05) return { score: 7, label: "Lekko ponad", color: "#eab308", emoji: "🟡" };
-  if (ratio <= 1.15) return { score: 4, label: "Za duzo", color: "#f97316", emoji: "🟠" };
-  if (ratio <= 1.25) return { score: 2, label: "Znacznie ponad", color: "#ef4444", emoji: "🔴" };
-  return { score: 0, label: "Alarm", color: "#dc2626", emoji: "🚨" };
+  if (deficit >= 0) {
+    // Deficit (ate less than TDEE) — always good
+    if (deficit > 800) return { score: 8, label: "Duzy deficyt", color: "#22c55e", emoji: "💪" };
+    if (deficit >= 300) return { score: 10, label: "Dobry deficyt", color: "#16a34a", emoji: "👍" };
+    return { score: 7, label: "W normie", color: "#22c55e", emoji: "✅" };
+  }
+
+  // Surplus (ate more than TDEE)
+  const surplus = -deficit;
+  if (surplus <= 200) return { score: 5, label: "Lekko ponad", color: "#eab308", emoji: "🟡" };
+  if (surplus <= 500) return { score: 3, label: "Za duzo", color: "#f97316", emoji: "🟠" };
+  return { score: 1, label: "Znacznie ponad", color: "#ef4444", emoji: "🔴" };
 }
 
 /* ── MFP Nutrition / Calorie Deficit ─────────────────────────── */
@@ -1000,8 +1004,8 @@ function MfpWidget({
 
         {/* Legend */}
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-          <span>✅ w normie</span><span>👍 dobry deficyt</span><span>🟡 lekko ponad</span>
-          <span>🟠 za duzo</span><span>🔴 znacznie ponad</span><span>⚠️ za malo</span>
+          <span>✅ w normie (0–300)</span><span>👍 dobry deficyt (300–800)</span><span>💪 duzy deficyt (&gt;800)</span>
+          <span>🟡 lekko ponad</span><span>🟠 za duzo</span><span>🔴 znacznie ponad</span>
           <span className="text-orange-500">┊ +aktywne (Garmin)</span>
         </div>
 
@@ -1405,6 +1409,9 @@ export default function ZdrowiePage() {
       }
       if (data.summary.week.dailyCycling) {
         setBikeEntries(data.summary.week.dailyCycling);
+      }
+      if (data.summary.week.dailyGym) {
+        setGymDays(data.summary.week.dailyGym);
       }
 
       // Update gym

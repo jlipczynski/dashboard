@@ -99,6 +99,7 @@ export type CachedGarminData = {
       gymSessions: number;
       dailyRunning?: number[];
       dailyCycling?: number[];
+      dailyGym?: boolean[];
     };
   };
   lastSyncISO: string;
