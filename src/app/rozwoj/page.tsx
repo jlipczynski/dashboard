@@ -1404,6 +1404,11 @@ function SluchanieCard({
                           <span className="text-xs font-medium" style={{ color }}>
                             {bookPct}%
                           </span>
+                          {book.current_page < book.total_pages && (
+                            <span className="text-xs text-muted-foreground">
+                              · pozostało {formatMinutes(book.total_pages - book.current_page)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1594,6 +1599,9 @@ function SluchanieCard({
                             <span className="text-sm font-medium text-foreground">{book.title}</span>
                             <div className="mt-0.5 text-xs text-muted-foreground">
                               {formatMinutes(Math.min(book.current_page, book.total_pages))} / {formatMinutes(book.total_pages)}
+                              {book.current_page < book.total_pages && (
+                                <span> · pozostało {formatMinutes(book.total_pages - book.current_page)}</span>
+                              )}
                             </div>
                           </div>
                         </div>
