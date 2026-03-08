@@ -123,17 +123,22 @@ export async function PATCH(req: Request) {
       monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1))
       const weekStart = monday.toISOString().split("T")[0]
 
+      const projectMap: Record<string, string> = {
+        ovoc: "Ovoc Malinovi",
+        plantacja: "Plantacja",
+        inne: "Inne",
+      }
       const pillarToProject: Record<number, string> = {
-        1: "zdrowie",
-        2: "rozwoj",
-        3: "relacje",
-        4: item.project || "inne",
-        5: "duchowosc",
+        1: "Zdrowie",
+        2: "Rozwój",
+        3: "Relacje",
+        4: item.project ? (projectMap[item.project] || "Inne") : "Inne",
+        5: "Duchowość",
       }
 
-      await supabase.from("weekly_tasks").insert({
+      const weeklyRow = {
         task: item.title,
-        project: item.pillar ? pillarToProject[item.pillar] : "inne",
+        project: item.pillar ? pillarToProject[item.pillar] : "Inne",
         priority: item.priority || "C",
         sub_priority: 1,
         wig_id: item.is_wig ? "wig" : "",
@@ -142,7 +147,12 @@ export async function PATCH(req: Request) {
         week_start: weekStart,
         notes: item.description || "",
         backlog_item_id: item.id,
-      })
+      }
+      console.log("[backlog→weekly] inserting weekly_task:", JSON.stringify(weeklyRow))
+      const { error: weeklyError } = await supabase.from("weekly_tasks").insert(weeklyRow)
+      if (weeklyError) {
+        console.error("[backlog→weekly] insert error:", weeklyError.message)
+      }
     }
   }
 
