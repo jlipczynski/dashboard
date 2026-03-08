@@ -385,6 +385,10 @@ function BacklogPageInner() {
   const [filterPriority, setFilterPriority] = useState<BacklogPriority | "all">("all")
   const [filterStatus, setFilterStatus] = useState<"all" | "backlog" | "this_week" | "done" | "archived">("all")
 
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<Partial<BacklogItem>>({})
+  const [editSaving, setEditSaving] = useState(false)
+
   const [processedFileIds, setProcessedFileIds] = useState<Set<string>>(new Set())
   const [audioSort, setAudioSort] = useState<AudioSortMode>("newest")
   const [audioFilter, setAudioFilter] = useState<AudioFilterMode>("all")
@@ -611,6 +615,47 @@ function BacklogPageInner() {
     audio.play()
     setPlayingFileId(audioFileId)
     setAudioRef(audio)
+  }
+
+  function startEditing(item: BacklogItem) {
+    setEditingItemId(item.id!)
+    setEditForm({
+      title: item.title,
+      type: item.type,
+      pillar: item.pillar,
+      project: item.project,
+      priority: item.priority,
+      is_wig: item.is_wig,
+      due_date: item.due_date,
+    })
+  }
+
+  function cancelEditing() {
+    setEditingItemId(null)
+    setEditForm({})
+  }
+
+  async function saveEditing() {
+    if (!editingItemId) return
+    setEditSaving(true)
+    try {
+      const res = await fetch("/api/backlog/save", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingItemId, ...editForm }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error)
+      }
+      setEditingItemId(null)
+      setEditForm({})
+      fetchBacklog()
+    } catch {
+      // silent
+    } finally {
+      setEditSaving(false)
+    }
   }
 
   const sortedFilteredDriveFiles = driveFiles
@@ -925,92 +970,181 @@ function BacklogPageInner() {
                 <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
                   {filteredBacklog.map((item) => (
                     <div key={item.id} className="px-4 py-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            {item.status === "this_week" && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
-                                📅 Ten tydzien
-                              </span>
-                            )}
-                            {item.status === "done" && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
-                                ✓ Gotowe
-                              </span>
-                            )}
-                            {item.status === "archived" && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">
-                                Archiwum
-                              </span>
-                            )}
-                            {item.is_wig && (
-                              <span className="text-xs font-bold text-amber-600" title="WIG">
-                                ◆
-                              </span>
-                            )}
-                            <span
-                              className={`text-xs font-bold px-1.5 py-0.5 rounded ${PRIORITY_COLORS[item.priority]}`}
+                      {editingItemId === item.id ? (
+                        /* ── Edit mode ── */
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={editForm.title || ""}
+                            onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                            className="w-full text-sm font-medium text-gray-900 border border-gray-200 rounded px-2 py-1"
+                          />
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <select
+                              value={editForm.type || "task"}
+                              onChange={(e) => setEditForm((f) => ({ ...f, type: e.target.value as BacklogItemType }))}
+                              className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
                             >
-                              {item.priority}
-                            </span>
-                            <span className="text-xs text-gray-400">{item.type}</span>
-                            {item.pillar && (
-                              <>
-                                <span className="text-xs text-gray-300">|</span>
-                                <span className="text-xs text-gray-500">
-                                  {PILLAR_LABELS[item.pillar]}
-                                  {item.project ? ` / ${item.project}` : ""}
+                              {Object.entries(TYPE_LABELS).map(([k, v]) => (
+                                <option key={k} value={k}>{v}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={editForm.pillar || ""}
+                              onChange={(e) => setEditForm((f) => ({ ...f, pillar: e.target.value ? parseInt(e.target.value) : null }))}
+                              className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
+                            >
+                              <option value="">Filar...</option>
+                              {Object.entries(PILLAR_LABELS).map(([k, v]) => (
+                                <option key={k} value={k}>{v}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={editForm.project || ""}
+                              onChange={(e) => setEditForm((f) => ({ ...f, project: (e.target.value || null) as BacklogItem["project"] }))}
+                              className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50"
+                            >
+                              <option value="">Projekt...</option>
+                              <option value="ovoc">Ovoc</option>
+                              <option value="plantacja">Plantacja</option>
+                              <option value="inne">Inne</option>
+                            </select>
+                            <select
+                              value={editForm.priority || "C"}
+                              onChange={(e) => setEditForm((f) => ({ ...f, priority: e.target.value as BacklogPriority }))}
+                              className={`text-xs font-bold border rounded px-1.5 py-0.5 ${PRIORITY_COLORS[(editForm.priority || "C") as BacklogPriority]}`}
+                            >
+                              {(["A", "B", "C", "D", "E"] as const).map((p) => (
+                                <option key={p} value={p}>{p}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="date"
+                              value={editForm.due_date || ""}
+                              onChange={(e) => setEditForm((f) => ({ ...f, due_date: e.target.value || null }))}
+                              className="text-xs border border-gray-200 rounded px-2 py-0.5 text-gray-600"
+                            />
+                            <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editForm.is_wig || false}
+                                onChange={(e) => setEditForm((f) => ({ ...f, is_wig: e.target.checked }))}
+                                className="rounded"
+                              />
+                              WIG
+                            </label>
+                          </div>
+                          <div className="flex justify-end gap-2 pt-1">
+                            <button
+                              onClick={cancelEditing}
+                              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-200 hover:bg-gray-50 transition-colors"
+                            >
+                              Anuluj
+                            </button>
+                            <button
+                              onClick={saveEditing}
+                              disabled={editSaving}
+                              className="text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 px-3 py-1 rounded disabled:opacity-50 transition-colors"
+                            >
+                              {editSaving ? "Zapisywanie..." : "Zapisz"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ── Read mode ── */
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              {item.status === "this_week" && (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+                                  📅 Ten tydzien
                                 </span>
-                              </>
-                            )}
-                            {/* Audio icon for items from audio recordings */}
-                            {item.audio_file_id && (
-                              <button
-                                onClick={() => handlePlayBacklogAudio(item.audio_file_id!)}
-                                className={`text-xs px-1 py-0.5 rounded transition-colors ${
-                                  playingFileId === item.audio_file_id
-                                    ? "text-blue-600"
-                                    : "text-gray-400 hover:text-gray-600"
-                                }`}
-                                title={playingFileId === item.audio_file_id ? "Zatrzymaj nagranie" : "Odtwórz nagranie"}
+                              )}
+                              {item.status === "done" && (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+                                  ✓ Gotowe
+                                </span>
+                              )}
+                              {item.status === "archived" && (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">
+                                  Archiwum
+                                </span>
+                              )}
+                              {item.is_wig && (
+                                <span className="text-xs font-bold text-amber-600" title="WIG">
+                                  ◆
+                                </span>
+                              )}
+                              <span
+                                className={`text-xs font-bold px-1.5 py-0.5 rounded ${PRIORITY_COLORS[item.priority]}`}
                               >
-                                🎙
-                              </button>
+                                {item.priority}
+                              </span>
+                              <span className="text-xs text-gray-400">{item.type}</span>
+                              {item.pillar && (
+                                <>
+                                  <span className="text-xs text-gray-300">|</span>
+                                  <span className="text-xs text-gray-500">
+                                    {PILLAR_LABELS[item.pillar]}
+                                    {item.project ? ` / ${item.project}` : ""}
+                                  </span>
+                                </>
+                              )}
+                              {item.audio_file_id && (
+                                <button
+                                  onClick={() => handlePlayBacklogAudio(item.audio_file_id!)}
+                                  className={`text-xs px-1 py-0.5 rounded transition-colors ${
+                                    playingFileId === item.audio_file_id
+                                      ? "text-blue-600"
+                                      : "text-gray-400 hover:text-gray-600"
+                                  }`}
+                                  title={playingFileId === item.audio_file_id ? "Zatrzymaj nagranie" : "Odtwórz nagranie"}
+                                >
+                                  🎙
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-sm font-medium text-gray-900">{item.title}</div>
+                            {item.description && (
+                              <div className="text-xs text-gray-500 mt-0.5">{item.description}</div>
+                            )}
+                            {item.due_date && (
+                              <div className="text-xs text-gray-400 mt-1">
+                                ⏰ {formatDate(item.due_date)}
+                              </div>
                             )}
                           </div>
-                          <div className="text-sm font-medium text-gray-900">{item.title}</div>
-                          {item.description && (
-                            <div className="text-xs text-gray-500 mt-0.5">{item.description}</div>
-                          )}
-                          {item.due_date && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              ⏰ {formatDate(item.due_date)}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {item.status === "this_week" ? (
-                            <span className="text-xs text-gray-400 whitespace-nowrap px-2 py-1">
-                              ✓ W planie
-                            </span>
-                          ) : (
+                          <div className="flex items-center gap-1">
                             <button
-                              onClick={() => handleStatusChange(item.id!, "this_week")}
-                              className="text-xs text-blue-600 hover:text-blue-800 whitespace-nowrap px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                              title="Przenies do tego tygodnia"
+                              onClick={() => startEditing(item)}
+                              className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50 transition-colors"
+                              title="Edytuj"
                             >
-                              → Ten tydzien
+                              ✎
                             </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteBacklogItem(item.id!)}
-                            className="text-gray-300 hover:text-red-500 transition-colors text-sm px-1"
-                            title="Usun"
-                          >
-                            ✕
-                          </button>
+                            {item.status === "this_week" ? (
+                              <span className="text-xs text-gray-400 whitespace-nowrap px-2 py-1">
+                                ✓ W planie
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleStatusChange(item.id!, "this_week")}
+                                className="text-xs text-blue-600 hover:text-blue-800 whitespace-nowrap px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                                title="Przenies do tego tygodnia"
+                              >
+                                → Ten tydzien
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteBacklogItem(item.id!)}
+                              className="text-gray-300 hover:text-red-500 transition-colors text-sm px-1"
+                              title="Usun"
+                            >
+                              ✕
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>
