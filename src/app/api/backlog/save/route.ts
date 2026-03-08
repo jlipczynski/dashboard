@@ -51,11 +51,14 @@ export async function POST(req: Request) {
 
   // Mark audio file as processed
   if (audioFileId) {
-    await supabase.from("backlog_audio_processed").upsert({
+    const { error: processedError } = await supabase.from("backlog_audio_processed").upsert({
       file_id: audioFileId,
       filename: audioFileName,
       items_count: data.length,
     })
+    if (processedError) {
+      console.error("[save] Error marking file as processed:", processedError.message)
+    }
   }
 
   return NextResponse.json({

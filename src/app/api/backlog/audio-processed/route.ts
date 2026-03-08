@@ -18,7 +18,9 @@ export async function GET() {
     .select("file_id, filename, processed_at, items_count")
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // Table may not exist yet — return empty list instead of 500
+    console.error("[audio-processed] GET error:", error.message)
+    return NextResponse.json({ processed: [] })
   }
 
   return NextResponse.json({ processed: data || [] })
