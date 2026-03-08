@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic"
 
 export async function GET(
   req: Request,
-  { params }: { params: { fileId: string } }
+  { params }: { params: Promise<{ fileId: string }> }
 ) {
   const session = await getServerSession(authOptions)
   const accessToken = session?.accessToken
@@ -15,7 +15,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { fileId } = params
+  const { fileId } = await params
 
   const driveRes = await fetch(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
