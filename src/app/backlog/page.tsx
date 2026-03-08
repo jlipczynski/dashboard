@@ -1124,7 +1124,7 @@ function BacklogPageInner() {
                             </button>
                             {item.status === "this_week" ? (
                               <span className="text-xs text-gray-400 whitespace-nowrap px-2 py-1">
-                                ✓ W planie
+                                📅 W Weekly Planner
                               </span>
                             ) : (
                               <button

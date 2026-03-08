@@ -62,9 +62,13 @@ export async function GET() {
 
   // Filter out already-processed files
   const supabase = getSupabaseAdmin()
-  const { data: processed } = await supabase
+  const { data: processed, error: processedError } = await supabase
     .from("backlog_audio_processed")
     .select("file_id")
+
+  if (processedError) {
+    console.error("[drive-files] Error fetching processed files:", processedError.message)
+  }
 
   const processedIds = new Set((processed || []).map((r: any) => r.file_id))
   const unprocessed = files.filter((f: any) => !processedIds.has(f.id))
