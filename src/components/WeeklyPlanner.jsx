@@ -291,7 +291,7 @@ export default function WeeklyPlanner() {
                       <span style={{ fontSize: 11, color: "#C4C4C4", fontFamily: "'Space Mono', monospace" }}>{meta.pts} pkt</span>
                     </div>
                     {groupGoals.map((t) => (
-                      <TaskRow key={t.id} task={t} meta={meta} isFrog={t.priority === "A" && t.subPriority === 1} onToggle={() => toggleGoal(t.id)} expanded={expandedTask === t.id} onExpand={() => setExpandedTask(expandedTask === t.id ? null : t.id)} onDelete={() => deleteGoal(t.id)} />
+                      <TaskRow key={t.id} task={t} meta={meta} isFrog={t.priority === "A" && t.subPriority === 1} onToggle={() => toggleGoal(t.id)} expanded={expandedTask === t.id} onExpand={() => setExpandedTask(expandedTask === t.id ? null : t.id)} onDelete={() => deleteGoal(t.id)} onUpdate={(updated) => setGoals(prev => prev.map(g => g.id === updated.id ? { ...g, task: updated.task, project: updated.project, priority: updated.priority, points: updated.points } : g))} />
                     ))}
                   </div>
                 );
@@ -421,13 +421,35 @@ export default function WeeklyPlanner() {
   );
 }
 
-function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog }) {
+function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog, onUpdate }) {
   const [rolloverStatus, setRolloverStatus] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTask, setEditTask] = useState(task.task);
+  const [editProject, setEditProject] = useState(task.project);
+  const [editPriority, setEditPriority] = useState(task.priority);
+  const [saving, setSaving] = useState(false);
   const pillar = PILLARS[task.project];
   const wig = SAMPLE_WIGS.find((w) => w.id === task.wig);
   const pts = PRIORITY_META[task.priority].pts + (task.wig ? 2 : 0);
   const isDone = task.status === "done";
   const frogStyle = isFrog && !isDone ? { background: "#FFFBEB", border: "1.5px solid #FDE68A" } : {};
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/weekly/update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: task.id, task: editTask, project: editProject, priority: editPriority }),
+      });
+      const data = await res.json();
+      if (data.status === "ok") {
+        onUpdate(data.updated);
+        setIsEditing(false);
+      }
+    } catch { /* ignore */ }
+    setSaving(false);
+  };
 
   const handleRollover = async () => {
     if (rolloverStatus) return;
@@ -479,18 +501,39 @@ function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog })
       </div>
 
       {expanded && (
-        <div style={{ padding: "12px 14px 14px", background: "#FFFFFF", borderRadius: "0 0 12px 12px", border: "1px solid #D4D4D4", borderTop: "none", display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-          {wig && <DetailChip label="WIG" value={wig.name} color="#D97706" />}
-          {task.deadline && <DetailChip label="Deadline" value={new Date(task.deadline).toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} color="#DC2626" />}
-          {task.person && <DetailChip label="Osoba" value={task.person} color="#2563EB" />}
-          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-            {!isDone && (
-              <button onClick={(e) => { e.stopPropagation(); handleRollover(); }} disabled={rolloverStatus === "loading"} style={{ padding: "5px 14px", background: "#FFFFFF", border: "1px solid #D4D4D4", borderRadius: 7, color: rolloverStatus === "done" ? "#16A34A" : rolloverStatus === "duplicate" ? "#D97706" : "#737373", fontSize: 11, cursor: rolloverStatus ? "default" : "pointer", fontFamily: "'Space Mono', monospace" }}>
-                {rolloverStatus === "done" ? "✓ Przeniesiono" : rolloverStatus === "duplicate" ? "Już istnieje" : rolloverStatus === "loading" ? "..." : "→ Nast. tydzień"}
-              </button>
-            )}
-            <button onClick={(e) => { e.stopPropagation(); onDelete(); }} style={{ padding: "5px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, color: "#DC2626", fontSize: 11, cursor: "pointer", fontFamily: "'Space Mono', monospace" }}>Usuń</button>
-          </div>
+        <div style={{ padding: "12px 14px 14px", background: "#FFFFFF", borderRadius: "0 0 12px 12px", border: "1px solid #D4D4D4", borderTop: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+          {isEditing ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <input type="text" value={editTask} onChange={(e) => setEditTask(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSave()} style={{ width: "100%", padding: "8px 12px", background: "#FAFAF9", border: "1px solid #E5E5E5", borderRadius: 8, color: "#171717", fontSize: 14, outline: "none" }} />
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select value={editProject} onChange={(e) => setEditProject(e.target.value)} style={{ padding: "6px 10px", background: "#FAFAF9", border: "1px solid #E5E5E5", borderRadius: 8, color: "#525252", fontSize: 12, outline: "none" }}>
+                  {Object.keys(PILLARS).map((p) => <option key={p} value={p}>{PILLARS[p].icon} {p}</option>)}
+                </select>
+                <select value={editPriority} onChange={(e) => setEditPriority(e.target.value)} style={{ padding: "6px 10px", background: "#FAFAF9", border: "1px solid #E5E5E5", borderRadius: 8, color: "#525252", fontSize: 12, outline: "none" }}>
+                  {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{k} — {v.desc}</option>)}
+                </select>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  <button onClick={handleSave} disabled={saving} style={{ padding: "5px 14px", background: "#16A34A", border: "none", borderRadius: 7, color: "#fff", fontSize: 11, fontWeight: 600, cursor: saving ? "default" : "pointer", fontFamily: "'Space Mono', monospace", opacity: saving ? 0.6 : 1 }}>{saving ? "Zapisuję..." : "Zapisz"}</button>
+                  <button onClick={() => { setIsEditing(false); setEditTask(task.task); setEditProject(task.project); setEditPriority(task.priority); }} style={{ padding: "5px 14px", background: "#FFFFFF", border: "1px solid #E5E5E5", borderRadius: 7, color: "#737373", fontSize: 11, cursor: "pointer", fontFamily: "'Space Mono', monospace" }}>Anuluj</button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+              {wig && <DetailChip label="WIG" value={wig.name} color="#D97706" />}
+              {task.deadline && <DetailChip label="Deadline" value={new Date(task.deadline).toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} color="#DC2626" />}
+              {task.person && <DetailChip label="Osoba" value={task.person} color="#2563EB" />}
+              <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                <button onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} style={{ padding: "5px 14px", background: "#FFFFFF", border: "1px solid #D4D4D4", borderRadius: 7, color: "#737373", fontSize: 11, cursor: "pointer", fontFamily: "'Space Mono', monospace" }}>Edytuj</button>
+                {!isDone && (
+                  <button onClick={(e) => { e.stopPropagation(); handleRollover(); }} disabled={rolloverStatus === "loading"} style={{ padding: "5px 14px", background: "#FFFFFF", border: "1px solid #D4D4D4", borderRadius: 7, color: rolloverStatus === "done" ? "#16A34A" : rolloverStatus === "duplicate" ? "#D97706" : "#737373", fontSize: 11, cursor: rolloverStatus ? "default" : "pointer", fontFamily: "'Space Mono', monospace" }}>
+                    {rolloverStatus === "done" ? "✓ Przeniesiono" : rolloverStatus === "duplicate" ? "Już istnieje" : rolloverStatus === "loading" ? "..." : "→ Nast. tydzień"}
+                  </button>
+                )}
+                <button onClick={(e) => { e.stopPropagation(); onDelete(); }} style={{ padding: "5px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, color: "#DC2626", fontSize: 11, cursor: "pointer", fontFamily: "'Space Mono', monospace" }}>Usuń</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
