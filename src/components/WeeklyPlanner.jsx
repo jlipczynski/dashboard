@@ -72,7 +72,6 @@ const mapFromDb = (rows) =>
 
 export default function WeeklyPlanner() {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [tasks, setTasks] = useState([]);
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -88,7 +87,9 @@ export default function WeeklyPlanner() {
   const weekStart = toDateStr(week.start);
 
   const fetchGoals = useCallback(async (ws) => {
-    if (!supabase) { setError("Supabase nie jest podłączony — brak NEXT_PUBLIC_SUPABASE_URL lub NEXT_PUBLIC_SUPABASE_ANON_KEY"); return; }
+    if (!supabase) { setLoading(false); setError("Supabase nie jest podłączony — brak NEXT_PUBLIC_SUPABASE_URL lub NEXT_PUBLIC_SUPABASE_ANON_KEY"); return; }
+    setLoading(true);
+    setError(null);
     const { data, error: err } = await supabase
       .from("weekly_tasks")
       .select("*")
@@ -101,34 +102,14 @@ export default function WeeklyPlanner() {
       setError(`Błąd ładowania celów: ${err.message} (${err.code})`);
       setGoals([]);
     } else {
-      setGoals(data || []);
-    }
-  }, []);
-
-  const fetchTasks = useCallback(async (ws) => {
-    if (!supabase) { setLoading(false); setError("Supabase nie jest podłączony — brak NEXT_PUBLIC_SUPABASE_URL lub NEXT_PUBLIC_SUPABASE_ANON_KEY"); return; }
-    setLoading(true);
-    setError(null);
-    const { data, error: err } = await supabase
-      .from("weekly_tasks")
-      .select("*")
-      .eq("week_start", ws)
-      .order("priority", { ascending: true })
-      .order("sub_priority", { ascending: true });
-    if (err) {
-      console.error("Supabase fetch error:", err);
-      setError(`Błąd ładowania celów: ${err.message} (${err.code})`);
-      setTasks([]);
-    } else {
-      setTasks(mapFromDb(data || []));
+      setGoals(mapFromDb(data || []));
     }
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchTasks(weekStart);
     fetchGoals(weekStart);
-  }, [weekStart, fetchTasks, fetchGoals]);
+  }, [weekStart, fetchGoals]);
 
   const addGoal = async () => {
     if (!newGoal.goal.trim()) return;
@@ -143,12 +124,12 @@ export default function WeeklyPlanner() {
       .single();
     if (error) { setError(`Błąd dodawania celu: ${error.message}`); return; }
     if (data) setGoals((prev) => {
-      const updated = [...prev, data];
+      const updated = [...prev, mapFromDb([data])[0]];
       const pOrder = "ABCDE";
       updated.sort((a, b) => {
         const pDiff = pOrder.indexOf(a.priority || "A") - pOrder.indexOf(b.priority || "A");
         if (pDiff !== 0) return pDiff;
-        return (a.sub_priority || 99) - (b.sub_priority || 99);
+        return (a.subPriority || 99) - (b.subPriority || 99);
       });
       return updated;
     });
@@ -188,8 +169,8 @@ export default function WeeklyPlanner() {
     return week.start.getTime() === thisWeek.start.getTime();
   };
 
-  const filteredTasks = useMemo(() => {
-    let t = [...tasks];
+  const filteredGoals = useMemo(() => {
+    let t = [...goals];
     if (filter !== "all") t = t.filter((x) => x.project === filter);
     t.sort((a, b) => {
       const pOrder = "ABCDE";
@@ -198,39 +179,17 @@ export default function WeeklyPlanner() {
       return (a.subPriority || 99) - (b.subPriority || 99);
     });
     return t;
-  }, [tasks, filter]);
+  }, [goals, filter]);
 
   const stats = useMemo(() => {
-    const total = tasks.reduce((s, t) => s + PRIORITY_META[t.priority].pts + (t.wig ? 2 : 0), 0);
-    const done = tasks.filter((t) => t.status === "done").reduce((s, t) => s + PRIORITY_META[t.priority].pts + (t.wig ? 2 : 0), 0);
-    const wigTasks = tasks.filter((t) => t.wig).length;
-    const wigDone = tasks.filter((t) => t.wig && t.status === "done").length;
-    const wigPts = tasks.filter((t) => t.wig && t.status === "done").reduce((s, t) => s + PRIORITY_META[t.priority].pts + 2, 0);
-    const doneCount = tasks.filter((t) => t.status === "done").length;
-    return { total, done, wigTasks, wigDone, wigPts, doneCount, taskCount: tasks.length };
-  }, [tasks]);
-
-  const toggleStatus = async (id) => {
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
-    const newStatus = task.status === "done" ? "todo" : "done";
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t)));
-    if (supabase) {
-      await supabase
-        .from("weekly_tasks")
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq("id", id);
-    }
-  };
-
-  const deleteTask = async (id) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    setExpandedTask(null);
-    if (supabase) {
-      await supabase.from("weekly_tasks").delete().eq("id", id);
-    }
-  };
-
+    const total = goals.reduce((s, t) => s + PRIORITY_META[t.priority].pts + (t.wig ? 2 : 0), 0);
+    const done = goals.filter((t) => t.status === "done").reduce((s, t) => s + PRIORITY_META[t.priority].pts + (t.wig ? 2 : 0), 0);
+    const wigTasks = goals.filter((t) => t.wig).length;
+    const wigDone = goals.filter((t) => t.wig && t.status === "done").length;
+    const wigPts = goals.filter((t) => t.wig && t.status === "done").reduce((s, t) => s + PRIORITY_META[t.priority].pts + 2, 0);
+    const doneCount = goals.filter((t) => t.status === "done").length;
+    return { total, done, wigTasks, wigDone, wigPts, doneCount, taskCount: goals.length };
+  }, [goals]);
 
   const progressPct = stats.taskCount > 0 ? Math.round((stats.doneCount / stats.taskCount) * 100) : 0;
 
@@ -304,61 +263,6 @@ export default function WeeklyPlanner() {
       <div style={{ padding: "0 36px 40px", display: "flex", gap: 28 }}>
         {/* TASK LIST */}
         <div style={{ flex: 1 }}>
-          {/* WEEKLY GOALS */}
-          <div style={{ marginBottom: 28 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 7, background: "#F0FDF4", border: "1.5px solid #BBF7D0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{"🎯"}</div>
-              <span style={{ fontSize: 12, color: "#A3A3A3", fontFamily: "'Space Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Cele tygodnia</span>
-              <div style={{ flex: 1, height: 1, background: "#EDEDED" }} />
-              <span style={{ fontSize: 11, color: "#C4C4C4", fontFamily: "'Space Mono', monospace" }}>
-                {goals.filter((g) => g.status === "done").length}/{goals.length}
-              </span>
-            </div>
-
-            {goals.map((g) => {
-              const pillar = PILLARS[g.project];
-              const isDone = g.status === "done";
-              const meta = PRIORITY_META[g.priority || "A"];
-              return (
-                <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: isDone ? "#F7FDF7" : "#FFFFFF", borderRadius: 12, border: "1px solid #EDEDED", marginBottom: 4, opacity: isDone ? 0.55 : 1, transition: "all 0.15s" }}>
-                  <div onClick={() => toggleGoal(g.id)} style={{ width: 20, height: 20, borderRadius: 6, border: isDone ? "none" : `2px solid ${meta.border}`, background: isDone ? meta.color : "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.2s" }}>
-                    {isDone && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>}
-                  </div>
-                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, color: meta.color, minWidth: 20 }}>
-                    {g.priority || "A"}{g.sub_priority ? `-${g.sub_priority}` : ""}
-                  </div>
-                  <div style={{ flex: 1, fontSize: 14, fontWeight: 500, textDecoration: isDone ? "line-through" : "none", color: isDone ? "#A3A3A3" : "#262626" }}>{g.task || g.goal}</div>
-                  {pillar && (
-                    <div style={{ padding: "3px 10px", borderRadius: 6, background: `${pillar.color}0C`, color: pillar.color, fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>
-                      {pillar.icon} {g.project}
-                    </div>
-                  )}
-                  <button onClick={() => deleteGoal(g.id)} style={{ background: "none", border: "none", color: "#D4D4D4", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }} title="Usuń">{"\u00D7"}</button>
-                </div>
-              );
-            })}
-
-            {!showAddGoal ? (
-              <button onClick={() => setShowAddGoal(true)} style={{ width: "100%", padding: "10px", background: "#FFFFFF", border: "1.5px dashed #BBF7D0", borderRadius: 10, color: "#86EFAC", fontSize: 13, cursor: "pointer", transition: "all 0.2s" }}>+ Dodaj cel</button>
-            ) : (
-              <div style={{ padding: 16, background: "#FFFFFF", borderRadius: 12, border: "1px solid #E5E5E5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-                <input value={newGoal.goal} onChange={(e) => setNewGoal({ ...newGoal, goal: e.target.value })} placeholder="Cel na ten tydzień..." style={inputStyle} autoFocus onKeyDown={(e) => e.key === "Enter" && addGoal()} />
-                <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
-                  <select value={newGoal.priority} onChange={(e) => setNewGoal({ ...newGoal, priority: e.target.value })} style={selectStyle}>
-                    {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{k} — {v.desc}</option>)}
-                  </select>
-                  <select value={newGoal.project} onChange={(e) => setNewGoal({ ...newGoal, project: e.target.value })} style={selectStyle}>
-                    {Object.keys(PILLARS).map((p) => <option key={p} value={p}>{PILLARS[p].icon} {p}</option>)}
-                  </select>
-                  <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                    <button onClick={addGoal} style={{ ...primaryBtnStyle, padding: "7px 18px", fontSize: 12 }}>Dodaj</button>
-                    <button onClick={() => setShowAddGoal(false)} style={{ ...secondaryBtnStyle, padding: "7px 18px", fontSize: 12 }}>Anuluj</button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
           {error && (
             <div style={{ padding: "14px 18px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
               <div>
@@ -375,8 +279,8 @@ export default function WeeklyPlanner() {
           ) : (
             <>
               {["A", "B", "C", "D", "E"].map((p) => {
-                const groupTasks = filteredTasks.filter((t) => t.priority === p);
-                if (groupTasks.length === 0) return null;
+                const groupGoals = filteredGoals.filter((t) => t.priority === p);
+                if (groupGoals.length === 0) return null;
                 const meta = PRIORITY_META[p];
                 return (
                   <div key={p} style={{ marginBottom: 28 }}>
@@ -386,19 +290,39 @@ export default function WeeklyPlanner() {
                       <div style={{ flex: 1, height: 1, background: "#EDEDED" }} />
                       <span style={{ fontSize: 11, color: "#C4C4C4", fontFamily: "'Space Mono', monospace" }}>{meta.pts} pkt</span>
                     </div>
-                    {groupTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} meta={meta} isFrog={t.priority === "A" && t.subPriority === 1} onToggle={() => toggleStatus(t.id)} expanded={expandedTask === t.id} onExpand={() => setExpandedTask(expandedTask === t.id ? null : t.id)} onDelete={() => deleteTask(t.id)} />
+                    {groupGoals.map((t) => (
+                      <TaskRow key={t.id} task={t} meta={meta} isFrog={t.priority === "A" && t.subPriority === 1} onToggle={() => toggleGoal(t.id)} expanded={expandedTask === t.id} onExpand={() => setExpandedTask(expandedTask === t.id ? null : t.id)} onDelete={() => deleteGoal(t.id)} />
                     ))}
                   </div>
                 );
               })}
 
-              {filteredTasks.length === 0 && !loading && (
+              {filteredGoals.length === 0 && !loading && (
                 <div style={{ textAlign: "center", padding: 40, color: "#C4C4C4", fontSize: 14 }}>
                   {"Brak celów na ten tydzień. Dodaj pierwszy!"}
                 </div>
               )}
             </>
+          )}
+
+          {!showAddGoal ? (
+            <button onClick={() => setShowAddGoal(true)} style={{ width: "100%", padding: "10px", background: "#FFFFFF", border: "1.5px dashed #BBF7D0", borderRadius: 10, color: "#86EFAC", fontSize: 13, cursor: "pointer", transition: "all 0.2s" }}>+ Dodaj cel</button>
+          ) : (
+            <div style={{ padding: 16, background: "#FFFFFF", borderRadius: 12, border: "1px solid #E5E5E5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <input value={newGoal.goal} onChange={(e) => setNewGoal({ ...newGoal, goal: e.target.value })} placeholder="Cel na ten tydzień..." style={inputStyle} autoFocus onKeyDown={(e) => e.key === "Enter" && addGoal()} />
+              <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <select value={newGoal.priority} onChange={(e) => setNewGoal({ ...newGoal, priority: e.target.value })} style={selectStyle}>
+                  {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{k} — {v.desc}</option>)}
+                </select>
+                <select value={newGoal.project} onChange={(e) => setNewGoal({ ...newGoal, project: e.target.value })} style={selectStyle}>
+                  {Object.keys(PILLARS).map((p) => <option key={p} value={p}>{PILLARS[p].icon} {p}</option>)}
+                </select>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                  <button onClick={addGoal} style={{ ...primaryBtnStyle, padding: "7px 18px", fontSize: 12 }}>Dodaj</button>
+                  <button onClick={() => setShowAddGoal(false)} style={{ ...secondaryBtnStyle, padding: "7px 18px", fontSize: 12 }}>Anuluj</button>
+                </div>
+              </div>
+            </div>
           )}
 
 
@@ -426,9 +350,9 @@ export default function WeeklyPlanner() {
 
             <div style={{ borderTop: "1px solid #F3F3F3", paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
               {Object.entries(PILLARS).map(([name, p]) => {
-                const count = tasks.filter((t) => t.project === name).length;
+                const count = goals.filter((t) => t.project === name).length;
                 if (count === 0) return null;
-                const doneCount = tasks.filter((t) => t.project === name && t.status === "done").length;
+                const doneCount = goals.filter((t) => t.project === name && t.status === "done").length;
                 const pct = Math.round((doneCount / count) * 100);
                 return (
                   <div key={name}>
@@ -447,34 +371,6 @@ export default function WeeklyPlanner() {
               })}
             </div>
           </div>
-
-          {/* GOALS SIDEBAR */}
-          {goals.length > 0 && (
-            <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 20, border: "1px solid #E5E5E5", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 10 }}>{"🎯"} Cele</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontSize: 28, fontWeight: 700, color: "#16A34A", fontFamily: "'Space Mono', monospace" }}>
-                  {goals.filter((g) => g.status === "done").length}/{goals.length}
-                </span>
-                <span style={{ fontSize: 12, color: "#A3A3A3" }}>{"osiągniętych"}</span>
-              </div>
-              <div style={{ marginTop: 10, height: 4, background: "#DCFCE7", borderRadius: 2, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${goals.length > 0 ? Math.round((goals.filter((g) => g.status === "done").length / goals.length) * 100) : 0}%`, background: "#16A34A", borderRadius: 2, transition: "width 0.4s ease" }} />
-              </div>
-              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                {goals.map((g) => {
-                  const gMeta = PRIORITY_META[g.priority || "A"];
-                  return (
-                    <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                      <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, fontWeight: 700, color: g.status === "done" ? "#A3A3A3" : gMeta.color, minWidth: 14 }}>{g.priority || "A"}</span>
-                      <span style={{ color: g.status === "done" ? "#16A34A" : "#D4D4D4" }}>{g.status === "done" ? "\u2713" : "\u25CB"}</span>
-                      <span style={{ color: g.status === "done" ? "#A3A3A3" : "#525252", textDecoration: g.status === "done" ? "line-through" : "none", flex: 1 }}>{g.task || g.goal}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 20, border: "1px solid #E5E5E5", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
             <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 10 }}>WIG Impact</div>
