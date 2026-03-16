@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer, CartesianGrid } from "recharts";
 import { supabase } from "@/lib/supabase";
 
 const PILLARS = {
@@ -17,7 +18,7 @@ const PRIORITY_META = {
   A: { label: "A", desc: "Musisz zrobić", sub: "Poważne konsekwencje", pts: 4, color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
   B: { label: "B", desc: "Powinieneś zrobić", sub: "Łagodne konsekwencje", pts: 3, color: "#D97706", bg: "#FFFBEB", border: "#FDE68A" },
   C: { label: "C", desc: "Fajnie byłoby", sub: "Zero konsekwencji", pts: 2, color: "#2563EB", bg: "#EFF6FF", border: "#BFDBFE" },
-  D: { label: "D", desc: "Deleguj", sub: "Oddaj komuś", pts: 0, color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE" },
+  D: { label: "D", desc: "Deleguj", sub: "Oddaj komuś", pts: 1, color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE" },
   E: { label: "E", desc: "Eliminuj", sub: "W ogóle nie rób", pts: 0, color: "#94A3B8", bg: "#F8FAFC", border: "#E2E8F0" },
 };
 
@@ -458,6 +459,8 @@ export default function WeeklyPlanner() {
               </div>
             </div>
           )}
+
+          <WeeklyStats weekStart={weekStart} />
         </div>
 
         {/* SIDEBAR */}
@@ -581,11 +584,34 @@ export default function WeeklyPlanner() {
 }
 
 function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog }) {
+  const [rolloverStatus, setRolloverStatus] = useState(null);
   const pillar = PILLARS[task.project];
   const wig = SAMPLE_WIGS.find((w) => w.id === task.wig);
   const pts = PRIORITY_META[task.priority].pts + (task.wig ? 2 : 0);
   const isDone = task.status === "done";
   const frogStyle = isFrog && !isDone ? { background: "#FFFBEB", border: "1.5px solid #FDE68A" } : {};
+
+  const handleRollover = async () => {
+    if (rolloverStatus) return;
+    setRolloverStatus("loading");
+    try {
+      const res = await fetch("/api/weekly/rollover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_id: task.id }),
+      });
+      const data = await res.json();
+      if (data.status === "already_exists") {
+        setRolloverStatus("duplicate");
+      } else {
+        setRolloverStatus("done");
+      }
+    } catch {
+      setRolloverStatus(null);
+      return;
+    }
+    setTimeout(() => setRolloverStatus(null), 1500);
+  };
 
   return (
     <div style={{ marginBottom: 4 }}>
@@ -619,7 +645,12 @@ function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog })
           {wig && <DetailChip label="WIG" value={wig.name} color="#D97706" />}
           {task.deadline && <DetailChip label="Deadline" value={new Date(task.deadline).toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} color="#DC2626" />}
           {task.person && <DetailChip label="Osoba" value={task.person} color="#2563EB" />}
-          <div style={{ marginLeft: "auto" }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            {!isDone && (
+              <button onClick={(e) => { e.stopPropagation(); handleRollover(); }} disabled={rolloverStatus === "loading"} style={{ padding: "5px 14px", background: "#FFFFFF", border: "1px solid #D4D4D4", borderRadius: 7, color: rolloverStatus === "done" ? "#16A34A" : rolloverStatus === "duplicate" ? "#D97706" : "#737373", fontSize: 11, cursor: rolloverStatus ? "default" : "pointer", fontFamily: "'Space Mono', monospace" }}>
+                {rolloverStatus === "done" ? "✓ Przeniesiono" : rolloverStatus === "duplicate" ? "Już istnieje" : rolloverStatus === "loading" ? "..." : "→ Nast. tydzień"}
+              </button>
+            )}
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} style={{ padding: "5px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, color: "#DC2626", fontSize: 11, cursor: "pointer", fontFamily: "'Space Mono', monospace" }}>Usuń</button>
           </div>
         </div>
@@ -652,6 +683,91 @@ function StatPill({ label, value, accent }) {
 function FilterChip({ label, active, onClick, color }) {
   return (
     <button onClick={onClick} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${active ? color + "33" : "#EDEDED"}`, background: active ? color + "0C" : "#FFFFFF", color: active ? color : "#A3A3A3", fontSize: 12, cursor: "pointer", transition: "all 0.15s", whiteSpace: "nowrap", fontWeight: active ? 500 : 400 }}>{label}</button>
+  );
+}
+
+function WeeklyStats({ weekStart }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!weekStart) return;
+    setLoading(true);
+    fetch(`/api/weekly/stats?week_start=${weekStart}`)
+      .then((r) => r.json())
+      .then((d) => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [weekStart]);
+
+  if (loading || !data) return null;
+
+  const { current, history } = data;
+
+  const formatWeekLabel = (ws) => {
+    const d = new Date(ws + "T00:00:00");
+    return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+
+  const getBarColor = (pct) => pct >= 80 ? "#1D9E75" : pct >= 50 ? "#534AB7" : "#D3D1C7";
+
+  const CustomTooltip = ({ active, payload }) => {
+    if (!active || !payload || !payload[0]) return null;
+    const d = payload[0].payload;
+    return (
+      <div style={{ background: "#fff", border: "1px solid #E5E5E5", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontFamily: "'Space Mono', monospace", color: "#525252" }}>
+        Tydz. {formatWeekLabel(d.week_start)}: {d.points_done} / {d.points_total} pkt ({d.pct}%)
+      </div>
+    );
+  };
+
+  const abBadge = current.ab_total === 0
+    ? <span style={{ color: "#A3A3A3", fontSize: 13 }}>—</span>
+    : current.ab_success
+      ? <span style={{ padding: "4px 12px", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, color: "#16A34A", fontSize: 12, fontWeight: 500 }}>✅ Tydzień udany — wszystkie A i B zamknięte</span>
+      : <span style={{ padding: "4px 12px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, color: "#D97706", fontSize: 12, fontWeight: 500 }}>⚠️ Pozostało {current.ab_total - current.ab_done} zadań A/B</span>;
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ background: "#FFFFFF", borderRadius: 14, border: "1px solid #E5E5E5", padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 14 }}>Podsumowanie tygodnia</div>
+
+        <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          <div style={{ fontSize: 14, color: "#262626" }}>
+            <span style={{ fontFamily: "'Space Mono', monospace", fontWeight: 600 }}>Zadania: {current.tasks_done} / {current.tasks_total}</span>
+          </div>
+          <div style={{ fontSize: 14, color: "#262626" }}>
+            <span style={{ fontFamily: "'Space Mono', monospace", fontWeight: 600 }}>Punkty: {current.points_done} / {current.points_total} pkt</span>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 20 }}>{abBadge}</div>
+
+        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 10 }}>Ostatni kwartał</div>
+
+        <ResponsiveContainer width="100%" height={100}>
+          <BarChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+            <CartesianGrid vertical={false} horizontal={true} strokeDasharray="3 3" stroke="#F3F3F3" />
+            <XAxis dataKey="week_start" tick={false} axisLine={false} tickLine={false} />
+            <YAxis domain={[0, 100]} ticks={[25, 50, 75, 100]} tick={false} axisLine={false} tickLine={false} width={1} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+            <Bar dataKey="pct" radius={[3, 3, 0, 0]} maxBarSize={24}>
+              {history.map((entry, i) => (
+                <Cell
+                  key={entry.week_start}
+                  fill={getBarColor(entry.pct)}
+                  stroke={i === history.length - 1 ? "#3C3489" : "none"}
+                  strokeWidth={i === history.length - 1 ? 2 : 0}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+          <span style={{ fontSize: 10, color: "#A3A3A3", fontFamily: "'Space Mono', monospace" }}>ten tydz.</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
