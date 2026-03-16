@@ -30,7 +30,7 @@ GOOGLE_DRIVE_BACKLOG_FOLDER_ID, DATABASE_URL, DATABASE_POOLER_URL.
 Szczegóły schematów w `references/supabase_schema.md`.
 | Tabela | Opis |
 |--------|------|
-| `weekly_tasks` | Zadania Weekly Plannera (priorytet ABCDE, WIG, punkty) + kolumna `backlog_item_id` |
+| `weekly_tasks` | Cele tygodniowe (priorytet ABCDE, WIG, punkty, status: todo/done) + kolumna `backlog_item_id` |
 | `backlog_items` | Backlog z nagrań głosowych (status: backlog/this_week/done/archived) |
 | `backlog_audio_processed` | Śledzenie które pliki audio zostały już przetworzone i zapisane |
 ## Architektura aplikacji
@@ -39,7 +39,7 @@ Szczegóły schematów w `references/supabase_schema.md`.
 - `/backlog` — backlog głosowy (Google Drive → Whisper → Claude → Supabase)
 - `/health` lub analogiczne — filar Zdrowie (Garmin integration)
 ### Kluczowe komponenty
-- **Weekly Planner** — React component z nawigacją tygodniową, ABCDE, WIG, progress ring
+- **Weekly Planner** — jeden state `goals` (mapFromDb), jeden fetch `fetchGoals` z weekly_tasks. Funkcje: ABCDE grupowanie, expand wiersza, rollover na następny tydzień, edycja inline (treść/projekt/priorytet), toggle done/todo, statystyki tygodnia z wykresem 12 tygodni (WeeklyStats). Sidebar: Score + WIG Impact (bez sekcji Cele).
 - **Garmin integration** — aktywności z Garmin API zasilają trackery (bieganie działa, rower do naprawy)
 - **Backlog audio pipeline**: Google Drive folder "Backlog Audio" → Whisper API → Claude API → backlog_items
 ### API Routes
@@ -53,6 +53,9 @@ Szczegóły schematów w `references/supabase_schema.md`.
 | `/api/backlog/save` | DELETE | Usunięcie wpisu backlogu |
 | `/api/backlog/audio-processed` | GET/POST | Tracking przetworzonych plików audio |
 | `/api/migrate` | GET | Uruchamia migracje SQL |
+| `/api/weekly/rollover` | POST | Kopiuje cel na następny tydzień (ochrona przed duplikatami) |
+| `/api/weekly/stats` | GET | Statystyki bieżącego tygodnia + historia 12 tygodni |
+| `/api/weekly/update` | PATCH | Edycja celu (task, project, priority) z przeliczeniem points |
 ## System 4DX i klasyfikacja
 Jan używa metodologii 4DX:
 - **WIG** (Wildly Important Goal) — oznaczany diamond
@@ -96,3 +99,5 @@ Jan używa metodologii 4DX:
 - Tabela `backlog_items` — migracje uruchamiane automatycznie przez `scripts/migrate.mjs` przy każdym buildzie
 - Rower z Garmin — nie zaciąga automatycznie jak bieganie (do naprawy)
 - Google Client Secret był regenerowany 6.03.2026
+## Favicon
+Fioletowy gauge (miernik) — pliki: src/app/icon.svg, src/app/apple-icon.png, src/app/favicon.ico
