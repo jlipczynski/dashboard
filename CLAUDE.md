@@ -91,7 +91,7 @@ Jeśli aktywność nie trafia do licznika — **sprawdź console.log** co faktyc
 
 ## Czego nigdy nie ruszać
 
-- Komponent Weekly Planner (`/weekly`)
 - Globalny layout, navbar, sidebar
 - Istniejące style i theme
 - Tabela `weekly_tasks` (poza dodawaniem kolumn)
+- API routes backlogu (/api/backlog/*)
