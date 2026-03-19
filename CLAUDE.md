@@ -1,97 +1,159 @@
+# CLAUDE.md — Reguły dla Claude Code (jan-dashboard)
 
-# Instrukcje dla Claude Code — Panel Życia
+## ⚠️ ZASADY NIEPRZEKRACZALNE
 
-## Zasady bezwzględne
-
-### 1. Nigdy nie zgaduj — zawsze sprawdzaj kod
-
-Przed każdą zmianą:
-```bash
-# Znajdź dokładny string w kodzie zamiast zgadywać
-grep -r "strength" src/ --include="*.ts" --include="*.tsx"
-grep -r "activityType" src/ --include="*.ts" --include="*.tsx"
-```
-
-Jeśli nie wiesz jak coś się nazywa w kodzie — **szukaj**, nie wymyślaj.
-
-### 2. Loguj przed naprawą
-
-Przy problemach z danymi z API (Garmin, Google Drive, Supabase) — najpierw dodaj `console.log` i sprawdź co faktycznie przychodzi:
-
-```typescript
-console.log('Garmin activity type:', activity.activityType, activity.type, activity)
-```
-
-Dopiero po zobaczeniu realnych danych — napraw.
-
-### 3. Testuj po każdej zmianie
-
-Po każdym wdrożeniu sprawdź w przeglądarce czy zmiana działa. Jeśli nie możesz sprawdzić — napisz wprost w podsumowaniu: "Nie zweryfikowano działania — sprawdź ręcznie: [co i gdzie sprawdzić]".
-
-### 4. Nie ruszaj tego czego nie ma w briefie
-
-Zmieniaj **tylko** pliki wymienione w briefie. Jeśli musisz zmienić coś innego — napisz o tym przed zmianą.
+Naruszenie którejkolwiek z poniższych zasad jest niedopuszczalne,
+nawet jeśli wydaje się szybsze lub wygodniejsze.
 
 ---
 
-## Stack i architektura
+## 1. Zawsze najpierw zrozum architekturę
 
-- **Framework**: Next.js App Router (nie Pages Router)
-- **Baza danych**: Supabase (Postgres)
-- **Auth**: next-auth z Google Provider
-- **Deploy**: Vercel
-- **Zmienne env**: już ustawione na Vercel — nie nadpisuj
+Przed napisaniem jednej linii kodu:
+- Przeczytaj cały plik który modyfikujesz (nie tylko fragment)
+- Zrób `grep` żeby znaleźć wszystkie miejsca używające danej zmiennej/funkcji
+- Sprawdź schemat tabeli Supabase zanim zakładasz kształt danych
 
-## Design system (NIENARUSZALNY)
+```bash
+# Przykład — zanim zmodyfikujesz logikę current_page:
+grep -r "current_page" src/ --include="*.ts" --include="*.tsx"
+```
+
+---
+
+## 2. Nigdy nie zgaduj wartości — zawsze sprawdzaj
+
+❌ ZAKAZ: "zakładam że pole nazywa się X"
+✅ WYMAGANE: `grep -r "nazwa_pola" src/` i weryfikacja w schemacie SQL
+
+Dotyczy szczególnie:
+- Nazw kolumn w Supabase
+- Statusów i enumów (np. pillar values, projekt values)
+- Kształtu obiektów zwracanych przez API
+
+---
+
+## 3. Console.log przed fixowaniem błędów API
+
+Zanim napiszesz fix dla błędu w API route:
+1. Dodaj `console.log` logujący rzeczywiste dane które przychodzą
+2. Sprawdź logi w Vercel Dashboard
+3. Dopiero wtedy pisz fix
+
+❌ ZAKAZ: naprawiania błędu API bez zobaczenia co faktycznie zwraca
+
+---
+
+## 4. Weryfikacja w Supabase po każdym deploymencie
+
+Po każdej zmianie dotykającej bazy danych — obowiązkowo:
+```sql
+-- Sprawdź czy dane wyglądają jak oczekujesz
+SELECT * FROM [tabela] ORDER BY created_at DESC LIMIT 10;
+```
+
+Nie uważaj zadania za skończone bez weryfikacji w Supabase.
+
+---
+
+## 5. Zakaz modyfikowania plików poza scope briefu
+
+Brief definiuje dokładnie które pliki wolno zmienić.
+Jeśli coś "przy okazji" wydaje się do naprawienia — STOP. Zgłoś to w PR opisie.
+
+❌ ZAKAZ: "przy okazji poprawiłem też X"
+✅ WYMAGANE: osobny brief na każdy problem
+
+---
+
+## 6. Małe kroki, każdy weryfikowalny
+
+Nie implementuj wszystkiego naraz. Jeśli brief ma 3 etapy — deploy po każdym etapie
+i zweryfikuj że poprzedni działa.
+
+---
+
+## 7. Branching i deployment
+
+```bash
+# Branch naming:
+git checkout -b claude/{feature}-{SESSION_ID}
+
+# Deploy po implementacji:
+vercel --prod
+```
+
+---
+
+## Krytyczne stałe (⚠️ NIENARUSZALNE)
+
+### Filary (pillar)
+Wartości w bazie danych (weekly_tasks.pillar):
+- `Zdrowie i Fitness`
+- `Rozwój Osobisty`
+- `Relacje i Partnerstwo`
+- `Praca`
+- `Duchowość`
+
+### Projekty (project)
+- `ovoc` / `plantacja` / `inne`
+
+### Priorytety (priority/category)
+- `A` / `B` / `C` / `D` / `E`
+
+### Status backlog
+- `backlog` / `this_week` / `done` / `archived`
+
+### Status books
+- `reading` / `finished`
+
+### Area w rozwoj_entries
+- `czytanie` / `sluchanie`
+
+---
+
+## Architektura books (moduł czytania)
+
+### Zasada: `current_page` = `page_to` z NAJNOWSZEGO wpisu book_readings
+
+```
+books.current_page = pozycja w książce (NIE suma stron)
+book_readings.pages_read = ile stron w tej sesji
+book_readings.page_from / page_to = zakres stron w tej sesji
+```
+
+Po każdej operacji na book_readings (insert/update/delete):
+```ts
+// POPRAWNE obliczenie current_page:
+const { data: latestReading } = await supabase
+  .from("book_readings")
+  .select("page_to")
+  .eq("book_id", bookId)
+  .order("date", { ascending: false })
+  .order("created_at", { ascending: false })
+  .limit(1)
+  .single();
+const newCurrentPage = latestReading?.page_to ?? 0;
+
+// BŁĘDNE (nigdy nie rób):
+// const totalRead = allReadings.reduce((sum, r) => sum + r.pages_read, 0)
+// → to jest suma, nie pozycja
+```
+
+---
+
+## Zmienne środowiskowe
+
+Wszystkie zmienne są ustawione na Vercel. Nie opisuj ich w briefach.
+Używaj:
+- `SUPABASE_SERVICE_ROLE_KEY` — server-side (API routes)
+- `NEXT_PUBLIC_SUPABASE_URL` — client-side
+
+---
+
+## Design System (NIE RUSZAĆ)
 
 - Tło: białe / `#FAFAF9`
 - Czcionki: DM Sans + Space Mono
-- Theme: light — bez dark mode
-- **Żadnych zmian wizualnych** jeśli brief tego nie wymaga
-
----
-
-## Supabase — zasady
-
-- Server-side: używaj `SUPABASE_SERVICE_ROLE_KEY`
-- Client-side: używaj `NEXT_PUBLIC_SUPABASE_URL`
-- Przed dodaniem kolumny: `ADD COLUMN IF NOT EXISTS`
-- Przed tworzeniem tabeli: `CREATE TABLE IF NOT EXISTS`
-
----
-
-## Scoring kalorii (NIENARUSZALNE)
-
-```
-deficyt 0–300 kcal   → 7/10  ✅
-deficyt 300–800 kcal → 10/10 👍
-deficyt > 800 kcal   → 8/10  💪
-nadwyżka 0–200       → 5/10  🟡
-nadwyżka 200–500     → 3/10  🟠
-nadwyżka > 500       → 1/10  🔴
-```
-
-Brak symbolu ⚠️ "za mało" — duży deficyt jest **dobry**, nie karany.
-
----
-
-## Garmin — typy aktywności
-
-```typescript
-const ACTIVITY_TYPES = {
-  running:  ['running', 'trail_running', 'treadmill_running', 'track_running'],
-  cycling:  ['cycling', 'road_cycling', 'indoor_cycling', 'mountain_biking', 'virtual_ride'],
-  strength: ['strength_training', 'fitness_equipment', 'strength', 'gym_and_fitness_equipment'],
-}
-```
-
-Jeśli aktywność nie trafia do licznika — **sprawdź console.log** co faktycznie zwraca Garmin API i dodaj brakujący typ do listy.
-
----
-
-## Czego nigdy nie ruszać
-
-- Globalny layout, navbar, sidebar
-- Istniejące style i theme
-- Tabela `weekly_tasks` (poza dodawaniem kolumn)
-- API routes backlogu (/api/backlog/*)
+- Theme: light (bez dark mode)
+- Zakaz zmian wizualnych poza plikami w scope briefu
