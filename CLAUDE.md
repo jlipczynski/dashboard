@@ -73,6 +73,52 @@ i zweryfikuj że poprzedni działa.
 
 ---
 
+## ⚠️ OBOWIĄZKOWY PROCES WERYFIKACJI — dla każdej zmiany w bazie danych
+
+Każdy brief dotyczący danych MUSI zawierać te trzy etapy. Bez nich brief jest niekompletny.
+
+### Etap 1 — PRZED zmianą (SELECT)
+Brief musi zawierać zapytanie SELECT które Jan uruchamia PRZED implementacją.
+Wynik Jan wkleja do rozmowy — dopiero po potwierdzeniu przechodzimy dalej.
+
+```sql
+-- Przykład: zawsze najpierw pokaż stan przed zmianą
+SELECT * FROM [tabela] WHERE [warunki] ORDER BY [kolumna];
+```
+
+### Etap 2 — PO implementacji (weryfikacja z oczekiwanymi wartościami)
+Brief musi zawierać:
+- Konkretne zapytanie SQL do uruchomienia po deploymencie
+- Tabelę OCZEKIWANYCH wartości wyliczonych z góry
+
+Jeśli rzeczywiste wyniki nie zgadzają się z oczekiwanymi — STOP. Nie kontynuuj.
+Zgłoś rozbieżność do Jana z dokładnym opisem różnicy.
+
+```sql
+-- Przykład weryfikacji po naprawie rozwoj_entries:
+SELECT area, date, amount FROM rozwoj_entries
+WHERE date >= '2026-03-01' ORDER BY area, date;
+-- Oczekiwane: czytanie/2026-03-05 = 224, czytanie/2026-03-06 = 208, itd.
+```
+
+### Etap 3 — TEST manualny w UI
+Brief musi zawierać konkretne kroki które Jan wykonuje w przeglądarce:
+1. Co kliknąć / co wpisać
+2. Co powinno się pojawić na ekranie
+3. Co sprawdzić w Supabase po akcji
+
+Jeśli UI zachowuje się inaczej niż oczekiwano — STOP i raport do Jana.
+
+---
+
+### Dlaczego to jest krytyczne
+
+Ten projekt wpływa na rzeczywiste dane biznesowe (Plantacja, Ovoc Malinovi).
+Błąd w logice może mieć realne konsekwencje dla ludzi.
+Weryfikacja nie jest opcjonalna — jest częścią implementacji.
+
+---
+
 ## 7. Branching i deployment
 
 ```bash
