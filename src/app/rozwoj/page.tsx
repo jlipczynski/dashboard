@@ -299,13 +299,13 @@ function CzytanieCard({
   const dayOfMonth = getDayOfMonth();
 
   const monthlyDone = entries
-    .filter((e) => e.date >= monthStart)
+    .filter((e) => e.date.slice(0, 10) >= monthStart)
     .reduce((s, e) => s + e.amount, 0);
   const weeklyDone = entries
-    .filter((e) => e.date >= weekStart)
+    .filter((e) => e.date.slice(0, 10) >= weekStart)
     .reduce((s, e) => s + e.amount, 0);
   const todayDone = entries
-    .filter((e) => e.date === today())
+    .filter((e) => e.date.slice(0, 10) === today())
     .reduce((s, e) => s + e.amount, 0);
 
   const monthPct = targets.monthly > 0 ? Math.round((monthlyDone / targets.monthly) * 100) : 0;
@@ -971,13 +971,13 @@ function SluchanieCard({
   const dayOfMonth = getDayOfMonth();
 
   const monthlyDone = entries
-    .filter((e) => e.date >= monthStart)
+    .filter((e) => e.date.slice(0, 10) >= monthStart)
     .reduce((s, e) => s + e.amount, 0);
   const weeklyDone = entries
-    .filter((e) => e.date >= weekStart)
+    .filter((e) => e.date.slice(0, 10) >= weekStart)
     .reduce((s, e) => s + e.amount, 0);
   const todayDone = entries
-    .filter((e) => e.date === today())
+    .filter((e) => e.date.slice(0, 10) === today())
     .reduce((s, e) => s + e.amount, 0);
 
   const monthPct = targets.monthly > 0 ? Math.round((monthlyDone / targets.monthly) * 100) : 0;
@@ -1891,21 +1891,21 @@ function AreaCard({
   const weekStart = getWeekStart();
 
   const monthlyDone = entries
-    .filter((e) => e.date >= monthStart)
+    .filter((e) => e.date.slice(0, 10) >= monthStart)
     .reduce((s, e) => s + e.amount, 0);
   const weeklyDone = entries
-    .filter((e) => e.date >= weekStart)
+    .filter((e) => e.date.slice(0, 10) >= weekStart)
     .reduce((s, e) => s + e.amount, 0);
 
   const monthPct = targets.monthly > 0 ? Math.round((monthlyDone / targets.monthly) * 100) : 0;
   const weekPct = targets.weekly > 0 ? Math.round((weeklyDone / targets.weekly) * 100) : 0;
 
-  const todayEntry = entries.find((e) => e.date === today());
+  const todayEntry = entries.find((e) => e.date.slice(0, 10) === today());
 
   const handleSubmit = () => {
     const n = parseInt(amount);
     if (!isNaN(n) && n > 0) {
-      const existing = entries.find((e) => e.date === date);
+      const existing = entries.find((e) => e.date.slice(0, 10) === date);
       if (existing) {
         onEditEntry(area.key, date, existing.amount + n);
       } else {
@@ -2250,7 +2250,7 @@ export default function RozwojPage() {
 
   // Compute totals for summary
   const monthStart = getMonthStart();
-  const monthEntries = entries.filter((e) => e.date >= monthStart);
+  const monthEntries = entries.filter((e) => e.date.slice(0, 10) >= monthStart);
 
   const areaTotals = AREAS.map((a) => {
     const total = monthEntries.filter((e) => e.area === a.key).reduce((s, e) => s + e.amount, 0);
