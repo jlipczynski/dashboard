@@ -250,6 +250,21 @@ export default function Home() {
           <span className="text-muted-foreground">→</span>
         </Link>
 
+        {/* Finanse link */}
+        <Link
+          href="/finanse"
+          className="mt-3 flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-sm transition-all hover:shadow-md hover:border-primary/20 sm:p-4"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">💰</span>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Finanse</p>
+              <p className="text-xs text-muted-foreground">Import z Santandera · Kategoryzacja · Eksport</p>
+            </div>
+          </div>
+          <span className="text-muted-foreground">→</span>
+        </Link>
+
         {/* Backlog link */}
         <Link
           href="/backlog"
