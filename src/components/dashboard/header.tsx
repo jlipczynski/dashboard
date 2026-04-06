@@ -1,6 +1,14 @@
 import Link from "next/link";
 
+const MONTHS_PL = [
+  "STYCZEŃ", "LUTY", "MARZEC", "KWIECIEŃ", "MAJ", "CZERWIEC",
+  "LIPIEC", "SIERPIEŃ", "WRZESIEŃ", "PAŹDZIERNIK", "LISTOPAD", "GRUDZIEŃ",
+];
+
 export function DashboardHeader() {
+  const now = new Date();
+  const monthLabel = `${MONTHS_PL[now.getMonth()]} ${now.getFullYear()}`;
+
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
@@ -8,7 +16,7 @@ export function DashboardHeader() {
           Jan&apos;s Dashboard
         </p>
         <h1 className="mt-1 text-3xl font-black tracking-tight text-foreground sm:text-5xl">
-          MARZEC 2026
+          {monthLabel}
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Twoj osobisty panel zyciowy &mdash; 4DX Framework
