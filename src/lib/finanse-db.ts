@@ -73,14 +73,42 @@ INSERT INTO finance_categories (name, type) VALUES
 ON CONFLICT (name) DO NOTHING;
 `;
 
+const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" }[] = [
+  { name: "Travel", type: "expense" },
+  { name: "Mati USA", type: "expense" },
+  { name: "Zwierzaki", type: "expense" },
+  { name: "Rozrywka", type: "expense" },
+  { name: "Jedzenie na zewnątrz", type: "expense" },
+  { name: "Inne", type: "expense" },
+  { name: "Food & Drink", type: "expense" },
+  { name: "Kids sport", type: "expense" },
+  { name: "Transportation", type: "expense" },
+  { name: "Kids education", type: "expense" },
+  { name: "Housing & Utilities", type: "expense" },
+  { name: "Kids other", type: "expense" },
+  { name: "Personal Care", type: "expense" },
+  { name: "Shopping", type: "expense" },
+  { name: "Health Care", type: "expense" },
+  { name: "Membership", type: "expense" },
+  { name: "Giving", type: "expense" },
+  { name: "Maliny", type: "income" },
+  { name: "Salary", type: "income" },
+  { name: "Investment", type: "income" },
+];
+
 let tablesReady = false;
 
 export async function ensureFinanceTables() {
   if (tablesReady) return;
   if (!supabase) return;
 
-  const { error } = await supabase.from("finance_categories").select("id").limit(1);
+  const { data, error } = await supabase.from("finance_categories").select("id").limit(1);
+
   if (!error) {
+    // Table exists — seed default categories if empty
+    if (data && data.length === 0) {
+      await supabase.from("finance_categories").insert(DEFAULT_CATEGORIES);
+    }
     tablesReady = true;
     return;
   }
