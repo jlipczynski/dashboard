@@ -5,6 +5,8 @@ import { unzipSync, strFromU8 } from "fflate";
 import { BackButton } from "@/components/dashboard/back-button";
 import { monthlyGoals, sportAreas } from "@/lib/data";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
+import { DEFAULT_REHAB_PLAN, isPlanActive, toDateStr } from "@/lib/rehab";
+import { RehabSection } from "@/components/zdrowie/rehab-section";
 
 type GarminActivity = {
   id: number;
@@ -1255,6 +1257,7 @@ export default function ZdrowiePage() {
       running: { ...monthlyGoals.running },
       competition: { ...monthlyGoals.competition },
       competitions: [],
+      rehab: { ...monthlyGoals.rehab },
     },
     gymDays: sportAreas[0].weekDays,
     gymWeeklyGoal: sportAreas[0].weeklyGoal,
@@ -1301,6 +1304,11 @@ export default function ZdrowiePage() {
     bikeMonthlyGoal: v,
     goals: { ...p.goals, cycling: { ...p.goals.cycling, target: v } },
   }));
+
+  // Rehab mode: replaces sport goals while the plan is active
+  const rehabPlan = goals.rehab ?? DEFAULT_REHAB_PLAN;
+  const today = toDateStr(new Date());
+  const rehabActive = isPlanActive(rehabPlan, today);
 
   // Auto-derive weekly goals from monthly (month ≈ 4.33 weeks)
   const gymWeeklyGoal = Math.round(gymMonthlyGoal / 4.33);
@@ -1545,111 +1553,133 @@ export default function ZdrowiePage() {
           />
         </div>
 
-        {/* ── Monthly goals (editable) ─────────────────────────── */}
-        <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🎯 Cele Miesieczne</h3>
-        <div className="mt-3 grid gap-3 grid-cols-2 sm:gap-4 lg:grid-cols-3">
-          <MonthlyGoalCard
-            icon="🔥"
-            label="Aktywne kalorie"
-            current={goals.activeCalories.current}
-            target={goals.activeCalories.target}
-            unit="kcal"
-            color="#ef4444"
-            onTargetChange={(v) => updateGoal("activeCalories", "target", v)}
-          />
-          <MonthlyGoalCard
-            icon="🚴"
-            label="Rower (km)"
-            current={goals.cycling.current}
-            target={bikeMonthlyGoal || goals.cycling.target}
-            unit="km"
-            color="#3b82f6"
-            onTargetChange={setBikeMonthlyGoal}
-          />
-          <MonthlyGoalCard
-            icon="🏃"
-            label="Bieganie"
-            current={goals.running.current}
-            target={runMonthlyGoal || goals.running.target}
-            unit="km"
-            color="#22c55e"
-            onTargetChange={setRunMonthlyGoal}
-          />
-          <MonthlyGoalCard
-            icon="🏋️"
-            label="Silownia"
-            current={gymMonthlyDone}
-            target={gymMonthlyGoal}
-            unit="treningow"
-            color="#a855f7"
-            onTargetChange={setGymMonthlyGoal}
-          />
-        </div>
+        {rehabActive ? (
+          <>
+            {/* ── Rehab goals (replace sport goals while active) ───── */}
+            <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🎯 Cele — Rehabilitacja</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Cele sportowe są wstrzymane na czas rehabilitacji (zapisane, wrócą po jej zakończeniu)</p>
+            <RehabSection
+              plan={rehabPlan}
+              onEndPlan={() => setGoals((prev) => ({ ...prev, rehab: { ...rehabPlan, active: false } }))}
+            />
+          </>
+        ) : (
+          <>
+          {/* ── Monthly goals (editable) ─────────────────────────── */}
+          <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🎯 Cele Miesieczne</h3>
+          <div className="mt-3 grid gap-3 grid-cols-2 sm:gap-4 lg:grid-cols-3">
+            <MonthlyGoalCard
+              icon="🔥"
+              label="Aktywne kalorie"
+              current={goals.activeCalories.current}
+              target={goals.activeCalories.target}
+              unit="kcal"
+              color="#ef4444"
+              onTargetChange={(v) => updateGoal("activeCalories", "target", v)}
+            />
+            <MonthlyGoalCard
+              icon="🚴"
+              label="Rower (km)"
+              current={goals.cycling.current}
+              target={bikeMonthlyGoal || goals.cycling.target}
+              unit="km"
+              color="#3b82f6"
+              onTargetChange={setBikeMonthlyGoal}
+            />
+            <MonthlyGoalCard
+              icon="🏃"
+              label="Bieganie"
+              current={goals.running.current}
+              target={runMonthlyGoal || goals.running.target}
+              unit="km"
+              color="#22c55e"
+              onTargetChange={setRunMonthlyGoal}
+            />
+            <MonthlyGoalCard
+              icon="🏋️"
+              label="Silownia"
+              current={gymMonthlyDone}
+              target={gymMonthlyGoal}
+              unit="treningow"
+              color="#a855f7"
+              onTargetChange={setGymMonthlyGoal}
+            />
+          </div>
 
-        {/* ── Weekly goals (auto-calculated from monthly / 4.33) ── */}
-        <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">📅 Cele Tygodniowe</h3>
-        <p className="mt-1 text-xs text-muted-foreground">Automatycznie z celów miesięcznych (÷ 4.33)</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3 sm:gap-4">
-          {/* Running weekly */}
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🏃</span>
-                <span className="text-sm font-medium text-foreground">Bieganie</span>
+          {/* ── Weekly goals (auto-calculated from monthly / 4.33) ── */}
+          <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">📅 Cele Tygodniowe</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Automatycznie z celów miesięcznych (÷ 4.33)</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3 sm:gap-4">
+            {/* Running weekly */}
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🏃</span>
+                  <span className="text-sm font-medium text-foreground">Bieganie</span>
+                </div>
+                <ProgressRing value={runWeekTotal} max={runWeeklyGoal} color="#22c55e" size={56} />
               </div>
-              <ProgressRing value={runWeekTotal} max={runWeeklyGoal} color="#22c55e" size={56} />
+              <div className="mt-3">
+                <ProgressBar value={runWeekTotal} max={runWeeklyGoal} color="#22c55e" />
+                <div className="mt-2 flex items-center justify-between text-sm">
+                  <span className="font-semibold text-foreground">
+                    {runWeekTotal.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">km</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">cel: {runWeeklyGoal} km</span>
+                </div>
+              </div>
             </div>
-            <div className="mt-3">
-              <ProgressBar value={runWeekTotal} max={runWeeklyGoal} color="#22c55e" />
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="font-semibold text-foreground">
-                  {runWeekTotal.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">km</span>
-                </span>
-                <span className="text-xs text-muted-foreground">cel: {runWeeklyGoal} km</span>
+
+            {/* Cycling weekly */}
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🚴</span>
+                  <span className="text-sm font-medium text-foreground">Rower</span>
+                </div>
+                <ProgressRing value={bikeWeekTotal} max={bikeWeeklyGoal} color="#3b82f6" size={56} />
+              </div>
+              <div className="mt-3">
+                <ProgressBar value={bikeWeekTotal} max={bikeWeeklyGoal} color="#3b82f6" />
+                <div className="mt-2 flex items-center justify-between text-sm">
+                  <span className="font-semibold text-foreground">
+                    {bikeWeekTotal.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">km</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">cel: {bikeWeeklyGoal} km</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Gym weekly */}
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🏋️</span>
+                  <span className="text-sm font-medium text-foreground">Silownia</span>
+                </div>
+                <ProgressRing value={gymDays.filter(Boolean).length} max={gymWeeklyGoal} color="#a855f7" size={56} />
+              </div>
+              <div className="mt-3">
+                <ProgressBar value={gymDays.filter(Boolean).length} max={gymWeeklyGoal} color="#a855f7" />
+                <div className="mt-2 flex items-center justify-between text-sm">
+                  <span className="font-semibold text-foreground">
+                    {gymDays.filter(Boolean).length} <span className="text-xs font-normal text-muted-foreground">treningow</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">cel: {gymWeeklyGoal} x</span>
+                </div>
               </div>
             </div>
           </div>
-
-          {/* Cycling weekly */}
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🚴</span>
-                <span className="text-sm font-medium text-foreground">Rower</span>
-              </div>
-              <ProgressRing value={bikeWeekTotal} max={bikeWeeklyGoal} color="#3b82f6" size={56} />
-            </div>
-            <div className="mt-3">
-              <ProgressBar value={bikeWeekTotal} max={bikeWeeklyGoal} color="#3b82f6" />
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="font-semibold text-foreground">
-                  {bikeWeekTotal.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">km</span>
-                </span>
-                <span className="text-xs text-muted-foreground">cel: {bikeWeeklyGoal} km</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Gym weekly */}
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🏋️</span>
-                <span className="text-sm font-medium text-foreground">Silownia</span>
-              </div>
-              <ProgressRing value={gymDays.filter(Boolean).length} max={gymWeeklyGoal} color="#a855f7" size={56} />
-            </div>
-            <div className="mt-3">
-              <ProgressBar value={gymDays.filter(Boolean).length} max={gymWeeklyGoal} color="#a855f7" />
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="font-semibold text-foreground">
-                  {gymDays.filter(Boolean).length} <span className="text-xs font-normal text-muted-foreground">treningow</span>
-                </span>
-                <span className="text-xs text-muted-foreground">cel: {gymWeeklyGoal} x</span>
-              </div>
-            </div>
-          </div>
-        </div>
+            {today <= rehabPlan.end && (
+              <button
+                onClick={() => setGoals((prev) => ({ ...prev, rehab: { ...rehabPlan, active: true } }))}
+                className="mt-3 text-xs text-muted-foreground hover:text-foreground"
+              >
+                🩺 Włącz tryb rehabilitacji
+              </button>
+            )}
+          </>
+        )}
 
         {/* ── Competitions table (sortable) ─────────────────────── */}
         <CompetitionsTable

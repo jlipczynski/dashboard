@@ -5,7 +5,8 @@ import { pillars, monthlyGoals, sportAreas } from "@/lib/data";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { PillarCard } from "@/components/dashboard/pillar-card";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
-import { calcAllScores, type RozwojData, type PracaData } from "@/lib/scores";
+import { calcAllScores, type RozwojData, type PracaData, type RehabScoreInput } from "@/lib/scores";
+import { DEFAULT_REHAB_PLAN, averagePercent, isPlanActive, monthStartStr, toDateStr, type RehabEntry } from "@/lib/rehab";
 import { useEffect, useState } from "react";
 
 export default function Home() {
@@ -17,6 +18,7 @@ export default function Home() {
       running: { ...monthlyGoals.running },
       competition: { ...monthlyGoals.competition },
       competitions: [],
+      rehab: { ...monthlyGoals.rehab },
     },
     gymDays: sportAreas[0].weekDays,
     gymWeeklyGoal: sportAreas[0].weeklyGoal,
@@ -104,8 +106,27 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
+  // Rehab mode: health score = average daily % of rehab this month
+  const rehabPlan = goals.rehab ?? DEFAULT_REHAB_PLAN;
+  const todayStr = toDateStr(new Date());
+  const rehabActive = isPlanActive(rehabPlan, todayStr);
+  const rehabFrom = monthStartStr(todayStr) > rehabPlan.start ? monthStartStr(todayStr) : rehabPlan.start;
+  const [rehabEntries, setRehabEntries] = useState<RehabEntry[]>([]);
+  useEffect(() => {
+    if (!rehabActive) return;
+    fetch(`/api/rehab?from=${rehabFrom}&to=${todayStr}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.entries) setRehabEntries(d.entries);
+      })
+      .catch(() => {});
+  }, [rehabActive, rehabFrom, todayStr]);
+  const rehab: RehabScoreInput | null = rehabActive
+    ? { monthAvg: averagePercent(rehabEntries, rehabFrom, rehabPlan.end, todayStr).avg }
+    : null;
+
   // Calculate dynamic pillar scores
-  const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal, rozwojData, pracaData);
+  const scores = calcAllScores(garmin.data, goals, gymMonthlyDone, gymMonthlyGoal, rozwojData, pracaData, rehab);
 
   // Apply scores to pillars
   const dynamicPillars = pillars.map((p) => {
@@ -197,7 +218,9 @@ export default function Home() {
             <div className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground space-y-1">
               <p><span className="font-medium text-foreground">Okres:</span> biezacy miesiac (od 1. do dzis)</p>
               <p><span className="font-medium text-foreground">Skala:</span> 0–100 (100 = wszystkie cele na 100%)</p>
-              <p><span className="font-medium text-foreground">Zdrowie:</span> srednia % realizacji: akt. kalorie, rower km, bieg km, silownia</p>
+              <p><span className="font-medium text-foreground">Zdrowie:</span> {rehabActive
+                ? "rehabilitacja: srednia dzienna % wykonania zalecen w tym miesiacu"
+                : "srednia % realizacji: akt. kalorie, rower km, bieg km, silownia"}</p>
               <p><span className="font-medium text-foreground">Praca:</span> srednia % realizacji: plan dnia + cele tygodniowe</p>
               <p><span className="font-medium text-foreground">Rozwoj:</span> srednia % realizacji: czytanie, sluchanie, pisanie (minuty)</p>
               <p><span className="font-medium text-foreground">Ogolny:</span> srednia z aktywnych filarow (tylko te z ustawionymi celami)</p>

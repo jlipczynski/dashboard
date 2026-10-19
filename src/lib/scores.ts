@@ -54,6 +54,20 @@ function subcatStatus(
   return { label, icon, current, target, unit, pct, status, emoji };
 }
 
+/** Rehab input: average daily % of prescribed exercises this month (null = no day counted yet). */
+export type RehabScoreInput = { monthAvg: number | null };
+
+function rehabStatus(monthAvg: number | null): SubcategoryStatus {
+  const base = { label: "Rehabilitacja", icon: "🩺", target: 100, unit: "%" };
+  if (monthAvg === null) {
+    return { ...base, current: 0, pct: 0, status: "on-track", emoji: "➖" };
+  }
+  const pct = Math.min(Math.max(monthAvg, 0), 100);
+  if (pct >= 85) return { ...base, current: pct, pct, status: "on-track", emoji: "😊" };
+  if (pct >= 50) return { ...base, current: pct, pct, status: "warning", emoji: "😐" };
+  return { ...base, current: pct, pct, status: "behind", emoji: "😟" };
+}
+
 /**
  * Calculate the "Zdrowie i Fitness" pillar score (0-100)
  * based on monthly goal completion from Garmin data.
@@ -62,8 +76,14 @@ function subcatStatus(
 export function calcHealthScore(
   goals: MonthlyGoals,
   gymMonthlyDone: number,
-  gymMonthlyGoal: number
+  gymMonthlyGoal: number,
+  rehab?: RehabScoreInput | null
 ): { score: number; subcategories: SubcategoryStatus[] } {
+  // Rehab mode replaces sport goals entirely (sport goals stay stored, just not scored)
+  if (rehab) {
+    return { score: rehab.monthAvg ?? 0, subcategories: [rehabStatus(rehab.monthAvg)] };
+  }
+
   const scores: number[] = [];
   const pace = expectedPace();
   const subcategories: SubcategoryStatus[] = [];
@@ -232,7 +252,8 @@ export function calcAllScores(
   gymMonthlyDone: number,
   gymMonthlyGoal: number,
   rozwojData?: RozwojData | null,
-  pracaData?: PracaData | null
+  pracaData?: PracaData | null,
+  rehab?: RehabScoreInput | null
 ): Record<string, PillarScore> {
   const effectiveGoals = garminData
     ? {
@@ -258,7 +279,8 @@ export function calcAllScores(
   const health = calcHealthScore(
     effectiveGoals,
     effectiveGym,
-    gymMonthlyGoal
+    gymMonthlyGoal,
+    rehab
   );
 
   const rozwoj = calcRozwojScore(rozwojData ?? null);
