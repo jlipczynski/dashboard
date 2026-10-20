@@ -9,6 +9,7 @@ import { DEFAULT_REHAB_PLAN, isPlanActive, toDateStr } from "@/lib/rehab";
 import { RehabSection } from "@/components/zdrowie/rehab-section";
 import { CaloriesSection } from "@/components/zdrowie/calories-section";
 import { HealthWigCard } from "@/components/zdrowie/health-wig-card";
+import { Collapsible } from "@/components/zdrowie/collapsible";
 import { CALORIE_DAILY_LIMIT, type CalorieEntry } from "@/lib/calories";
 import type { RehabEntry } from "@/lib/rehab";
 
@@ -1490,6 +1491,8 @@ export default function ZdrowiePage() {
     }));
   };
 
+  const upcomingCompetitions = (goals.competitions ?? []).filter((c) => c.date && c.date >= today).length;
+
   const lastSyncTime = garmin.data
     ? new Date(garmin.data.lastSyncISO).toLocaleTimeString("pl-PL")
     : null;
@@ -1510,61 +1513,11 @@ export default function ZdrowiePage() {
           </div>
         </div>
 
-        {/* ── Garmin sync ──────────────────────────────────────── */}
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <button
-            onClick={syncGarmin}
-            disabled={garmin.syncing}
-            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-green-700 disabled:opacity-50"
-          >
-            {garmin.syncing ? (
-              <>
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Synchronizuje...
-              </>
-            ) : (
-              <>
-                <span>&#9889;</span>
-                Synchronizuj z Garmin
-              </>
-            )}
-          </button>
-          {lastSyncTime && (
-            <span className="text-xs text-muted-foreground">
-              Ostatnia synchronizacja: {lastSyncTime}
-            </span>
-          )}
-          {garmin.error && (
-            <span className="text-xs text-red-500">{garmin.error}</span>
-          )}
-        </div>
-
-        {/* ── Wellness widget (from Garmin) ──────────────────── */}
-        {(wellness.steps !== null || wellness.restingHR !== null || wellness.activities.length > 0) && (
-          <div className="mt-4">
-            <WellnessWidget data={wellness} />
-          </div>
-        )}
-
-        {/* ── MFP Nutrition / Deficit ──────────────────────────── */}
-        <div className="mt-4">
-          <MfpWidget
-            entries={mfpEntries}
-            onImport={importMfpCsv}
-            importing={mfpImporting}
-            importResult={mfpResult}
-            calorieTarget={rehabActive ? CALORIE_DAILY_LIMIT : calorieTarget}
-            onCalorieTargetChange={updateCalorieTarget}
-            dailyBurned={rehabActive ? {} : dailyBurned}
-          />
-        </div>
-
         {rehabActive ? (
           <>
-            {/* ── Rehab goals (replace sport goals while active) ───── */}
-            <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🎯 Cele — Zdrowie i Fitness</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Cele sportowe są wstrzymane na czas rehabilitacji (zapisane, wrócą po jej zakończeniu)</p>
+            {/* ── Rehab mode: big WIG score first, then details ───── */}
             <HealthWigCard plan={rehabPlan} rehabEntries={rehabEntries} calorieEntries={calorieEntries} />
+            <h3 className="mt-6 text-lg font-semibold text-foreground">Szczegóły</h3>
             <RehabSection
               plan={rehabPlan}
               onEndPlan={() => setGoals((prev) => ({ ...prev, rehab: { ...rehabPlan, active: false } }))}
@@ -1690,187 +1643,369 @@ export default function ZdrowiePage() {
           </>
         )}
 
-        {/* ── Competitions table (sortable) ─────────────────────── */}
-        <CompetitionsTable
-          competitions={
-            goals.competitions && goals.competitions.length > 0
-              ? goals.competitions
-              : goals.competition.name || goals.competition.date
-                ? [goals.competition]
-                : []
+        {/* ── Collapsible details ───────────────────────────────── */}
+        <h3 className="mt-6 text-lg font-semibold text-foreground">Więcej</h3>
+        <Collapsible
+          id="garmin"
+          title="⌚ Garmin"
+          summary={garmin.error ? <span className="text-red-500">{garmin.error}</span> : lastSyncTime ? `sync ${lastSyncTime}` : undefined}
+          actions={
+            <button
+              onClick={syncGarmin}
+              disabled={garmin.syncing}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:bg-green-700 disabled:opacity-50"
+            >
+              {garmin.syncing ? (
+                <>
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Synchronizuję...
+                </>
+              ) : (
+                <>
+                  <span>&#9889;</span>
+                  Synchronizuj
+                </>
+              )}
+            </button>
           }
-          onChange={(list) => {
-            setGoals((prev) => ({
-              ...prev,
-              competitions: list,
-              competition: list[0] || { name: "", date: "", type: "running" as const, distance: 0 },
-            }));
-          }}
-        />
-
-        {/* ── Gym tracker ──────────────────────────────────────── */}
-        <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🏅 Moj sport w ujeciu tygodniowym</h3>
-        <div className="mt-3 grid gap-3 sm:gap-4">
-          <GymTracker
-            weekDays={gymDays}
-            onToggleDay={(i) => {
-              const next = [...gymDays];
-              next[i] = !next[i];
-              setGymDays(next);
-            }}
-            weeklyGoal={gymWeeklyGoal}
-            monthlyGoal={gymMonthlyGoal}
-            monthlyDone={gymMonthlyDone}
-            onMonthlyGoalChange={setGymMonthlyGoal}
-            onMonthlyDoneChange={setGymMonthlyDone}
-          />
-
-          {/* ── Running mountain chart ─────────────────────────── */}
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🏃</span>
-                <div>
-                  <h4 className="font-semibold text-foreground">Bieganie</h4>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Cel:</span>
-                    <span>{runWeeklyGoal} km/tydz</span>
-                    <span>|</span>
-                    <EditableNumber value={runMonthlyGoal} onSave={setRunMonthlyGoal} unit="km/mies" className="text-xs" />
-                  </div>
-                </div>
-              </div>
-              <ProgressRing value={goals.running.current} max={runMonthlyGoal || goals.running.target} color="#22c55e" />
+        >
+          {/* ── Wellness widget (from Garmin) ──────────────────── */}
+          {(wellness.steps !== null || wellness.restingHR !== null || wellness.activities.length > 0) && (
+            <div className="mt-3">
+              <WellnessWidget data={wellness} />
             </div>
-
-            <div className="mt-4 flex gap-1">
-              {["Pn", "Wt", "Sr", "Cz", "Pt", "Sb", "Nd"].map((day, i) => (
-                <div key={day} className="flex flex-1 flex-col items-center gap-1">
-                  <span className="text-[10px] text-muted-foreground">{day}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.1"
-                    value={runEntries[i] || ""}
-                    placeholder="0"
-                    onChange={(e) => {
-                      const next = [...runEntries];
-                      next[i] = parseFloat(e.target.value) || 0;
-                      setRunEntries(next);
-                    }}
-                    className="w-full rounded border border-border bg-background px-1 py-1 text-center text-xs"
-                  />
-                </div>
-              ))}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Tydzien: {runWeekTotal.toFixed(1)} / {runWeeklyGoal} km
-            </p>
-
-            <MountainProgress
-              current={runWeekTotal}
-              target={runWeeklyGoal}
-              weeklyEntries={runEntries}
-              color="#22c55e"
-              unit="km"
-              label="📈 Postep tygodniowy"
-            />
-          </div>
-
-          {/* ── Cycling mountain chart ─────────────────────────── */}
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🚴</span>
-                <div>
-                  <h4 className="font-semibold text-foreground">Rower</h4>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Cel:</span>
-                    <span>{bikeWeeklyGoal} km/tydz</span>
-                    <span>|</span>
-                    <EditableNumber value={bikeMonthlyGoal} onSave={setBikeMonthlyGoal} unit="km/mies" className="text-xs" />
-                  </div>
-                </div>
-              </div>
-              <ProgressRing value={goals.cycling.current} max={bikeMonthlyGoal || goals.cycling.target} color="#3b82f6" />
-            </div>
-
-            <div className="mt-4 flex gap-1">
-              {["Pn", "Wt", "Sr", "Cz", "Pt", "Sb", "Nd"].map((day, i) => (
-                <div key={day} className="flex flex-1 flex-col items-center gap-1">
-                  <span className="text-[10px] text-muted-foreground">{day}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.1"
-                    value={bikeEntries[i] || ""}
-                    placeholder="0"
-                    onChange={(e) => {
-                      const next = [...bikeEntries];
-                      next[i] = parseFloat(e.target.value) || 0;
-                      setBikeEntries(next);
-                    }}
-                    className="w-full rounded border border-border bg-background px-1 py-1 text-center text-xs"
-                  />
-                </div>
-              ))}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Tydzien: {bikeWeekTotal.toFixed(1)} / {bikeWeeklyGoal} km
-            </p>
-
-            <MountainProgress
-              current={bikeWeekTotal}
-              target={bikeWeeklyGoal}
-              weeklyEntries={bikeEntries}
-              color="#3b82f6"
-              unit="km"
-              label="📈 Postep tygodniowy"
-            />
-          </div>
-        </div>
-
-        {/* ── Recent Garmin activities ─────────────────────────── */}
-        {recentActivities.length > 0 && (
-          <>
-            <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">📋 Ostatnie aktywnosci (Garmin)</h3>
-            <div className="mt-3 space-y-2">
-              {recentActivities.slice(0, 10).map((a) => {
-                const typeIcon =
-                  a.type.includes("cycling") ? "🚴" :
-                  a.type.includes("running") ? "🏃" :
-                  a.type.includes("strength") || a.type.includes("training") ? "🏋️" :
-                  "🏅";
-                return (
-                  <div
-                    key={a.id}
-                    className="flex flex-col gap-1 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3"
-                  >
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <span className="text-lg">{typeIcon}</span>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{a.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(a.date).toLocaleDateString("pl-PL", {
-                            weekday: "short",
-                            day: "numeric",
-                            month: "short",
-                          })}
-                        </p>
+          )}
+          {/* ── Recent Garmin activities ─────────────────────────── */}
+          {recentActivities.length > 0 && (
+            <>
+              <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">📋 Ostatnie aktywnosci (Garmin)</h3>
+              <div className="mt-3 space-y-2">
+                {recentActivities.slice(0, 10).map((a) => {
+                  const typeIcon =
+                    a.type.includes("cycling") ? "🚴" :
+                    a.type.includes("running") ? "🏃" :
+                    a.type.includes("strength") || a.type.includes("training") ? "🏋️" :
+                    "🏅";
+                  return (
+                    <div
+                      key={a.id}
+                      className="flex flex-col gap-1 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3"
+                    >
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <span className="text-lg">{typeIcon}</span>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{a.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(a.date).toLocaleDateString("pl-PL", {
+                              weekday: "short",
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pl-7 text-xs text-muted-foreground sm:gap-4 sm:pl-0">
+                        {a.distanceKm > 0 && <span>{a.distanceKm} km</span>}
+                        <span>{a.durationMin} min</span>
+                        <span>{a.calories} kcal</span>
+                        {a.avgHR && <span>&#10084; {a.avgHR}</span>}
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 pl-7 text-xs text-muted-foreground sm:gap-4 sm:pl-0">
-                      {a.distanceKm > 0 && <span>{a.distanceKm} km</span>}
-                      <span>{a.durationMin} min</span>
-                      <span>{a.calories} kcal</span>
-                      {a.avgHR && <span>&#10084; {a.avgHR}</span>}
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </Collapsible>
+
+        <Collapsible id="mfp" title="🍽 Kalorie z MyFitnessPal / Garmin">
+          {/* ── MFP Nutrition / Deficit ──────────────────────────── */}
+          <div className="mt-4">
+            <MfpWidget
+              entries={mfpEntries}
+              onImport={importMfpCsv}
+              importing={mfpImporting}
+              importResult={mfpResult}
+              calorieTarget={rehabActive ? CALORIE_DAILY_LIMIT : calorieTarget}
+              onCalorieTargetChange={updateCalorieTarget}
+              dailyBurned={rehabActive ? {} : dailyBurned}
+            />
+          </div>
+        </Collapsible>
+
+        {rehabActive ? (
+          <Collapsible id="sport" title="🏅 Sport" summary="wstrzymany na czas rehabilitacji — cele zapisane">
+            {/* ── Gym tracker ──────────────────────────────────────── */}
+            <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🏅 Moj sport w ujeciu tygodniowym</h3>
+            <div className="mt-3 grid gap-3 sm:gap-4">
+              <GymTracker
+                weekDays={gymDays}
+                onToggleDay={(i) => {
+                  const next = [...gymDays];
+                  next[i] = !next[i];
+                  setGymDays(next);
+                }}
+                weeklyGoal={gymWeeklyGoal}
+                monthlyGoal={gymMonthlyGoal}
+                monthlyDone={gymMonthlyDone}
+                onMonthlyGoalChange={setGymMonthlyGoal}
+                onMonthlyDoneChange={setGymMonthlyDone}
+              />
+
+              {/* ── Running mountain chart ─────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🏃</span>
+                    <div>
+                      <h4 className="font-semibold text-foreground">Bieganie</h4>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>Cel:</span>
+                        <span>{runWeeklyGoal} km/tydz</span>
+                        <span>|</span>
+                        <EditableNumber value={runMonthlyGoal} onSave={setRunMonthlyGoal} unit="km/mies" className="text-xs" />
+                      </div>
                     </div>
                   </div>
-                );
-              })}
+                  <ProgressRing value={goals.running.current} max={runMonthlyGoal || goals.running.target} color="#22c55e" />
+                </div>
+
+                <div className="mt-4 flex gap-1">
+                  {["Pn", "Wt", "Sr", "Cz", "Pt", "Sb", "Nd"].map((day, i) => (
+                    <div key={day} className="flex flex-1 flex-col items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground">{day}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        value={runEntries[i] || ""}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const next = [...runEntries];
+                          next[i] = parseFloat(e.target.value) || 0;
+                          setRunEntries(next);
+                        }}
+                        className="w-full rounded border border-border bg-background px-1 py-1 text-center text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tydzien: {runWeekTotal.toFixed(1)} / {runWeeklyGoal} km
+                </p>
+
+                <MountainProgress
+                  current={runWeekTotal}
+                  target={runWeeklyGoal}
+                  weeklyEntries={runEntries}
+                  color="#22c55e"
+                  unit="km"
+                  label="📈 Postep tygodniowy"
+                />
+              </div>
+
+              {/* ── Cycling mountain chart ─────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🚴</span>
+                    <div>
+                      <h4 className="font-semibold text-foreground">Rower</h4>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>Cel:</span>
+                        <span>{bikeWeeklyGoal} km/tydz</span>
+                        <span>|</span>
+                        <EditableNumber value={bikeMonthlyGoal} onSave={setBikeMonthlyGoal} unit="km/mies" className="text-xs" />
+                      </div>
+                    </div>
+                  </div>
+                  <ProgressRing value={goals.cycling.current} max={bikeMonthlyGoal || goals.cycling.target} color="#3b82f6" />
+                </div>
+
+                <div className="mt-4 flex gap-1">
+                  {["Pn", "Wt", "Sr", "Cz", "Pt", "Sb", "Nd"].map((day, i) => (
+                    <div key={day} className="flex flex-1 flex-col items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground">{day}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        value={bikeEntries[i] || ""}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const next = [...bikeEntries];
+                          next[i] = parseFloat(e.target.value) || 0;
+                          setBikeEntries(next);
+                        }}
+                        className="w-full rounded border border-border bg-background px-1 py-1 text-center text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tydzien: {bikeWeekTotal.toFixed(1)} / {bikeWeeklyGoal} km
+                </p>
+
+                <MountainProgress
+                  current={bikeWeekTotal}
+                  target={bikeWeeklyGoal}
+                  weeklyEntries={bikeEntries}
+                  color="#3b82f6"
+                  unit="km"
+                  label="📈 Postep tygodniowy"
+                />
+              </div>
+            </div>
+          </Collapsible>
+        ) : (
+          <>
+            {/* ── Gym tracker ──────────────────────────────────────── */}
+            <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🏅 Moj sport w ujeciu tygodniowym</h3>
+            <div className="mt-3 grid gap-3 sm:gap-4">
+              <GymTracker
+                weekDays={gymDays}
+                onToggleDay={(i) => {
+                  const next = [...gymDays];
+                  next[i] = !next[i];
+                  setGymDays(next);
+                }}
+                weeklyGoal={gymWeeklyGoal}
+                monthlyGoal={gymMonthlyGoal}
+                monthlyDone={gymMonthlyDone}
+                onMonthlyGoalChange={setGymMonthlyGoal}
+                onMonthlyDoneChange={setGymMonthlyDone}
+              />
+
+              {/* ── Running mountain chart ─────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🏃</span>
+                    <div>
+                      <h4 className="font-semibold text-foreground">Bieganie</h4>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>Cel:</span>
+                        <span>{runWeeklyGoal} km/tydz</span>
+                        <span>|</span>
+                        <EditableNumber value={runMonthlyGoal} onSave={setRunMonthlyGoal} unit="km/mies" className="text-xs" />
+                      </div>
+                    </div>
+                  </div>
+                  <ProgressRing value={goals.running.current} max={runMonthlyGoal || goals.running.target} color="#22c55e" />
+                </div>
+
+                <div className="mt-4 flex gap-1">
+                  {["Pn", "Wt", "Sr", "Cz", "Pt", "Sb", "Nd"].map((day, i) => (
+                    <div key={day} className="flex flex-1 flex-col items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground">{day}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        value={runEntries[i] || ""}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const next = [...runEntries];
+                          next[i] = parseFloat(e.target.value) || 0;
+                          setRunEntries(next);
+                        }}
+                        className="w-full rounded border border-border bg-background px-1 py-1 text-center text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tydzien: {runWeekTotal.toFixed(1)} / {runWeeklyGoal} km
+                </p>
+
+                <MountainProgress
+                  current={runWeekTotal}
+                  target={runWeeklyGoal}
+                  weeklyEntries={runEntries}
+                  color="#22c55e"
+                  unit="km"
+                  label="📈 Postep tygodniowy"
+                />
+              </div>
+
+              {/* ── Cycling mountain chart ─────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🚴</span>
+                    <div>
+                      <h4 className="font-semibold text-foreground">Rower</h4>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>Cel:</span>
+                        <span>{bikeWeeklyGoal} km/tydz</span>
+                        <span>|</span>
+                        <EditableNumber value={bikeMonthlyGoal} onSave={setBikeMonthlyGoal} unit="km/mies" className="text-xs" />
+                      </div>
+                    </div>
+                  </div>
+                  <ProgressRing value={goals.cycling.current} max={bikeMonthlyGoal || goals.cycling.target} color="#3b82f6" />
+                </div>
+
+                <div className="mt-4 flex gap-1">
+                  {["Pn", "Wt", "Sr", "Cz", "Pt", "Sb", "Nd"].map((day, i) => (
+                    <div key={day} className="flex flex-1 flex-col items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground">{day}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        value={bikeEntries[i] || ""}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const next = [...bikeEntries];
+                          next[i] = parseFloat(e.target.value) || 0;
+                          setBikeEntries(next);
+                        }}
+                        className="w-full rounded border border-border bg-background px-1 py-1 text-center text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tydzien: {bikeWeekTotal.toFixed(1)} / {bikeWeeklyGoal} km
+                </p>
+
+                <MountainProgress
+                  current={bikeWeekTotal}
+                  target={bikeWeeklyGoal}
+                  weeklyEntries={bikeEntries}
+                  color="#3b82f6"
+                  unit="km"
+                  label="📈 Postep tygodniowy"
+                />
+              </div>
             </div>
           </>
         )}
+
+        <Collapsible
+          id="zawody"
+          title="🏁 Zawody"
+          summary={upcomingCompetitions > 0 ? `${upcomingCompetitions} nadchodzące` : "brak zaplanowanych — dodaj cel"}
+        >
+          {/* ── Competitions table (sortable) ─────────────────────── */}
+          <CompetitionsTable
+            competitions={
+              goals.competitions && goals.competitions.length > 0
+                ? goals.competitions
+                : goals.competition.name || goals.competition.date
+                  ? [goals.competition]
+                  : []
+            }
+            onChange={(list) => {
+              setGoals((prev) => ({
+                ...prev,
+                competitions: list,
+                competition: list[0] || { name: "", date: "", type: "running" as const, distance: 0 },
+              }));
+            }}
+          />
+        </Collapsible>
       </div>
     </div>
   );
