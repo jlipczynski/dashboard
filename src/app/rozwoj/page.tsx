@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { monthlyGoals, sportAreas } from "@/lib/data";
+import { ReadingWigCard } from "@/components/rozwoj/reading-wig-card";
+import { booklyMonthReading, type BooklyReport } from "@/lib/reading";
+import { toDateStr } from "@/lib/rehab";
 
 /* ── Types ──────────────────────────────────────── */
 type Entry = {
@@ -2125,6 +2128,7 @@ function AreaCard({
 
 /* ── Main Page ──────────────────────────────────── */
 export default function RozwojPage() {
+  const [booklyReports, setBooklyReports] = useState<BooklyReport[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2252,7 +2256,13 @@ export default function RozwojPage() {
   const monthStart = getMonthStart();
   const monthEntries = entries.filter((e) => e.date.slice(0, 10) >= monthStart);
 
+  const booklyMonth = booklyMonthReading(booklyReports, toDateStr(new Date()));
   const areaTotals = AREAS.map((a) => {
+    // Czytanie: Bookly minutes vs 30 min/day when a report covers this month
+    if (a.key === "czytanie" && booklyMonth) {
+      const { minutes: total, target } = booklyMonth;
+      return { ...a, unitShort: "min", total, target, pct: Math.round((total / target) * 100) };
+    }
     const total = monthEntries.filter((e) => e.area === a.key).reduce((s, e) => s + e.amount, 0);
     const target = targets[a.key].monthly;
     return { ...a, total, target, pct: target > 0 ? Math.round((total / target) * 100) : 0 };
@@ -2316,6 +2326,9 @@ export default function RozwojPage() {
             </div>
           ))}
         </div>
+
+        {/* Reading WIG from Bookly reports */}
+        <ReadingWigCard onReportsChange={setBooklyReports} />
 
         {/* Area Cards */}
         <div className="mt-6 grid gap-4 sm:gap-6">

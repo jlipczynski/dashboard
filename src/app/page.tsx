@@ -7,7 +7,8 @@ import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage"
 import { calcAllScores, calcOverallScore, type RozwojData, type PracaData, type RehabScoreInput } from "@/lib/scores";
 import { DEFAULT_REHAB_PLAN, averagePercent, isPlanActive, monthStartStr, toDateStr, type RehabEntry } from "@/lib/rehab";
 import { calorieRangeScore, type CalorieEntry } from "@/lib/calories";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { booklyMonthReading, type BooklyReport } from "@/lib/reading";
 
 const MONTHS_PL = [
   "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec",
@@ -57,6 +58,23 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Bookly reading reports (czytanie lead: 30 min/day)
+  const [booklyReports, setBooklyReports] = useState<BooklyReport[]>([]);
+  useEffect(() => {
+    fetch("/api/bookly/reports")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.reports) setBooklyReports(d.reports);
+      })
+      .catch(() => {});
+  }, []);
+  const booklyKey = booklyReports.map((r) => `${r.period_from}${r.period_to}${r.minutes}`).join("|");
+  const booklyMonth = useMemo(
+    () => booklyMonthReading(booklyReports, toDateStr(new Date())),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [booklyKey]
+  );
+
   // Load rozwoj entries from Supabase for pillar score
   useEffect(() => {
     const monthStart = new Date();
@@ -70,13 +88,16 @@ export default function Home() {
           .filter((e) => e.date >= ms);
         const sum = (area: string) => monthEntries.filter((e) => e.area === area).reduce((s, e) => s + e.amount, 0);
         setRozwojData({
-          czytanie: { monthlyTarget: rozwojTargets.czytanie.monthly, monthlyDone: sum("czytanie") },
+          // Czytanie: Bookly minutes vs 30 min/day when a report covers this month, else logged pages
+          czytanie: booklyMonth
+            ? { monthlyTarget: booklyMonth.target, monthlyDone: booklyMonth.minutes }
+            : { monthlyTarget: rozwojTargets.czytanie.monthly, monthlyDone: sum("czytanie") },
           sluchanie: { monthlyTarget: rozwojTargets.sluchanie.monthly, monthlyDone: sum("sluchanie") },
           pisanie: { monthlyTarget: rozwojTargets.pisanie.monthly, monthlyDone: sum("pisanie") },
         });
       })
       .catch(() => {});
-  }, [rozwojTargets]);
+  }, [rozwojTargets, booklyMonth]);
 
   // Load praca check-ins for pillar score
   useEffect(() => {
