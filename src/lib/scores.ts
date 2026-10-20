@@ -306,3 +306,24 @@ export function calcAllScores(
     relacje: { score: 0, trend: "steady" as const, subcategories: [] },
   };
 }
+
+/** Pillars that make up the overall score — each weighs the same. */
+export const OVERALL_PILLARS = ["zdrowie", "rozwoj", "relacje", "praca"] as const;
+
+/**
+ * Overall score = plain average of ALL pillars (25% each).
+ * A pillar without goals or progress counts as 0 — it is never skipped,
+ * so one perfect pillar can't make the whole dashboard look like 100%.
+ */
+export function calcOverallScore(scores: Record<string, PillarScore>): {
+  score: number;
+  parts: { id: string; score: number; hasGoals: boolean }[];
+} {
+  const parts = OVERALL_PILLARS.map((id) => ({
+    id,
+    score: scores[id]?.score ?? 0,
+    hasGoals: (scores[id]?.subcategories.length ?? 0) > 0,
+  }));
+  const score = Math.round(parts.reduce((s, p) => s + p.score, 0) / parts.length);
+  return { score, parts };
+}

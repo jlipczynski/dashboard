@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcHealthScore, calcRozwojScore, calcPracaScore, getTrend } from "../lib/scores";
+import { calcHealthScore, calcRozwojScore, calcPracaScore, getTrend, calcOverallScore } from "../lib/scores";
 
 describe("calcHealthScore", () => {
   const emptyGoals = {
@@ -128,5 +128,28 @@ describe("getTrend", () => {
   it("returns 'needs-focus' for < 40", () => {
     expect(getTrend(0)).toBe("needs-focus");
     expect(getTrend(39)).toBe("needs-focus");
+  });
+});
+
+describe("calcOverallScore", () => {
+  const pillar = (score: number, withGoals = true) => ({
+    score,
+    trend: "steady" as const,
+    subcategories: withGoals ? [{ label: "x", icon: "", current: 0, target: 1, unit: "", pct: score, status: "on-track" as const, emoji: "" }] : [],
+  });
+
+  it("counts pillars without goals as 0 (one 100% pillar ≠ 100% overall)", () => {
+    const r = calcOverallScore({ zdrowie: pillar(100), rozwoj: pillar(0), relacje: pillar(0, false), praca: pillar(0) });
+    expect(r.score).toBe(25);
+    expect(r.parts.find((p) => p.id === "relacje")!.hasGoals).toBe(false);
+  });
+
+  it("averages all four pillars equally", () => {
+    const r = calcOverallScore({ zdrowie: pillar(80), rozwoj: pillar(60), relacje: pillar(40), praca: pillar(20) });
+    expect(r.score).toBe(50);
+  });
+
+  it("missing pillar entry counts as 0", () => {
+    expect(calcOverallScore({ zdrowie: pillar(100) }).score).toBe(25);
   });
 });

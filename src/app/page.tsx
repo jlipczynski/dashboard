@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { pillars, monthlyGoals, sportAreas } from "@/lib/data";
-import { DashboardHeader } from "@/components/dashboard/header";
-import { PillarCard } from "@/components/dashboard/pillar-card";
+import { TopNav } from "@/components/dashboard/top-nav";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
-import { calcAllScores, type RozwojData, type PracaData, type RehabScoreInput } from "@/lib/scores";
+import { calcAllScores, calcOverallScore, type RozwojData, type PracaData, type RehabScoreInput } from "@/lib/scores";
 import { DEFAULT_REHAB_PLAN, averagePercent, isPlanActive, monthStartStr, toDateStr, type RehabEntry } from "@/lib/rehab";
 import { calorieRangeScore, type CalorieEntry } from "@/lib/calories";
 import { useEffect, useState } from "react";
+
+const MONTHS_PL = [
+  "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec",
+  "lipiec", "sierpień", "wrzesień", "październik", "listopad", "grudzień",
+];
 
 export default function Home() {
   // Goals from Supabase (with localStorage cache)
@@ -146,184 +150,90 @@ export default function Home() {
     return p;
   });
 
-  // Only count pillars that have some data (score > 0) for summary stats
-  const activePillars = dynamicPillars.filter((p) => p.score > 0);
-  const overallScore = activePillars.length > 0
-    ? Math.round(activePillars.reduce((sum, p) => sum + p.score, 0) / activePillars.length)
-    : 0;
-
-  const onTrack = activePillars.filter((p) => p.score >= 65).length;
-  const atRisk = activePillars.filter((p) => p.score >= 40 && p.score < 65).length;
-  const offTrack = activePillars.filter((p) => p.score > 0 && p.score < 40).length;
+  // Overall = average of ALL 4 pillars (25% each); pillar without goals/progress = 0
+  const overall = calcOverallScore(scores);
+  const now = new Date();
+  const monthLabel = `${MONTHS_PL[now.getMonth()]} ${now.getFullYear()}`;
+  const pillarById = Object.fromEntries(dynamicPillars.map((p) => [p.id, p]));
+  const scoreColor = (v: number) => (v >= 65 ? "#22c55e" : v >= 40 ? "#f59e0b" : v > 0 ? "#ef4444" : "#9ca3af");
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        <DashboardHeader />
+      <div className="mx-auto max-w-3xl px-4 pb-10 sm:px-6 lg:px-8">
+        <TopNav />
 
-        {/* Summary bar */}
-        <div className="mt-6 rounded-2xl border border-border bg-card p-4 shadow-sm sm:mt-8">
-          <div className="flex items-center gap-3">
-            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-xl font-bold ${
-              overallScore >= 65 ? "bg-green-100 text-green-700" :
-              overallScore >= 40 ? "bg-amber-100 text-amber-700" :
-              overallScore > 0 ? "bg-red-100 text-red-700" :
-              "bg-primary/10 text-primary"
-            }`}>
-              {overallScore}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-foreground">Ogolny wynik</p>
-                <span className="text-[11px] text-muted-foreground">/ 100</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Postep celów miesięcznych — srednia z {activePillars.length > 0 ? activePillars.length : dynamicPillars.length} aktywnych filarow
-              </p>
-            </div>
-          </div>
-
-          {/* Score breakdown */}
-          <div className="mt-3 space-y-1.5">
-            {dynamicPillars.filter(p => p.score > 0).map((p) => (
-              <div key={p.id} className="flex items-center gap-2 text-xs">
-                <span className="w-4 text-center">{p.icon}</span>
-                <span className="w-24 truncate text-muted-foreground">{p.name.split(" ")[0]}</span>
-                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${Math.min(p.score, 100)}%`,
-                      backgroundColor: p.score >= 65 ? "#22c55e" : p.score >= 40 ? "#f59e0b" : "#ef4444",
-                    }}
-                  />
-                </div>
-                <span className="w-8 text-right font-medium text-foreground">{p.score}%</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {onTrack > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
-                ✓ {onTrack} Na dobrej drodze
-              </span>
-            )}
-            {atRisk > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
-                ⚠ {atRisk} Wymaga uwagi
-              </span>
-            )}
-            {offTrack > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
-                ✗ {offTrack} Ponizej celu
-              </span>
-            )}
-          </div>
-
-          {/* How it works */}
-          <details className="mt-3">
-            <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground transition-colors">
-              Jak liczone?
-            </summary>
-            <div className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground space-y-1">
-              <p><span className="font-medium text-foreground">Okres:</span> biezacy miesiac (od 1. do dzis)</p>
-              <p><span className="font-medium text-foreground">Skala:</span> 0–100 (100 = wszystkie cele na 100%)</p>
-              <p><span className="font-medium text-foreground">Zdrowie:</span> {rehabActive
-                ? "WIG = rehabilitacja × 70% (srednia dzienna % zalecen) + kalorie × 30% (bilans tygodni vs 2000 kcal/dzien, z karami)"
-                : "srednia % realizacji: akt. kalorie, rower km, bieg km, silownia"}</p>
-              <p><span className="font-medium text-foreground">Praca:</span> srednia % realizacji: plan dnia + cele tygodniowe</p>
-              <p><span className="font-medium text-foreground">Rozwoj:</span> srednia % realizacji: czytanie, sluchanie, pisanie (minuty)</p>
-              <p><span className="font-medium text-foreground">Ogolny:</span> srednia z aktywnych filarow (tylko te z ustawionymi celami)</p>
-              <p className="pt-1 border-t border-border">
-                <span className="text-green-600 font-medium">65+</span> na dobrej drodze ·
-                <span className="text-amber-600 font-medium"> 40–64</span> wymaga uwagi ·
-                <span className="text-red-600 font-medium"> &lt;40</span> ponizej celu
-              </p>
-            </div>
-          </details>
-        </div>
-
-        {/* Garmin status + quick stats */}
-        {garmin.data && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:gap-4">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-              Garmin zsynchronizowany: {new Date(garmin.data.lastSyncISO).toLocaleString("pl-PL")}
+        {/* ── Main score ─────────────────────────────────────── */}
+        <section className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm sm:mt-8 sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            Wynik główny · {monthLabel}
+          </p>
+          <div className="mt-2 flex items-end gap-3">
+            <span className="text-7xl font-black leading-none tracking-tight tabular-nums sm:text-8xl" style={{ color: scoreColor(overall.score) }}>
+              {overall.score}
             </span>
-            {garmin.data.summary.month.runningKm > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-green-700">
-                🏃 {garmin.data.summary.month.runningKm} km
-              </span>
-            )}
-            {garmin.data.summary.month.cyclingKm > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">
-                🚴 {garmin.data.summary.month.cyclingKm} km
-              </span>
-            )}
-            {garmin.data.summary.month.gymSessions > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-purple-700">
-                🏋️ {garmin.data.summary.month.gymSessions}x
-              </span>
-            )}
+            <span className="pb-2 text-2xl font-bold text-muted-foreground">/ 100</span>
           </div>
-        )}
 
-        {/* Weekly Planner link */}
-        <Link
-          href="/weekly"
-          className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-sm transition-all hover:shadow-md hover:border-primary/20 sm:mt-6 sm:p-4"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">📋</span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Weekly Planner</p>
-              <p className="text-xs text-muted-foreground">Zaplanuj zadania na ten tydzien</p>
-            </div>
+          {/* Exact formula */}
+          <div className="mt-5 rounded-xl bg-muted/50 px-3 py-3 text-sm">
+            <p className="text-xs font-medium text-muted-foreground">Jak liczony</p>
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 tabular-nums text-foreground">
+              <span>(</span>
+              {overall.parts.map((part, i) => (
+                <span key={part.id} className="inline-flex items-center gap-1">
+                  {i > 0 && <span className="text-muted-foreground">+</span>}
+                  <span>{pillarById[part.id]?.icon}</span>
+                  <span className="font-semibold" style={{ color: scoreColor(part.score) }}>{part.score}</span>
+                </span>
+              ))}
+              <span>) ÷ 4 =</span>
+              <span className="font-bold" style={{ color: scoreColor(overall.score) }}>{overall.score}</span>
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Każdy z 4 filarów waży 25%. Filar bez celów albo bez postępu w tym miesiącu liczy się jako 0 — nie jest pomijany.
+              Okres: bieżący miesiąc (od 1. do dziś).
+            </p>
           </div>
-          <span className="text-muted-foreground">→</span>
-        </Link>
+        </section>
 
-        {/* Finanse link */}
-        <Link
-          href="/finanse"
-          className="mt-3 flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-sm transition-all hover:shadow-md hover:border-primary/20 sm:p-4"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">💰</span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Finanse</p>
-              <p className="text-xs text-muted-foreground">Import z Santandera · Kategoryzacja · Eksport</p>
-            </div>
-          </div>
-          <span className="text-muted-foreground">→</span>
-        </Link>
+        {/* ── Pillar tiles ───────────────────────────────────── */}
+        <section className="mt-4 grid grid-cols-2 gap-3 sm:gap-4">
+          {overall.parts.map((part) => {
+            const p = pillarById[part.id];
+            if (!p) return null;
+            const subs = p.subcategories ?? [];
+            return (
+              <Link
+                key={p.id}
+                href={p.href}
+                className="group rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-5"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{p.icon}</span>
+                  <span className="truncate text-sm font-medium text-foreground">{p.name}</span>
+                </div>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-4xl font-bold tabular-nums" style={{ color: scoreColor(part.score) }}>
+                    {part.score}
+                  </span>
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full" style={{ width: `${Math.min(part.score, 100)}%`, backgroundColor: scoreColor(part.score) }} />
+                </div>
+                <p className="mt-2 truncate text-[11px] text-muted-foreground">
+                  {part.hasGoals
+                    ? subs.map((s) => `${s.icon} ${s.label} ${s.pct}%`).join(" · ")
+                    : "brak celów — liczy się jako 0"}
+                </p>
+              </Link>
+            );
+          })}
+        </section>
 
-        {/* Backlog link */}
-        <Link
-          href="/backlog"
-          className="mt-3 flex items-center justify-between rounded-2xl border border-border bg-card p-3 shadow-sm transition-all hover:shadow-md hover:border-primary/20 sm:p-4"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🎙</span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Backlog</p>
-              <p className="text-xs text-muted-foreground">Pomysly i rzeczy do zrobienia</p>
-            </div>
-          </div>
-          <span className="text-muted-foreground">→</span>
-        </Link>
-
-        {/* Pillar cards */}
-        <div className="mt-6 grid gap-4 sm:mt-8 sm:grid-cols-2 sm:gap-6">
-          {dynamicPillars.map((pillar) => (
-            <PillarCard key={pillar.id} pillar={pillar} />
-          ))}
-        </div>
-
-        {/* Footer quote */}
-        <p className="mt-10 text-center text-sm text-muted-foreground italic">
-          &ldquo;Dyscyplina to robienie tego, co trzeba, kiedy trzeba, nawet gdy nie chce sie tego robic.&rdquo;
+        <p className="mt-4 text-center text-[11px] text-muted-foreground">
+          <span className="text-green-600">65+</span> na dobrej drodze · <span className="text-amber-600">40–64</span> wymaga uwagi ·{" "}
+          <span className="text-red-600">&lt;40</span> poniżej celu
         </p>
       </div>
     </div>
