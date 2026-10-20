@@ -1,4 +1,5 @@
 import type { CachedGarminData } from "./storage";
+import { healthWigScore } from "./calories";
 
 type MonthlyGoals = {
   activeCalories: { target: number; current: number };
@@ -54,11 +55,15 @@ function subcatStatus(
   return { label, icon, current, target, unit, pct, status, emoji };
 }
 
-/** Rehab input: average daily % of prescribed exercises this month (null = no day counted yet). */
-export type RehabScoreInput = { monthAvg: number | null };
+/**
+ * Rehab-mode input (null = no day counted yet):
+ * monthAvg = average daily % of prescribed exercises this month,
+ * caloriesScore = calorie weekly-balance score averaged over this month's weeks.
+ */
+export type RehabScoreInput = { monthAvg: number | null; caloriesScore?: number | null };
 
-function rehabStatus(monthAvg: number | null): SubcategoryStatus {
-  const base = { label: "Rehabilitacja", icon: "🩺", target: 100, unit: "%" };
+function rehabStatus(label: string, icon: string, monthAvg: number | null): SubcategoryStatus {
+  const base = { label, icon, target: 100, unit: "%" };
   if (monthAvg === null) {
     return { ...base, current: 0, pct: 0, status: "on-track", emoji: "➖" };
   }
@@ -79,9 +84,17 @@ export function calcHealthScore(
   gymMonthlyGoal: number,
   rehab?: RehabScoreInput | null
 ): { score: number; subcategories: SubcategoryStatus[] } {
-  // Rehab mode replaces sport goals entirely (sport goals stay stored, just not scored)
+  // Rehab mode replaces sport goals entirely (sport goals stay stored, just not scored):
+  // WIG = rehab 70% + calories 30%
   if (rehab) {
-    return { score: rehab.monthAvg ?? 0, subcategories: [rehabStatus(rehab.monthAvg)] };
+    const calories = rehab.caloriesScore ?? null;
+    return {
+      score: healthWigScore(rehab.monthAvg, calories) ?? 0,
+      subcategories: [
+        rehabStatus("Rehabilitacja", "🩺", rehab.monthAvg),
+        rehabStatus("Kalorie", "🍽", calories),
+      ],
+    };
   }
 
   const scores: number[] = [];

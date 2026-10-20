@@ -7,6 +7,10 @@ import { monthlyGoals, sportAreas } from "@/lib/data";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { DEFAULT_REHAB_PLAN, isPlanActive, toDateStr } from "@/lib/rehab";
 import { RehabSection } from "@/components/zdrowie/rehab-section";
+import { CaloriesSection } from "@/components/zdrowie/calories-section";
+import { HealthWigCard } from "@/components/zdrowie/health-wig-card";
+import { CALORIE_DAILY_LIMIT, type CalorieEntry } from "@/lib/calories";
+import type { RehabEntry } from "@/lib/rehab";
 
 type GarminActivity = {
   id: number;
@@ -1309,6 +1313,8 @@ export default function ZdrowiePage() {
   const rehabPlan = goals.rehab ?? DEFAULT_REHAB_PLAN;
   const today = toDateStr(new Date());
   const rehabActive = isPlanActive(rehabPlan, today);
+  const [rehabEntries, setRehabEntries] = useState<RehabEntry[]>([]);
+  const [calorieEntries, setCalorieEntries] = useState<CalorieEntry[]>([]);
 
   // Auto-derive weekly goals from monthly (month ≈ 4.33 weeks)
   const gymWeeklyGoal = Math.round(gymMonthlyGoal / 4.33);
@@ -1547,21 +1553,24 @@ export default function ZdrowiePage() {
             onImport={importMfpCsv}
             importing={mfpImporting}
             importResult={mfpResult}
-            calorieTarget={calorieTarget}
+            calorieTarget={rehabActive ? CALORIE_DAILY_LIMIT : calorieTarget}
             onCalorieTargetChange={updateCalorieTarget}
-            dailyBurned={dailyBurned}
+            dailyBurned={rehabActive ? {} : dailyBurned}
           />
         </div>
 
         {rehabActive ? (
           <>
             {/* ── Rehab goals (replace sport goals while active) ───── */}
-            <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🎯 Cele — Rehabilitacja</h3>
+            <h3 className="mt-6 text-lg font-semibold text-foreground sm:mt-8">🎯 Cele — Zdrowie i Fitness</h3>
             <p className="mt-1 text-xs text-muted-foreground">Cele sportowe są wstrzymane na czas rehabilitacji (zapisane, wrócą po jej zakończeniu)</p>
+            <HealthWigCard plan={rehabPlan} rehabEntries={rehabEntries} calorieEntries={calorieEntries} />
             <RehabSection
               plan={rehabPlan}
               onEndPlan={() => setGoals((prev) => ({ ...prev, rehab: { ...rehabPlan, active: false } }))}
+              onEntriesChange={setRehabEntries}
             />
+            <CaloriesSection plan={rehabPlan} onEntriesChange={setCalorieEntries} />
           </>
         ) : (
           <>

@@ -39,9 +39,11 @@ function Stat({ label, value, suffix = "%" }: { label: string; value: number | n
 export function RehabSection({
   plan,
   onEndPlan,
+  onEntriesChange,
 }: {
   plan: RehabPlan;
   onEndPlan: () => void;
+  onEntriesChange?: (entries: RehabEntry[]) => void;
 }) {
   const today = toDateStr(new Date());
   const [entries, setEntries] = useState<RehabEntry[]>([]);
@@ -59,6 +61,10 @@ export function RehabSection({
       })
       .catch(() => {});
   }, [plan.start, plan.end]);
+
+  useEffect(() => {
+    onEntriesChange?.(entries);
+  }, [entries, onEntriesChange]);
 
   const selectedEntry = entries.find((e) => e.date === selected);
   useEffect(() => {
@@ -103,7 +109,7 @@ export function RehabSection({
         <div className="flex items-center gap-2">
           <span className="text-2xl">🩺</span>
           <div>
-            <h4 className="font-semibold text-foreground">Rehabilitacja</h4>
+            <h4 className="font-semibold text-foreground">Rehabilitacja <span className="text-xs font-normal text-muted-foreground">· WIG 1 · waga 70%</span></h4>
             <p className="text-xs text-muted-foreground">
               Cel: {plan.target}% zaleceń codziennie · {fmtDate(plan.start)} – {fmtDate(plan.end)}
             </p>

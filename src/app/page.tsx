@@ -7,6 +7,7 @@ import { PillarCard } from "@/components/dashboard/pillar-card";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { calcAllScores, type RozwojData, type PracaData, type RehabScoreInput } from "@/lib/scores";
 import { DEFAULT_REHAB_PLAN, averagePercent, isPlanActive, monthStartStr, toDateStr, type RehabEntry } from "@/lib/rehab";
+import { calorieRangeScore, type CalorieEntry } from "@/lib/calories";
 import { useEffect, useState } from "react";
 
 export default function Home() {
@@ -112,6 +113,7 @@ export default function Home() {
   const rehabActive = isPlanActive(rehabPlan, todayStr);
   const rehabFrom = monthStartStr(todayStr) > rehabPlan.start ? monthStartStr(todayStr) : rehabPlan.start;
   const [rehabEntries, setRehabEntries] = useState<RehabEntry[]>([]);
+  const [calorieEntries, setCalorieEntries] = useState<CalorieEntry[]>([]);
   useEffect(() => {
     if (!rehabActive) return;
     fetch(`/api/rehab?from=${rehabFrom}&to=${todayStr}`)
@@ -120,9 +122,18 @@ export default function Home() {
         if (d.entries) setRehabEntries(d.entries);
       })
       .catch(() => {});
+    fetch(`/api/calories?from=${rehabFrom}&to=${todayStr}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.entries) setCalorieEntries(d.entries);
+      })
+      .catch(() => {});
   }, [rehabActive, rehabFrom, todayStr]);
   const rehab: RehabScoreInput | null = rehabActive
-    ? { monthAvg: averagePercent(rehabEntries, rehabFrom, rehabPlan.end, todayStr).avg }
+    ? {
+        monthAvg: averagePercent(rehabEntries, rehabFrom, rehabPlan.end, todayStr).avg,
+        caloriesScore: calorieRangeScore(calorieEntries, rehabFrom, todayStr),
+      }
     : null;
 
   // Calculate dynamic pillar scores
@@ -219,7 +230,7 @@ export default function Home() {
               <p><span className="font-medium text-foreground">Okres:</span> biezacy miesiac (od 1. do dzis)</p>
               <p><span className="font-medium text-foreground">Skala:</span> 0–100 (100 = wszystkie cele na 100%)</p>
               <p><span className="font-medium text-foreground">Zdrowie:</span> {rehabActive
-                ? "rehabilitacja: srednia dzienna % wykonania zalecen w tym miesiacu"
+                ? "WIG = rehabilitacja × 70% (srednia dzienna % zalecen) + kalorie × 30% (bilans tygodni vs 2000 kcal/dzien, z karami)"
                 : "srednia % realizacji: akt. kalorie, rower km, bieg km, silownia"}</p>
               <p><span className="font-medium text-foreground">Praca:</span> srednia % realizacji: plan dnia + cele tygodniowe</p>
               <p><span className="font-medium text-foreground">Rozwoj:</span> srednia % realizacji: czytanie, sluchanie, pisanie (minuty)</p>

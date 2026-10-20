@@ -92,7 +92,7 @@ describe("calcHealthScore with rehab", () => {
   it("ignores sport goals and uses rehab month average", () => {
     const r = calcHealthScore(goals, 0, 12, { monthAvg: 90 });
     expect(r.score).toBe(90);
-    expect(r.subcategories).toHaveLength(1);
+    expect(r.subcategories).toHaveLength(2); // Rehabilitacja + Kalorie (no calorie data yet)
     expect(r.subcategories[0].label).toBe("Rehabilitacja");
     expect(r.subcategories[0].status).toBe("on-track");
   });
