@@ -8,7 +8,7 @@ import { calcAllScores, calcOverallScore, type RozwojData, type PracaData, type 
 import { DEFAULT_REHAB_PLAN, averagePercent, isPlanActive, monthStartStr, toDateStr, type RehabEntry } from "@/lib/rehab";
 import { calorieRangeScore, type CalorieEntry } from "@/lib/calories";
 import { useEffect, useMemo, useState } from "react";
-import { booklyMonthReading, type BooklyReport } from "@/lib/reading";
+import { DEFAULT_READING_SETTINGS, booklyMonthReading, type BooklyReport } from "@/lib/reading";
 
 const MONTHS_PL = [
   "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec",
@@ -25,6 +25,7 @@ export default function Home() {
       competition: { ...monthlyGoals.competition },
       competitions: [],
       rehab: { ...monthlyGoals.rehab },
+      reading: { ...monthlyGoals.reading },
     },
     gymDays: sportAreas[0].weekDays,
     gymWeeklyGoal: sportAreas[0].weeklyGoal,
@@ -58,7 +59,8 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Bookly reading reports (czytanie lead: 30 min/day)
+  // Bookly reading reports (czytanie lead: daily minutes goal, default 30)
+  const readingMinutes = (goals.reading ?? DEFAULT_READING_SETTINGS).dailyMinutes;
   const [booklyReports, setBooklyReports] = useState<BooklyReport[]>([]);
   useEffect(() => {
     fetch("/api/bookly/reports")
@@ -70,9 +72,9 @@ export default function Home() {
   }, []);
   const booklyKey = booklyReports.map((r) => `${r.period_from}${r.period_to}${r.minutes}`).join("|");
   const booklyMonth = useMemo(
-    () => booklyMonthReading(booklyReports, toDateStr(new Date())),
+    () => booklyMonthReading(booklyReports, toDateStr(new Date()), readingMinutes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [booklyKey]
+    [booklyKey, readingMinutes]
   );
 
   // Load rozwoj entries from Supabase for pillar score
@@ -88,10 +90,10 @@ export default function Home() {
           .filter((e) => e.date >= ms);
         const sum = (area: string) => monthEntries.filter((e) => e.area === area).reduce((s, e) => s + e.amount, 0);
         setRozwojData({
-          // Czytanie: Bookly minutes vs 30 min/day when a report covers this month, else logged pages
+          // Czytanie: Bookly minutes vs daily-minutes goal × covered days; no report this month = not scored
           czytanie: booklyMonth
             ? { monthlyTarget: booklyMonth.target, monthlyDone: booklyMonth.minutes }
-            : { monthlyTarget: rozwojTargets.czytanie.monthly, monthlyDone: sum("czytanie") },
+            : { monthlyTarget: 0, monthlyDone: 0 },
           sluchanie: { monthlyTarget: rozwojTargets.sluchanie.monthly, monthlyDone: sum("sluchanie") },
           pisanie: { monthlyTarget: rozwojTargets.pisanie.monthly, monthlyDone: sum("pisanie") },
         });

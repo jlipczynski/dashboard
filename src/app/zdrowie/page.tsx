@@ -1263,6 +1263,7 @@ export default function ZdrowiePage() {
       competition: { ...monthlyGoals.competition },
       competitions: [],
       rehab: { ...monthlyGoals.rehab },
+      reading: { ...monthlyGoals.reading },
     },
     gymDays: sportAreas[0].weekDays,
     gymWeeklyGoal: sportAreas[0].weeklyGoal,

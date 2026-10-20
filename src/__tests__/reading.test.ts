@@ -72,3 +72,18 @@ describe("yearSummary", () => {
     expect(y.booksProjected).toBe(50);
   });
 });
+
+describe("reading settings", () => {
+  it("year target % and books/week needed", () => {
+    const y = yearSummary(dailyValues([r("2026-01-01", "2026-10-20", 8129, 7562, 202, 24)]), 2026, "2026-10-20");
+    expect(y.targetPct).toBe(48); // 24 / 50
+    // 26 books left over 72 days → 2.5 / week
+    expect(y.booksPerWeekNeeded).toBe(2.5);
+  });
+
+  it("custom daily minutes changes the lead score", () => {
+    const s = rangeStats(dailyValues([r("2026-11-01", "2026-11-10", 300)]), "2026-11-01", "2026-11-30", "2026-11-10", 60);
+    expect(s.avgMinutesPerDay).toBe(30);
+    expect(s.leadScore).toBe(50);
+  });
+});

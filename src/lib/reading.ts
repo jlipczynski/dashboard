@@ -14,6 +14,13 @@ import { addDays, daysInclusive } from "./rehab";
 export const READING_DAILY_MINUTES = 30;
 export const BOOKS_PER_YEAR = 50;
 
+/** User-editable reading goals (stored in fitness_goals.goals.reading). */
+export type ReadingSettings = { dailyMinutes: number; booksPerYear: number };
+export const DEFAULT_READING_SETTINGS: ReadingSettings = {
+  dailyMinutes: READING_DAILY_MINUTES,
+  booksPerYear: BOOKS_PER_YEAR,
+};
+
 export type BooklyReport = {
   id?: string;
   period_from: string;
@@ -124,7 +131,13 @@ export type RangeStats = {
   leadScore: number | null; // avg / 30 min, capped at 100
 };
 
-export function rangeStats(days: DayValues, from: string, to: string, today: string): RangeStats {
+export function rangeStats(
+  days: DayValues,
+  from: string,
+  to: string,
+  today: string,
+  dailyMinutes: number = READING_DAILY_MINUTES
+): RangeStats {
   const last = to < today ? to : today;
   let n = 0;
   let covered = 0;
@@ -153,7 +166,7 @@ export function rangeStats(days: DayValues, from: string, to: string, today: str
     readingDays: Math.round(t.readingDays),
     books: Math.round(t.books * 10) / 10,
     avgMinutesPerDay: avg === null ? null : Math.round(avg),
-    leadScore: avg === null ? null : Math.round(Math.min(avg / READING_DAILY_MINUTES, 1) * 100),
+    leadScore: avg === null || dailyMinutes <= 0 ? null : Math.round(Math.min(avg / dailyMinutes, 1) * 100),
   };
 }
 
@@ -164,20 +177,34 @@ export type YearSummary = RangeStats & {
   booksExpected: number;
   /** Projected books for the whole year at the current pace. */
   booksProjected: number | null;
+  /** Share of the yearly target already done (0-100, capped). */
+  targetPct: number;
+  /** Books per week still needed from the last covered day to hit the target. */
+  booksPerWeekNeeded: number | null;
 };
 
-export function yearSummary(days: DayValues, year: number, today: string): YearSummary {
+export function yearSummary(
+  days: DayValues,
+  year: number,
+  today: string,
+  settings: ReadingSettings = DEFAULT_READING_SETTINGS
+): YearSummary {
   const from = `${year}-01-01`;
   const to = `${year}-12-31`;
-  const s = rangeStats(days, from, to, today);
+  const s = rangeStats(days, from, to, today, settings.dailyMinutes);
+  const target = settings.booksPerYear;
   const yearDays = daysInclusive(from, to);
   const elapsed = s.coveredUntil ? daysInclusive(from, s.coveredUntil) : 0;
+  const daysLeft = yearDays - elapsed;
+  const booksLeft = Math.max(target - s.books, 0);
   return {
     ...s,
     year,
-    booksTarget: BOOKS_PER_YEAR,
-    booksExpected: Math.round((BOOKS_PER_YEAR * elapsed) / yearDays * 10) / 10,
+    booksTarget: target,
+    booksExpected: Math.round((target * elapsed) / yearDays * 10) / 10,
     booksProjected: elapsed > 0 ? Math.round((s.books / elapsed) * yearDays) : null,
+    targetPct: target > 0 ? Math.round(Math.min(s.books / target, 1) * 100) : 0,
+    booksPerWeekNeeded: daysLeft > 0 ? Math.round((booksLeft / daysLeft) * 7 * 10) / 10 : null,
   };
 }
 
@@ -187,9 +214,10 @@ export function yearSummary(days: DayValues, year: number, today: string): YearS
  */
 export function booklyMonthReading(
   reports: BooklyReport[],
-  today: string
+  today: string,
+  dailyMinutes: number = READING_DAILY_MINUTES
 ): { minutes: number; target: number; coveredDays: number } | null {
-  const s = rangeStats(dailyValues(reports), today.slice(0, 8) + "01", today, today);
+  const s = rangeStats(dailyValues(reports), today.slice(0, 8) + "01", today, today, dailyMinutes);
   if (s.coveredDays === 0) return null;
-  return { minutes: s.minutes, target: READING_DAILY_MINUTES * s.coveredDays, coveredDays: s.coveredDays };
+  return { minutes: s.minutes, target: dailyMinutes * s.coveredDays, coveredDays: s.coveredDays };
 }

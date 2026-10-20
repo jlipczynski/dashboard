@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { RehabPlan } from "./rehab";
+import type { ReadingSettings } from "./reading";
 
 /**
  * Deep-merge stored object with defaults so new/missing fields are filled in.
@@ -184,6 +185,7 @@ export type GoalsShape = {
   competition: { name: string; date: string; type: "running" | "cycling"; distance: number };
   competitions: { name: string; date: string; type: "running" | "cycling"; distance: number }[];
   rehab?: RehabPlan;
+  reading?: ReadingSettings;
 };
 
 export type RozwojTargets = {

@@ -1,5 +1,6 @@
 import type { SubcategoryStatus } from "@/lib/scores";
 import { DEFAULT_REHAB_PLAN } from "@/lib/rehab";
+import { DEFAULT_READING_SETTINGS } from "@/lib/reading";
 
 export type Pillar = {
   id: string;
@@ -86,6 +87,7 @@ export const monthlyGoals = {
   competition: { name: "", date: "", type: "running" as "running" | "cycling", distance: 0 },
   competitions: [] as { name: string; date: string; type: "running" | "cycling"; distance: number }[],
   rehab: { ...DEFAULT_REHAB_PLAN },
+  reading: { ...DEFAULT_READING_SETTINGS },
 };
 
 export const sportAreas: SportArea[] = [
