@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# lokalne kopie danych przed zmianami w bazie (CLAUDE.md)
+backups/

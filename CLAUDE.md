@@ -133,6 +133,22 @@ Jeśli UI zachowuje się inaczej niż oczekiwano — STOP i raport do Jana.
 
 ---
 
+### Dostęp Claude do bazy (Supabase)
+
+Narzędzia:
+- **MCP `supabase`** (`.mcp.json`, tryb `read_only=true`) — podgląd schematu i SELECT-y.
+- **`node scripts/db-query.mjs "SQL"`** — połączenie przez `pg` z hasłem z `DATABASE_URL` (`.env.local`).
+  Domyślnie sesja READ ONLY; zapis tylko z flagą `--write`.
+- **Nigdy nie wypisuj `DATABASE_URL`, `DATABASE_POOLER_URL`, haseł ani kluczy** — ani w odpowiedzi, ani w logach, ani w commitach.
+
+Zasady:
+- ✅ **SELECT-y wolno uruchamiać samodzielnie** — do weryfikacji PRZED i PO (Etap 1 i 2 powyżej).
+- ⛔ **Każdy INSERT / UPDATE / DELETE / ALTER / DROP / zmiana polityk RLS** — najpierw:
+  1. pokaż Janowi dokładny SQL,
+  2. zapisz kopię danych, które zmienisz: `node scripts/db-query.mjs --out backups/<data>_<tabela>_<opis>.json "SELECT ..."`
+     (folder `backups/` jest w `.gitignore` — nie trafia do repo),
+  3. wykonaj (`--write`) **dopiero po "OK" Jana**.
+
 ### Dlaczego to jest krytyczne
 
 Ten projekt wpływa na rzeczywiste dane biznesowe (Plantacja, Ovoc Malinovi).
