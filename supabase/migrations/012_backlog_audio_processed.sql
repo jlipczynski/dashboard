@@ -5,9 +5,5 @@ CREATE TABLE IF NOT EXISTS backlog_audio_processed (
   items_count INT DEFAULT 0
 );
 
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 ALTER TABLE backlog_audio_processed ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on backlog_audio_processed" ON backlog_audio_processed
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
