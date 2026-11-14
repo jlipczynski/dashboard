@@ -42,6 +42,19 @@ async function refreshAccessToken(token: any) {
   }
 }
 
+function getAllowedEmails(): string[] {
+  return (process.env.ALLOWED_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+export function isEmailAllowed(email: string | null | undefined): boolean {
+  const allowed = getAllowedEmails()
+  if (allowed.length === 0) return false // no allowlist = deny all
+  return allowed.includes((email ?? "").toLowerCase())
+}
+
 export const authOptions: AuthOptions = {
   debug: false,
   providers: [
@@ -59,6 +72,9 @@ export const authOptions: AuthOptions = {
     }),
   ],
   callbacks: {
+    async signIn({ user }) {
+      return isEmailAllowed(user.email)
+    },
     async jwt({ token, account }) {
       // First login — save tokens
       if (account) {

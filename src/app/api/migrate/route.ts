@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions, isEmailAllowed } from "@/lib/google-auth"
 import { MIGRATIONS } from "@/lib/migrations"
 
 export const dynamic = "force-dynamic"
+
+async function requireAllowedUser() {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.email || !isEmailAllowed(session.user.email)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+  return null
+}
 
 type MigrationResult = {
   ran: string[]
@@ -169,6 +179,8 @@ async function runMigrations(): Promise<MigrationResult> {
 }
 
 export async function GET() {
+  const denied = await requireAllowedUser()
+  if (denied) return denied
   try {
     const result = await runMigrations()
     return NextResponse.json(result)
@@ -179,6 +191,8 @@ export async function GET() {
 }
 
 export async function POST() {
+  const denied = await requireAllowedUser()
+  if (denied) return denied
   try {
     const result = await runMigrations()
     return NextResponse.json(result)

@@ -7,10 +7,18 @@ const PUBLIC_PATHS = [
   "/api/keepalive",
 ];
 
+function isEmailAllowed(email: string | null | undefined): boolean {
+  const allowed = (process.env.ALLOWED_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (allowed.length === 0) return false;
+  return allowed.includes((email ?? "").toLowerCase());
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow NextAuth routes and keepalive cron
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
@@ -20,13 +28,10 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  if (!token) {
-    // API routes return 401
+  if (!token || !isEmailAllowed(token.email as string)) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // Pages redirect to sign-in
     const signInUrl = new URL("/api/auth/signin", request.url);
     signInUrl.searchParams.set("callbackUrl", request.url);
     return NextResponse.redirect(signInUrl);
@@ -37,7 +42,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Match all routes except static files and _next internals
     "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png).*)",
   ],
 };
