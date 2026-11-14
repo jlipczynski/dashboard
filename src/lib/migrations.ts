@@ -315,6 +315,136 @@ ON CONFLICT (name) DO NOTHING;
 `,
   },
   {
+    name: "013_finance_tag.sql",
+    sql: `ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS tag TEXT;`,
+  },
+  {
+    name: "014_finance_recreate.sql",
+    sql: `
+CREATE TABLE IF NOT EXISTS finance_categories (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  type TEXT NOT NULL CHECK (type IN ('expense', 'income')),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE finance_categories ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on finance_categories" ON finance_categories
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS finance_rules (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  pattern TEXT NOT NULL UNIQUE,
+  category_id UUID REFERENCES finance_categories(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE finance_rules ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on finance_rules" ON finance_rules
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS finance_transactions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  date DATE NOT NULL,
+  description TEXT NOT NULL,
+  counterparty TEXT,
+  amount DECIMAL(12,2) NOT NULL,
+  balance DECIMAL(12,2),
+  category_id UUID REFERENCES finance_categories(id),
+  tag TEXT,
+  import_hash TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE finance_transactions ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on finance_transactions" ON finance_transactions
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_finance_transactions_date ON finance_transactions (date DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_transactions_category ON finance_transactions (category_id);
+
+INSERT INTO finance_categories (name, type) VALUES
+  ('Travel', 'expense'),('Mati USA', 'expense'),('Zwierzaki', 'expense'),
+  ('Rozrywka', 'expense'),('Jedzenie na zewnątrz', 'expense'),('Inne', 'expense'),
+  ('Food & Drink', 'expense'),('Kids sport', 'expense'),('Transportation', 'expense'),
+  ('Kids education', 'expense'),('Housing & Utilities', 'expense'),('Kids other', 'expense'),
+  ('Personal Care', 'expense'),('Shopping', 'expense'),('Health Care', 'expense'),
+  ('Membership', 'expense'),('Giving', 'expense'),
+  ('Maliny', 'income'),('Salary', 'income'),('Investment', 'income')
+ON CONFLICT (name) DO NOTHING;
+`,
+  },
+  {
+    name: "015_finance_tags.sql",
+    sql: `
+CREATE TABLE IF NOT EXISTS finance_tags (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE finance_tags ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on finance_tags" ON finance_tags
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+`,
+  },
+  {
+    name: "016_finance_category_tags.sql",
+    sql: `
+CREATE TABLE IF NOT EXISTS finance_category_tags (
+  category_id UUID REFERENCES finance_categories(id) ON DELETE CASCADE,
+  tag_id UUID REFERENCES finance_tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (category_id, tag_id)
+);
+ALTER TABLE finance_category_tags ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on finance_category_tags" ON finance_category_tags
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+`,
+  },
+  {
+    name: "017_finance_subcategories.sql",
+    sql: `
+CREATE TABLE IF NOT EXISTS finance_subcategories (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  category_id UUID REFERENCES finance_categories(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (name, category_id)
+);
+ALTER TABLE finance_subcategories ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on finance_subcategories" ON finance_subcategories
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS subcategory_id UUID REFERENCES finance_subcategories(id);
+ALTER TABLE finance_rules ADD COLUMN IF NOT EXISTS subcategory_id UUID REFERENCES finance_subcategories(id);
+
+INSERT INTO finance_subcategories (name, category_id)
+SELECT sub.name, fc.id
+FROM (VALUES
+  ('Gaz'), ('Prąd'), ('Woda'), ('Ochrona'),
+  ('Podatek od nieruchomości'), ('Internet'), ('Ogród'),
+  ('Sprzątanie'), ('Czynsz/Hipoteka'), ('Ubezpieczenie domu'),
+  ('Naprawy i remonty'), ('Śmieci')
+) AS sub(name)
+CROSS JOIN finance_categories fc
+WHERE fc.name = 'Housing & Utilities'
+ON CONFLICT (name, category_id) DO NOTHING;
+`,
+  },
+  {
     name: "018_rehab_entries.sql",
     sql: `
 -- Daily rehabilitation (physiotherapy) progress: % of prescribed exercises done

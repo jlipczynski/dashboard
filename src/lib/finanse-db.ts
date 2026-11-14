@@ -1,6 +1,13 @@
 import crypto from "crypto";
-import { supabase } from "@/lib/supabase";
-import { runMigrationSQL, hasDbUrl } from "@/lib/db";
+import { createClient } from "@supabase/supabase-js";
+import { runMigrationSQL, runSQL, hasDbUrl } from "@/lib/db";
+
+export function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("Missing Supabase config");
+  return createClient(url, key);
+}
 
 export const FINANCE_MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS finance_categories (
@@ -37,6 +44,7 @@ CREATE TABLE IF NOT EXISTS finance_transactions (
   amount DECIMAL(12,2) NOT NULL,
   balance DECIMAL(12,2),
   category_id UUID REFERENCES finance_categories(id),
+  tag TEXT,
   import_hash TEXT UNIQUE NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -100,14 +108,25 @@ let tablesReady = false;
 
 export async function ensureFinanceTables() {
   if (tablesReady) return;
-  if (!supabase) return;
 
-  const { data, error } = await supabase.from("finance_categories").select("id").limit(1);
+  let admin: ReturnType<typeof getSupabaseAdmin>;
+  try {
+    admin = getSupabaseAdmin();
+  } catch {
+    return;
+  }
+
+  const { data, error } = await admin.from("finance_categories").select("id").limit(1);
 
   if (!error) {
-    // Table exists — seed default categories if empty
     if (data && data.length === 0) {
-      await supabase.from("finance_categories").insert(DEFAULT_CATEGORIES);
+      await admin.from("finance_categories").insert(DEFAULT_CATEGORIES);
+    }
+    // Ensure tag, merchant and notes columns exist for existing installations
+    if (hasDbUrl()) {
+      await runSQL("ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS tag TEXT;").catch(() => {});
+      await runSQL("ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS merchant TEXT;").catch(() => {});
+      await runSQL("ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS notes TEXT;").catch(() => {});
     }
     tablesReady = true;
     return;

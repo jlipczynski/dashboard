@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-import { ensureFinanceTables } from "@/lib/finanse-db";
+import { getSupabaseAdmin, ensureFinanceTables } from "@/lib/finanse-db";
 
 // GET /api/finanse/rules
 export async function GET() {
-  if (!supabase) return NextResponse.json({ rules: [] });
-
   await ensureFinanceTables();
 
-  const { data, error } = await supabase
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
     .from("finance_rules")
-    .select("*, finance_categories(name, type)")
+    .select("*, finance_categories(name, type), finance_subcategories(name)")
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -18,18 +16,22 @@ export async function GET() {
   return NextResponse.json({ rules: data });
 }
 
-// POST /api/finanse/rules  { pattern, categoryId }
+// POST /api/finanse/rules  { pattern, categoryId, subcategoryId? }
 export async function POST(request: Request) {
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
   await ensureFinanceTables();
 
-  const { pattern, categoryId } = await request.json();
+  const { pattern, categoryId, subcategoryId } = await request.json();
   if (!pattern || !categoryId) return NextResponse.json({ error: "Missing pattern or categoryId" }, { status: 400 });
 
-  const { data, error } = await supabase
+  const admin = getSupabaseAdmin();
+  const payload: Record<string, string | null> = {
+    pattern: pattern.toUpperCase(),
+    category_id: categoryId,
+    subcategory_id: subcategoryId || null,
+  };
+  const { data, error } = await admin
     .from("finance_rules")
-    .upsert({ pattern: pattern.toUpperCase(), category_id: categoryId }, { onConflict: "pattern" })
+    .upsert(payload, { onConflict: "pattern" })
     .select()
     .single();
 
@@ -40,13 +42,12 @@ export async function POST(request: Request) {
 
 // DELETE /api/finanse/rules?id=...
 export async function DELETE(request: Request) {
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  const { error } = await supabase.from("finance_rules").delete().eq("id", id);
+  const admin = getSupabaseAdmin();
+  const { error } = await admin.from("finance_rules").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });

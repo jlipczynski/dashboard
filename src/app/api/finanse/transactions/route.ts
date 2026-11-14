@@ -1,23 +1,24 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-import { ensureFinanceTables } from "@/lib/finanse-db";
+import { getSupabaseAdmin, ensureFinanceTables } from "@/lib/finanse-db";
 
 // GET /api/finanse/transactions?month=2026-03&categoryId=...
 export async function GET(request: Request) {
-  if (!supabase) return NextResponse.json({ transactions: [] });
-
   await ensureFinanceTables();
 
   const { searchParams } = new URL(request.url);
   const month = searchParams.get("month"); // YYYY-MM
   const categoryId = searchParams.get("categoryId");
+  const uncategorized = searchParams.get("uncategorized") === "true";
 
-  let query = supabase
+  const admin = getSupabaseAdmin();
+  let query = admin
     .from("finance_transactions")
-    .select("*, finance_categories(id, name, type)")
+    .select("*, finance_categories(id, name, type), finance_subcategories(id, name)")
     .order("date", { ascending: false });
 
-  if (month) {
+  if (uncategorized) {
+    query = query.is("category_id", null);
+  } else if (month) {
     const [year, mon] = month.split("-");
     const from = `${year}-${mon}-01`;
     const lastDay = new Date(parseInt(year), parseInt(mon), 0).getDate();
@@ -36,10 +37,7 @@ export async function GET(request: Request) {
 }
 
 // POST /api/finanse/transactions  { transactions: [...], rules: [...] }
-// Saves a batch of transactions and optional rules
 export async function POST(request: Request) {
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
   await ensureFinanceTables();
 
   const { transactions, rules } = await request.json();
@@ -48,35 +46,44 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No transactions" }, { status: 400 });
   }
 
-  // Save rules first
+  const admin = getSupabaseAdmin();
+
   if (Array.isArray(rules) && rules.length > 0) {
     const rulesPayload = rules.map((r: { pattern: string; categoryId: string }) => ({
       pattern: r.pattern.toUpperCase(),
       category_id: r.categoryId,
     }));
-    await supabase.from("finance_rules").upsert(rulesPayload, { onConflict: "pattern" });
+    await admin.from("finance_rules").upsert(rulesPayload, { onConflict: "pattern" });
   }
 
-  // Save transactions (skip duplicates via import_hash unique constraint)
   const payload = transactions.map((t: {
     date: string;
     description: string;
     counterparty: string | null;
+    merchant?: string | null;
     amount: number;
     balance: number | null;
     importHash: string;
     categoryId: string | null;
-  }) => ({
-    date: t.date,
-    description: t.description,
-    counterparty: t.counterparty,
-    amount: t.amount,
-    balance: t.balance,
-    category_id: t.categoryId || null,
-    import_hash: t.importHash,
-  }));
+    subcategoryId?: string | null;
+    tag?: string | null;
+  }) => {
+    const row: Record<string, unknown> = {
+      date: t.date,
+      description: t.description,
+      counterparty: t.counterparty,
+      amount: t.amount,
+      balance: t.balance,
+      category_id: t.categoryId || null,
+      subcategory_id: t.subcategoryId || null,
+      import_hash: t.importHash,
+    };
+    if (t.tag) row.tag = t.tag;
+    if (t.merchant) row.merchant = t.merchant;
+    return row;
+  });
 
-  const { error } = await supabase
+  const { error } = await admin
     .from("finance_transactions")
     .upsert(payload, { onConflict: "import_hash", ignoreDuplicates: true });
 
@@ -87,17 +94,25 @@ export async function POST(request: Request) {
 
 // PATCH /api/finanse/transactions?id=...  { categoryId }
 export async function PATCH(request: Request) {
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  const { categoryId } = await request.json();
+  const { categoryId, subcategoryId, tag, notes } = await request.json();
 
-  const { error } = await supabase
+  const update: Record<string, string | null> = {};
+  if (categoryId !== undefined) update.category_id = categoryId || null;
+  if (subcategoryId !== undefined) update.subcategory_id = subcategoryId || null;
+  if (tag !== undefined) update.tag = tag || null;
+  if (notes !== undefined) update.notes = notes || null;
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
+
+  const admin = getSupabaseAdmin();
+  const { error } = await admin
     .from("finance_transactions")
-    .update({ category_id: categoryId || null })
+    .update(update)
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -107,13 +122,12 @@ export async function PATCH(request: Request) {
 
 // DELETE /api/finanse/transactions?id=...
 export async function DELETE(request: Request) {
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  const { error } = await supabase.from("finance_transactions").delete().eq("id", id);
+  const admin = getSupabaseAdmin();
+  const { error } = await admin.from("finance_transactions").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
