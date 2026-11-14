@@ -20,6 +20,30 @@ describe("redirect callback", () => {
     expect(await go(`${baseUrl}/finanse?tab=historia`)).toBe(`${baseUrl}/finanse?tab=historia`)
     expect(await go("/rozwoj")).toBe(`${baseUrl}/rozwoj`)
   })
+  it("a correct target page (e.g. /wydatek) is kept — relative, absolute and from the middleware", async () => {
+    expect(await go("/wydatek")).toBe(`${baseUrl}/wydatek`)
+    expect(await go(`${baseUrl}/wydatek`)).toBe(`${baseUrl}/wydatek`)
+    // the middleware sends callbackUrl=<the full request URL>
+    expect(await go(decodeURIComponent(encodeURIComponent(`${baseUrl}/wydatek`)))).toBe(`${baseUrl}/wydatek`)
+    expect(await go("/wydatek?x=1")).toBe(`${baseUrl}/wydatek?x=1`)
+  })
+
+  it("a wrong callback /api/auth/signin never ends on the login page (any form)", async () => {
+    const bad = [
+      "/api/auth/signin",
+      `${baseUrl}/api/auth/signin`,
+      `${baseUrl}/api/auth/signin?callbackUrl=${encodeURIComponent(`${baseUrl}/api/auth/signin`)}`,
+      "/api/auth/signin/google",
+      "/api/auth/callback/google",
+      "/api/auth/error?error=OAuthCallback",
+      "/api/auth/signout",
+    ]
+    for (const url of bad) {
+      const target = new URL(await go(url))
+      expect(target.pathname.startsWith("/api/auth")).toBe(false)
+    }
+  })
+
   it("other domains and tricks → home page (no open redirect)", async () => {
     expect(await go("https://evil.example/phish")).toBe(baseUrl)
     expect(await go("//evil.example/x")).toBe(baseUrl)
