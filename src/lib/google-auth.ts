@@ -13,14 +13,6 @@ if (!process.env.NEXTAUTH_URL) {
   }
 }
 
-// Debug: log what NextAuth will use as callback URL
-console.log("[AUTH DEBUG]", {
-  NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-  VERCEL_URL: process.env.VERCEL_URL,
-  VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL,
-  VERCEL_ENV: process.env.VERCEL_ENV,
-  computed_callback: `${process.env.NEXTAUTH_URL}/api/auth/callback/google`,
-})
 
 async function refreshAccessToken(token: any) {
   try {
@@ -51,7 +43,7 @@ async function refreshAccessToken(token: any) {
 }
 
 export const authOptions: AuthOptions = {
-  debug: true,
+  debug: false,
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
