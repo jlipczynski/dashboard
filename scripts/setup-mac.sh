@@ -1,4 +1,7 @@
 #!/bin/bash
+# Skrypt instalacyjny Jan's Dashboard na nowym Macu.
+# Dziala niezaleznie od tego, czy domyslny shell to bash czy zsh
+# (sam skrypt zawsze uruchamia sie w /bin/bash).
 set -euo pipefail
 
 GREEN='\033[0;32m'
@@ -11,11 +14,32 @@ info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
 fail() { echo -e "${RED}[BLAD]${NC} $1"; exit 1; }
 need() { echo -e "${YELLOW}[WYMAGANE]${NC} $1"; }
 
+# Pliki startowe obu shelli — zsh (domyslny na macOS) i bash.
+# macOS Terminal uruchamia bash jako login shell, wiec czyta ~/.bash_profile.
+SHELL_RC_FILES=("$HOME/.zshrc" "$HOME/.bash_profile")
+if [[ -f "$HOME/.bashrc" ]]; then
+  SHELL_RC_FILES+=("$HOME/.bashrc")
+fi
+
+# Dopisuje linie do plikow startowych bash i zsh (jesli jeszcze jej tam nie ma).
+add_to_shell_rc() {
+  local line="$1"
+  local rc
+  for rc in "${SHELL_RC_FILES[@]}"; do
+    touch "$rc"
+    if ! grep -qsF "$line" "$rc"; then
+      printf '\n%s\n' "$line" >> "$rc"
+      info "Dopisano do $(basename "$rc"): $line"
+    fi
+  done
+}
+
 echo ""
 echo "====================================="
 echo "  Jan's Dashboard — instalacja Maca"
 echo "====================================="
 echo ""
+info "Domyslny shell: ${SHELL:-nieznany}"
 
 # --- Homebrew ---
 if command -v brew &>/dev/null; then
@@ -23,17 +47,17 @@ if command -v brew &>/dev/null; then
 else
   info "Instaluje Homebrew..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  # Add to PATH for Apple Silicon
-  if [[ -f /opt/homebrew/bin/brew ]]; then
+  # Apple Silicon: brew w /opt/homebrew nie jest domyslnie w PATH
+  if [[ -x /opt/homebrew/bin/brew ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
+    add_to_shell_rc 'eval "$(/opt/homebrew/bin/brew shellenv)"'
   fi
   ok "Homebrew zainstalowany"
 fi
 
 # --- Node.js ---
 if command -v node &>/dev/null; then
-  NODE_VER=$(node -v)
-  ok "Node.js $NODE_VER"
+  ok "Node.js $(node -v), npm $(npm -v)"
 else
   info "Instaluje Node.js LTS..."
   brew install node@22
@@ -67,21 +91,42 @@ else
   ok "GitHub zalogowany"
 fi
 
-# --- Vercel CLI ---
-if command -v vercel &>/dev/null || npx vercel --version &>/dev/null 2>&1; then
-  ok "Vercel CLI dostepne"
+# --- Vercel CLI (globalnie) ---
+# UWAGA: NIE uzywamy `npx vercel ...`. Gdy vercel nie jest zainstalowany,
+# npx pyta "Ok to proceed? (y)" — przy wyjsciu przekierowanym do /dev/null
+# pytanie jest niewidoczne i skrypt wisi (tak zawiesil sie po "GitHub zalogowany").
+# Do tego `npx vercel login` konczy sie bez zalogowania.
+if command -v vercel &>/dev/null; then
+  ok "Vercel CLI zainstalowany ($(vercel --version </dev/null 2>/dev/null | tail -1))"
 else
-  info "Instaluje Vercel CLI..."
-  npm install -g vercel
+  need "Instaluje Vercel CLI globalnie (sudo — podaj haslo do Maca)..."
+  sudo npm install -g vercel
+  hash -r
+  command -v vercel &>/dev/null || fail "vercel nie jest w PATH po instalacji"
   ok "Vercel CLI zainstalowany"
 fi
 
-# --- Claude Code ---
+# --- Vercel auth ---
+if vercel whoami </dev/null &>/dev/null; then
+  ok "Vercel zalogowany"
+else
+  need "Logowanie do Vercel (wybierz: Continue with GitHub)..."
+  vercel login
+  vercel whoami </dev/null &>/dev/null || fail "Logowanie do Vercel nie powiodlo sie — uruchom 'vercel login' recznie"
+  ok "Vercel zalogowany"
+fi
+
+# --- Claude Code (natywny instalator) ---
+# Instalator kladzie binarke w ~/.local/bin — dopisujemy ja do PATH dla bash i zsh.
+export PATH="$HOME/.local/bin:$PATH"
+add_to_shell_rc 'export PATH="$HOME/.local/bin:$PATH"'
 if command -v claude &>/dev/null; then
   ok "Claude Code zainstalowany"
 else
   info "Instaluje Claude Code..."
-  npm install -g @anthropic-ai/claude-code
+  curl -fsSL https://claude.ai/install.sh | bash
+  hash -r
+  command -v claude &>/dev/null || fail "claude nie jest w PATH po instalacji (sprawdz ~/.local/bin)"
   ok "Claude Code zainstalowany"
 fi
 
@@ -103,14 +148,25 @@ info "Instaluje zaleznosci (npm install)..."
 npm install
 ok "Zaleznosci zainstalowane"
 
+# Nowy npm blokuje skrypty instalacyjne zaleznosci, dopoki ich nie zatwierdzisz.
+# Bez tego esbuild / sharp / unrs-resolver nie maja natywnych binarek i build pada.
+if npm install-scripts --help &>/dev/null; then
+  info "Zatwierdzam skrypty instalacyjne (esbuild, fsevents, sharp, unrs-resolver)..."
+  npm install-scripts approve esbuild fsevents sharp unrs-resolver
+  npm rebuild
+  ok "Skrypty instalacyjne zatwierdzone, zaleznosci przebudowane"
+else
+  info "Ten npm nie blokuje skryptow instalacyjnych — pomijam zatwierdzanie"
+fi
+
 # --- Vercel link ---
 if [[ -d "$REPO_DIR/.vercel" ]]; then
   ok "Projekt polaczony z Vercel"
 else
-  need "Laczenie z Vercel (moze otworzyc przegladarke)..."
+  need "Laczenie z Vercel..."
   echo "  Team: jlipczynskis-projects"
   echo "  Project: jan-dashboard"
-  npx vercel link
+  vercel link
 fi
 
 # --- Pull env vars ---
@@ -118,7 +174,7 @@ if [[ -f "$REPO_DIR/.env.local" ]]; then
   ok "Plik .env.local istnieje"
 else
   info "Pobieram zmienne srodowiskowe z Vercel..."
-  npx vercel env pull .env.local
+  vercel env pull .env.local
   ok "Zmienne pobrane do .env.local"
 fi
 
@@ -126,6 +182,8 @@ echo ""
 echo "====================================="
 echo -e "${GREEN}  Gotowe!${NC}"
 echo "====================================="
+echo ""
+echo "Otworz NOWE okno terminala (zeby PATH sie odswiezyl), potem:"
 echo ""
 echo "Uruchom aplikacje lokalnie:"
 echo "  cd ~/jan-dashboard"

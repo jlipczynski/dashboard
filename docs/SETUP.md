@@ -15,7 +15,9 @@ chmod +x /tmp/setup-mac.sh
 /tmp/setup-mac.sh
 ```
 
-Skrypt sprawdzi i w razie potrzeby zainstaluje wszystko co potrzebne. Zatrzyma sie tam, gdzie wymagane jest logowanie w przegladarce (GitHub, Vercel).
+Skrypt sprawdzi i w razie potrzeby zainstaluje wszystko co potrzebne. Zatrzyma sie tam, gdzie wymagane jest logowanie w przegladarce (GitHub, Vercel) oraz przy `sudo` (haslo do Maca przy instalacji Vercel CLI).
+
+Skrypt dziala niezaleznie od tego, czy Twoj shell to **zsh** (domyslny na macOS) czy **bash** — wpisy do PATH dopisuje do `~/.zshrc` i `~/.bash_profile`. Po zakonczeniu **otworz nowe okno terminala**, zeby PATH sie odswiezyl.
 
 Mozesz tez przejsc przez kroki recznie:
 
@@ -38,15 +40,27 @@ gh auth login
 # Wybierz: GitHub.com > HTTPS > Login with a web browser
 ```
 
-### 4. Vercel CLI
+### 4. Vercel CLI (globalnie)
 ```bash
-npm install -g vercel
+sudo npm install -g vercel
+vercel login
+# Wybierz: Continue with GitHub
 ```
+**Nie uzywaj `npx vercel`** — `npx vercel login` konczy sie bez zalogowania, a `npx` potrafi
+czekac na niewidoczne pytanie "Ok to proceed? (y)".
 
 ### 5. Claude Code
 ```bash
-npm install -g @anthropic-ai/claude-code
+curl -fsSL https://claude.ai/install.sh | bash
 ```
+Instalator kladzie `claude` w `~/.local/bin`. Dopisz ten katalog do PATH — w zaleznosci od shella:
+```bash
+# zsh (domyslny na macOS):
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+# bash:
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bash_profile
+```
+Sprawdz swoj shell: `echo $SHELL`. Potem otworz nowe okno terminala.
 
 ### 6. Klonowanie repozytorium
 ```bash
@@ -54,18 +68,21 @@ cd ~
 gh repo clone jlipczynski/dashboard jan-dashboard
 cd jan-dashboard
 npm install
+
+# Nowy npm (11.x) blokuje skrypty instalacyjne zaleznosci — zatwierdz je i przebuduj:
+npm install-scripts approve esbuild fsevents sharp unrs-resolver
+npm rebuild
 ```
+Bez tego `esbuild`, `sharp` i `unrs-resolver` nie maja natywnych binarek i `npm run build` / `npm run dev` pada.
+`npm install-scripts approve` dopisuje sekcje `allowScripts` do `package.json` — to lokalna zmiana, nie commituj jej przypadkiem.
 
 ### 7. Polaczenie z Vercel i pobranie env vars
 ```bash
-npx vercel login
-# Wybierz: Log in to Vercel > Continue with GitHub
-
-npx vercel link
+vercel link
 # Team: jlipczynskis-projects
 # Project: jan-dashboard
 
-npx vercel env pull .env.local
+vercel env pull .env.local
 # Pobiera zmienne srodowiskowe z Vercel do pliku .env.local
 ```
 
@@ -107,8 +124,22 @@ git push                    # Wypchnij na GitHub
 ### `npm run dev` nie startuje
 ```bash
 npm install                 # Moze brakuje zaleznosci
-npx vercel env pull .env.local  # Moze brakuje zmiennych
+vercel env pull .env.local  # Moze brakuje zmiennych
 ```
+
+### Blad natywnych modulow (esbuild / sharp / unrs-resolver)
+```bash
+npm install-scripts approve esbuild fsevents sharp unrs-resolver
+npm rebuild
+```
+
+### `claude: command not found`
+```bash
+export PATH="$HOME/.local/bin:$PATH"   # i dopisz to do ~/.zshrc albo ~/.bash_profile
+```
+
+### Skrypt instalacyjny wisi bez komunikatu
+Prawdopodobnie czeka na niewidoczne pytanie (np. `npx`). Przerwij `Ctrl+C`, pobierz najnowsza wersje skryptu i uruchom ponownie — jest idempotentny, pominie to co juz zainstalowane.
 
 ### Blad przy `git pull`
 ```bash
