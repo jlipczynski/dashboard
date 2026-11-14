@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer, CartesianGrid } from "recharts";
-import { supabase } from "@/lib/supabase";
 
 const PILLARS = {
   "Ovoc Malinovi": { color: "#DC2626", icon: "🫐", type: "praca" },
@@ -87,16 +86,18 @@ export default function WeeklyPlanner() {
   const weekStart = toDateStr(week.start);
 
   const fetchGoals = useCallback(async (ws) => {
-    if (!supabase) { setLoading(false); setError("Supabase nie jest podłączony — brak NEXT_PUBLIC_SUPABASE_URL lub NEXT_PUBLIC_SUPABASE_ANON_KEY"); return; }
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("weekly_tasks")
-      .select("*")
-      .eq("week_start", ws)
-      .order("priority", { ascending: true })
-      .order("sub_priority", { ascending: true })
-      .order("created_at", { ascending: true });
+    let data = null;
+    let err = null;
+    try {
+      const res = await fetch(`/api/weekly/tasks?week_start=${ws}`);
+      const json = await res.json();
+      if (res.ok) data = json.tasks;
+      else err = { message: json.error, code: json.code ?? res.status };
+    } catch (e) {
+      err = { message: e.message, code: "network" };
+    }
     if (err) {
       console.error("Goals fetch error:", err);
       setError(`Błąd ładowania celów: ${err.message} (${err.code})`);
@@ -113,15 +114,23 @@ export default function WeeklyPlanner() {
 
   const addGoal = async () => {
     if (!newGoal.goal.trim()) return;
-    if (!supabase) { setError("Supabase nie jest podłączony"); return; }
     setError(null);
     const samePriority = goals.filter((g) => g.priority === newGoal.priority);
     const pts = PRIORITY_META[newGoal.priority]?.pts ?? 0;
-    const { data, error } = await supabase
-      .from("weekly_tasks")
-      .insert({ task: newGoal.goal, project: newGoal.project, priority: newGoal.priority, sub_priority: samePriority.length + 1, week_start: weekStart, status: "todo", points: pts })
-      .select()
-      .single();
+    let data = null;
+    let error = null;
+    try {
+      const res = await fetch("/api/weekly/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task: newGoal.goal, project: newGoal.project, priority: newGoal.priority, sub_priority: samePriority.length + 1, week_start: weekStart, status: "todo", points: pts }),
+      });
+      const json = await res.json();
+      if (res.ok) data = json.task;
+      else error = { message: json.error };
+    } catch (e) {
+      error = { message: e.message };
+    }
     if (error) { setError(`Błąd dodawania celu: ${error.message}`); return; }
     if (data) setGoals((prev) => {
       const updated = [...prev, mapFromDb([data])[0]];
@@ -142,19 +151,20 @@ export default function WeeklyPlanner() {
     if (!goal) return;
     const newStatus = goal.status === "done" ? "todo" : "done";
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, status: newStatus } : g)));
-    if (supabase) {
-      await supabase
-        .from("weekly_tasks")
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq("id", id);
-    }
+    try {
+      await fetch("/api/weekly/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: newStatus }),
+      });
+    } catch { /* jak wczesniej: blad zapisu nie jest pokazywany */ }
   };
 
   const deleteGoal = async (id) => {
     setGoals((prev) => prev.filter((g) => g.id !== id));
-    if (supabase) {
-      await supabase.from("weekly_tasks").delete().eq("id", id);
-    }
+    try {
+      await fetch(`/api/weekly/tasks?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    } catch { /* jak wczesniej: blad usuniecia nie jest pokazywany */ }
   };
 
   const navigateWeek = (dir) => {
