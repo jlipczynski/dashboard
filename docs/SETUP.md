@@ -32,6 +32,13 @@ Mozesz tez przejsc przez kroki recznie:
 ```bash
 brew install node@22
 ```
+`node@22` jest "keg-only" — Homebrew nie dodaje go do PATH. Jesli `node -v` nie dziala, dopisz:
+```bash
+# zsh:
+echo "export PATH=\"$(brew --prefix node@22)/bin:\$PATH\"" >> ~/.zshrc
+# bash:
+echo "export PATH=\"$(brew --prefix node@22)/bin:\$PATH\"" >> ~/.bash_profile
+```
 
 ### 3. GitHub CLI
 ```bash
@@ -74,7 +81,7 @@ npm install-scripts approve esbuild fsevents sharp unrs-resolver
 npm rebuild
 ```
 Bez tego `esbuild`, `sharp` i `unrs-resolver` nie maja natywnych binarek i `npm run build` / `npm run dev` pada.
-`npm install-scripts approve` dopisuje sekcje `allowScripts` do `package.json` — to lokalna zmiana, nie commituj jej przypadkiem.
+Zatwierdzenia sa juz zapisane w `package.json` (sekcja `allowScripts`, wspolna dla wszystkich Macow). Jesli zmieni sie wersja ktorejs z tych paczek, uruchom `approve` ponownie i zacommituj zmiane `package.json`.
 
 ### 7. Polaczenie z Vercel i pobranie env vars
 ```bash

@@ -61,7 +61,13 @@ if command -v node &>/dev/null; then
 else
   info "Instaluje Node.js LTS..."
   brew install node@22
-  ok "Node.js zainstalowany"
+  # node@22 jest "keg-only" — brew nie linkuje go do PATH, trzeba dopisac recznie.
+  NODE_BIN="$(brew --prefix node@22)/bin"
+  export PATH="$NODE_BIN:$PATH"
+  add_to_shell_rc "export PATH=\"$NODE_BIN:\$PATH\""
+  hash -r
+  command -v node &>/dev/null || fail "node nie jest w PATH po instalacji ($NODE_BIN)"
+  ok "Node.js $(node -v) zainstalowany"
 fi
 
 # --- Git ---
