@@ -39,7 +39,7 @@ export function TopNav() {
             );
           })}
           <button
-            onClick={() => signOut({ callbackUrl: "/api/auth/signin" })}
+            onClick={() => signOut({ callbackUrl: "/" })}
             className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground"
           >
             Wyloguj

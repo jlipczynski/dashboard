@@ -57,6 +57,20 @@ export const authOptions: AuthOptions = {
     async signIn({ user }) {
       return isEmailAllowed(user.email)
     },
+    // Same as the NextAuth default (same origin only), but never redirect after login
+    // to /api/auth/* (e.g. a stale callback-url cookie = /api/auth/signin after signing out).
+    // That caused a loop: a successful login → the "Sign in with Google" page again.
+    async redirect({ url, baseUrl }) {
+      let target: URL
+      try {
+        target = new URL(url, baseUrl)
+      } catch {
+        return baseUrl
+      }
+      if (target.origin !== new URL(baseUrl).origin) return baseUrl
+      if (target.pathname.startsWith("/api/auth")) return baseUrl
+      return target.toString()
+    },
     async jwt({ token, account }) {
       // First login — keep the tokens ONLY in the encrypted JWT (cookie).
       if (account) {
