@@ -1,9 +1,31 @@
 # CLAUDE.md — Reguły dla Claude Code (jan-dashboard)
 
+## Dokumentacja projektu
+
+- **Specyfikacja produktu:** `docs/VISION_2029_SPEC.md` — przeczytaj PRZED każdą sesją pracy
+- **Instalacja na nowym Macu:** `docs/SETUP.md`
+
 ## ⚠️ ZASADY NIEPRZEKRACZALNE
 
 Naruszenie którejkolwiek z poniższych zasad jest niedopuszczalne,
 nawet jeśli wydaje się szybsze lub wygodniejsze.
+
+### 0. Przed zmianami: przeczytaj spec i zrób git pull
+
+Każda sesja zaczyna się od:
+```bash
+git pull --ff-only
+```
+Przeczytaj `docs/VISION_2029_SPEC.md` jeśli nie czytałeś w tej sesji.
+
+### 0a. `npm run build` MUSI przejść przed pushem
+
+Push na gałąź `claude/*` uruchamia **auto-merge do main** i natychmiast trafia na produkcję.
+Dlatego PRZED KAŻDYM `git push`:
+```bash
+npm run build
+```
+Jeśli build nie przechodzi — NIE pushuj. Napraw błąd lub zgłoś Janowi.
 
 ---
 
@@ -125,9 +147,15 @@ Weryfikacja nie jest opcjonalna — jest częścią implementacji.
 # Branch naming:
 git checkout -b claude/{feature}-{SESSION_ID}
 
-# Deploy po implementacji:
-vercel --prod
+# ZAWSZE przed pushem:
+npm run build
+
+# Push = produkcja (auto-merge workflow):
+git push -u origin claude/{feature}-{SESSION_ID}
 ```
+
+**UWAGA:** Push na `claude/*` trafia na main automatycznie. Nie ma review.
+Dlatego `npm run build` przed pushem jest obowiązkowy.
 
 ---
 
