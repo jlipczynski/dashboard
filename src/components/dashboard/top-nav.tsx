@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -37,6 +38,12 @@ export function TopNav() {
               </Link>
             );
           })}
+          <button
+            onClick={() => signOut({ callbackUrl: "/api/auth/signin" })}
+            className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Wyloguj
+          </button>
         </div>
       </div>
     </nav>
