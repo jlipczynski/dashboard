@@ -10,11 +10,7 @@ CREATE TABLE IF NOT EXISTS books (
 );
 
 ALTER TABLE books ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on books" ON books
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 
 CREATE INDEX IF NOT EXISTS idx_books_status ON books (status);
 
@@ -30,11 +26,7 @@ CREATE TABLE IF NOT EXISTS book_readings (
 );
 
 ALTER TABLE book_readings ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on book_readings" ON book_readings
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 
 CREATE INDEX IF NOT EXISTS idx_book_readings_book_date ON book_readings (book_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_book_readings_date ON book_readings (date DESC);

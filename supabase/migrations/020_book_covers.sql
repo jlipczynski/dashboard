@@ -7,8 +7,4 @@ CREATE TABLE IF NOT EXISTS book_covers (
 
 ALTER TABLE book_covers ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  CREATE POLICY "Allow all on book_covers" ON book_covers
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).

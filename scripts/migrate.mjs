@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Runs SQL migrations using direct Postgres connection (local dev)
-// On Vercel, use GET /api/migrate instead (HTTPS-based, no pg needed)
+// JEDYNA sciezka migracji: supabase/migrations/*.sql, uruchamiane RECZNIE po OK Jana:
+//   node --env-file=.env.local scripts/migrate.mjs
+// (nie jest czescia builda; /api/migrate jest wylaczony — 410 Gone)
 
 const dbUrl = process.env.DATABASE_POOLER_URL || process.env.DATABASE_URL;
 if (!dbUrl) {
-  console.log("⚠️  No DATABASE_URL set — skipping build-time migrations");
-  console.log("   Run migrations via: GET /api/migrate");
+  console.log("⚠️  No DATABASE_URL set — nothing to do");
+  console.log("   Uruchom: node --env-file=.env.local scripts/migrate.mjs");
   process.exit(0);
 }
 
@@ -72,6 +73,6 @@ async function migrate() {
 }
 
 migrate().catch((err) => {
-  console.warn("⚠️  Migration failed (build continues):", err.message);
-  console.log("   Run migrations via: GET /api/migrate");
+  console.warn("⚠️  Migration failed:", err.message);
+  process.exitCode = 1;
 });

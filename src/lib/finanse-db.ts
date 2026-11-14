@@ -1,6 +1,5 @@
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
-import { runMigrationSQL, runSQL, hasDbUrl } from "@/lib/db";
 
 export function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,78 +7,6 @@ export function getSupabaseAdmin() {
   if (!url || !key) throw new Error("Missing Supabase config");
   return createClient(url, key);
 }
-
-export const FINANCE_MIGRATION_SQL = `
-CREATE TABLE IF NOT EXISTS finance_categories (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  type TEXT NOT NULL CHECK (type IN ('expense', 'income')),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE finance_categories ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on finance_categories" ON finance_categories
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-CREATE TABLE IF NOT EXISTS finance_rules (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  pattern TEXT NOT NULL UNIQUE,
-  category_id UUID REFERENCES finance_categories(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE finance_rules ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on finance_rules" ON finance_rules
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-CREATE TABLE IF NOT EXISTS finance_transactions (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  date DATE NOT NULL,
-  description TEXT NOT NULL,
-  counterparty TEXT,
-  amount DECIMAL(12,2) NOT NULL,
-  balance DECIMAL(12,2),
-  category_id UUID REFERENCES finance_categories(id),
-  tag TEXT,
-  import_hash TEXT UNIQUE NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE finance_transactions ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on finance_transactions" ON finance_transactions
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-CREATE INDEX IF NOT EXISTS idx_finance_transactions_date ON finance_transactions (date DESC);
-CREATE INDEX IF NOT EXISTS idx_finance_transactions_category ON finance_transactions (category_id);
-
-INSERT INTO finance_categories (name, type) VALUES
-  ('Travel', 'expense'),
-  ('Mati USA', 'expense'),
-  ('Zwierzaki', 'expense'),
-  ('Rozrywka', 'expense'),
-  ('Jedzenie na zewnątrz', 'expense'),
-  ('Inne', 'expense'),
-  ('Food & Drink', 'expense'),
-  ('Kids sport', 'expense'),
-  ('Transportation', 'expense'),
-  ('Kids education', 'expense'),
-  ('Housing & Utilities', 'expense'),
-  ('Kids other', 'expense'),
-  ('Personal Care', 'expense'),
-  ('Shopping', 'expense'),
-  ('Health Care', 'expense'),
-  ('Membership', 'expense'),
-  ('Giving', 'expense'),
-  ('Maliny', 'income'),
-  ('Salary', 'income'),
-  ('Investment', 'income')
-ON CONFLICT (name) DO NOTHING;
-`;
 
 const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" }[] = [
   { name: "Travel", type: "expense" },
@@ -122,12 +49,7 @@ export async function ensureFinanceTables() {
     if (data && data.length === 0) {
       await admin.from("finance_categories").insert(DEFAULT_CATEGORIES);
     }
-    // Ensure tag, merchant and notes columns exist for existing installations
-    if (hasDbUrl()) {
-      await runSQL("ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS tag TEXT;").catch(() => {});
-      await runSQL("ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS merchant TEXT;").catch(() => {});
-      await runSQL("ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS notes TEXT;").catch(() => {});
-    }
+    // Kolumny (tag/merchant/notes) dodaja migracje w supabase/migrations/ — nie w runtime.
     tablesReady = true;
     return;
   }
@@ -137,14 +59,7 @@ export async function ensureFinanceTables() {
     return;
   }
 
-  if (hasDbUrl()) {
-    try {
-      await runMigrationSQL("010_finance.sql", FINANCE_MIGRATION_SQL);
-      tablesReady = true;
-    } catch {
-      // ignore
-    }
-  }
+  // Brak tabel — NIE tworzymy ich w runtime. Migracje tylko recznie (scripts/migrate.mjs).
 }
 
 // ── CSV parser ──────────────────────────────────────────────────────────────

@@ -17,6 +17,4 @@ CREATE TABLE IF NOT EXISTS fitness_goals (
 -- Enable RLS
 ALTER TABLE fitness_goals ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (public dashboard, no auth)
-CREATE POLICY "Allow all on fitness_goals" ON fitness_goals
-  FOR ALL USING (true) WITH CHECK (true);
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).

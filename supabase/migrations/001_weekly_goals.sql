@@ -12,9 +12,7 @@ CREATE TABLE IF NOT EXISTS weekly_goals (
 -- Enable RLS
 ALTER TABLE weekly_goals ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (public dashboard, no auth)
-CREATE POLICY "Allow all on weekly_goals" ON weekly_goals
-  FOR ALL USING (true) WITH CHECK (true);
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 
 -- Index for fast week queries
 CREATE INDEX IF NOT EXISTS idx_weekly_goals_week_start ON weekly_goals (week_start);

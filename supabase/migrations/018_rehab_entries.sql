@@ -10,9 +10,4 @@ CREATE TABLE IF NOT EXISTS rehab_entries (
 -- Enable RLS
 ALTER TABLE rehab_entries ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (public dashboard, no auth)
-DO $$ BEGIN
-  CREATE POLICY "Allow all on rehab_entries" ON rehab_entries
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).

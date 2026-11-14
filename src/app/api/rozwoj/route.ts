@@ -1,25 +1,5 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { runMigrationSQL, hasDbUrl } from "@/lib/db";
-
-const MIGRATION_SQL = `
-CREATE TABLE IF NOT EXISTS rozwoj_entries (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  area TEXT NOT NULL CHECK (area IN ('czytanie', 'sluchanie', 'pisanie')),
-  date DATE NOT NULL,
-  amount INT NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(area, date)
-);
-ALTER TABLE rozwoj_entries ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on rozwoj_entries" ON rozwoj_entries
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-CREATE INDEX IF NOT EXISTS idx_rozwoj_entries_area_date ON rozwoj_entries (area, date DESC);
-`;
 
 let tableReady = false;
 
@@ -38,15 +18,7 @@ async function ensureTable() {
     return;
   }
 
-  // Table missing — create via direct Postgres
-  if (hasDbUrl()) {
-    try {
-      await runMigrationSQL("006_rozwoj_entries.sql", MIGRATION_SQL);
-      tableReady = true;
-    } catch {
-      // ignore
-    }
-  }
+  // Brak tabeli — NIE tworzymy jej w runtime. Migracje tylko recznie (scripts/migrate.mjs).
 }
 
 // GET /api/rozwoj?area=czytanie&days=90
@@ -80,7 +52,7 @@ export async function GET(request: Request) {
     if (error.message.includes("does not exist")) {
       return NextResponse.json({
         entries: [],
-        warning: "Tabela rozwoj_entries nie istnieje. Wejdz na /api/migrate zeby ja utworzyc.",
+        warning: "Tabela rozwoj_entries nie istnieje. Uruchom migracje: node --env-file=.env.local scripts/migrate.mjs",
       });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -112,7 +84,7 @@ export async function POST(request: Request) {
   if (error) {
     if (error.message.includes("does not exist")) {
       return NextResponse.json({
-        error: "Tabela nie istnieje. Wejdz na /api/migrate zeby ja utworzyc.",
+        error: "Tabela nie istnieje. Uruchom migracje: node --env-file=.env.local scripts/migrate.mjs",
       }, { status: 500 });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });

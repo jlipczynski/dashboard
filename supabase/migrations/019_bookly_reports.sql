@@ -19,12 +19,7 @@ CREATE TABLE IF NOT EXISTS bookly_reports (
 -- Enable RLS
 ALTER TABLE bookly_reports ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (public dashboard, no auth)
-DO $$ BEGIN
-  CREATE POLICY "Allow all on bookly_reports" ON bookly_reports
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 
 -- Drive files that could not be read as a Bookly report (skip on next sync)
 CREATE TABLE IF NOT EXISTS bookly_drive_skipped (
@@ -34,8 +29,4 @@ CREATE TABLE IF NOT EXISTS bookly_drive_skipped (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE bookly_drive_skipped ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on bookly_drive_skipped" ON bookly_drive_skipped
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).

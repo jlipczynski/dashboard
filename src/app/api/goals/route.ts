@@ -1,36 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { runMigrationSQL, hasDbUrl } from "@/lib/db";
 
 const ROW_ID = "default";
-
-const MIGRATION_005_SQL = `
-CREATE TABLE IF NOT EXISTS fitness_goals (
-  id TEXT PRIMARY KEY DEFAULT 'default',
-  goals JSONB NOT NULL DEFAULT '{}',
-  gym_days JSONB NOT NULL DEFAULT '[false,false,false,false,false,false,false]',
-  gym_weekly_goal NUMERIC DEFAULT 0,
-  gym_monthly_goal NUMERIC DEFAULT 0,
-  gym_monthly_done NUMERIC DEFAULT 0,
-  run_weekly_goal NUMERIC DEFAULT 0,
-  run_monthly_goal NUMERIC DEFAULT 0,
-  bike_weekly_goal NUMERIC DEFAULT 0,
-  bike_monthly_goal NUMERIC DEFAULT 0,
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE fitness_goals ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on fitness_goals" ON fitness_goals
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-`;
-
-const MIGRATION_007_SQL = `
-ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS rozwoj_targets JSONB NOT NULL DEFAULT '{"czytanie":{"monthly":300,"weekly":75},"sluchanie":{"monthly":600,"weekly":150},"pisanie":{"monthly":30,"weekly":8}}';
-ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS run_entries JSONB NOT NULL DEFAULT '[0,0,0,0,0,0,0]';
-ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS bike_entries JSONB NOT NULL DEFAULT '[0,0,0,0,0,0,0]';
-`;
 
 let tableReady = false;
 
@@ -49,16 +20,7 @@ async function ensureTable() {
     return;
   }
 
-  // Table missing — create via direct Postgres
-  if (hasDbUrl()) {
-    try {
-      await runMigrationSQL("005_fitness_goals.sql", MIGRATION_005_SQL);
-      await runMigrationSQL("007_fitness_goals_extras.sql", MIGRATION_007_SQL);
-      tableReady = true;
-    } catch {
-      // ignore
-    }
-  }
+  // Brak tabeli — NIE tworzymy jej w runtime. Migracje tylko recznie (scripts/migrate.mjs).
 }
 
 export async function GET() {
@@ -114,7 +76,7 @@ export async function POST(request: Request) {
   if (error) {
     if (error.message.includes("does not exist")) {
       return NextResponse.json({
-        error: "Tabela nie istnieje. Wejdz na /api/migrate zeby ja utworzyc.",
+        error: "Tabela nie istnieje. Uruchom migracje: node --env-file=.env.local scripts/migrate.mjs",
       }, { status: 500 });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });

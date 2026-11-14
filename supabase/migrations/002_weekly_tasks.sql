@@ -19,9 +19,7 @@ CREATE TABLE IF NOT EXISTS weekly_tasks (
 -- Enable RLS
 ALTER TABLE weekly_tasks ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (public dashboard, no auth)
-CREATE POLICY "Allow all on weekly_tasks" ON weekly_tasks
-  FOR ALL USING (true) WITH CHECK (true);
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 
 -- Index for fast week queries
 CREATE INDEX IF NOT EXISTS idx_weekly_tasks_week_start ON weekly_tasks (week_start);

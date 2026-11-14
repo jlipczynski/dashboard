@@ -12,9 +12,7 @@ CREATE TABLE IF NOT EXISTS rozwoj_entries (
 -- Enable RLS
 ALTER TABLE rozwoj_entries ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (public dashboard, no auth)
-CREATE POLICY "Allow all on rozwoj_entries" ON rozwoj_entries
-  FOR ALL USING (true) WITH CHECK (true);
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 
 -- Index for fast queries by area and date
 CREATE INDEX IF NOT EXISTS idx_rozwoj_entries_area_date ON rozwoj_entries (area, date DESC);

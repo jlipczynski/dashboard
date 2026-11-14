@@ -52,7 +52,7 @@ Szczegóły schematów w `references/supabase_schema.md`.
 | `/api/backlog/save` | PATCH | Update wpisu backlogu (+ auto-create weekly_tasks) |
 | `/api/backlog/save` | DELETE | Usunięcie wpisu backlogu |
 | `/api/backlog/audio-processed` | GET/POST | Tracking przetworzonych plików audio |
-| `/api/migrate` | GET | Uruchamia migracje SQL |
+| `/api/migrate` | GET/POST | Wylaczony (410). Migracje: `node --env-file=.env.local scripts/migrate.mjs` po OK Jana |
 | `/api/weekly/rollover` | POST | Kopiuje cel na następny tydzień (ochrona przed duplikatami) |
 | `/api/weekly/stats` | GET | Statystyki bieżącego tygodnia + historia 12 tygodni |
 | `/api/weekly/update` | PATCH | Edycja celu (task, project, priority) z przeliczeniem points |

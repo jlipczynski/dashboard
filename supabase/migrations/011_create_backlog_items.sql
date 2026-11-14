@@ -18,11 +18,7 @@ CREATE TABLE IF NOT EXISTS backlog_items (
 );
 
 ALTER TABLE backlog_items ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "Allow all on backlog_items" ON backlog_items
-    FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 
 CREATE INDEX IF NOT EXISTS idx_backlog_status   ON backlog_items(status);
 CREATE INDEX IF NOT EXISTS idx_backlog_pillar   ON backlog_items(pillar);

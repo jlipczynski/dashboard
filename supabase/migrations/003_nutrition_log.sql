@@ -17,9 +17,7 @@ CREATE TABLE IF NOT EXISTS nutrition_log (
 -- Enable RLS
 ALTER TABLE nutrition_log ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (public dashboard, no auth)
-CREATE POLICY "Allow all on nutrition_log" ON nutrition_log
-  FOR ALL USING (true) WITH CHECK (true);
+-- RLS wlaczone, BEZ polityk: dostep tylko przez service role (API routes).
 
 -- Index for date range queries
 CREATE INDEX IF NOT EXISTS idx_nutrition_log_date ON nutrition_log (date DESC);
