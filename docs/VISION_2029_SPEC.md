@@ -172,10 +172,11 @@ Istnieje `/finanse` z napisem „Import z Santandera · Kategoryzacja · Eksport
   - **Migracje wykonane (za zgodą):** 012–015 (backlog: `backlog_audio_processed`, `weekly_tasks.backlog_item_id`), 017 (`finance_subcategories` + `subcategory_id`), 021 (`finance_transactions.merchant`, `notes`). Stan: 20 tabel, wszystkie z RLS, 0 polityk; `_migrations` = 25. Dane bez zmian (weekly_tasks 35, finance_transactions 449).
   - **Usunięto** funkcję `run_migration(text, text)` (SECURITY DEFINER, wykonywała dowolny SQL; dostępna dla roli `authenticated`) oraz `supabase/bootstrap.sql`.
   - **/api/praca:** zamiast nieistniejącej `weekly_goals` (zastąpionej przez `weekly_tasks`) odpytuje `weekly_tasks`; bez zmian w UI.
+  - **Supabase Auth:** rejestracja nowych użytkowników wyłączona (Jan, ręcznie w panelu Supabase); logowanie do aplikacji wyłącznie przez NextAuth.
   - Incydenty: dwa pushe z niekompletnym kodem — Vercel odrzucił oba deploye (Error), produkcja pozostała na poprzedniej wersji; poprawki wdrożone tego samego dnia.
 
   **Otwarte sprawy na następną sesję:**
-  1. Supabase → Authentication → Sign In / Providers: sprawdzić „Allow new users to sign up”; aplikacja loguje przez NextAuth, więc rejestracja w Supabase Auth powinna być wyłączona.
+  1. ~~Supabase → Authentication: wyłączyć „Allow new users to sign up”~~ — zrobione (Jan, ręcznie, 2026-11-14).
   2. MCP Supabase: zatwierdzić serwer w `/mcp` i zalogować; potwierdzić listę tabel przez MCP.
   3. Keepalive: po 05:00 UTC 2026-11-15 sprawdzić w logach Vercel, że cron dostał 200 (wartości `CRON_SECRET` nie da się odczytać z Vercel).
   4. Test w UI na produkcji: `/weekly` (dodaj/odhacz/edytuj/usuń zadanie testowe, nawigacja tygodni) oraz `/rozwoj`, `/cele`, `/praca`, `/finanse` — potem kontrola logów Vercel.
@@ -184,6 +185,7 @@ Istnieje `/finanse` z napisem „Import z Santandera · Kategoryzacja · Eksport
   7. `_migrations` zawiera `001_weekly_goals.sql`, choć tabela świadomie nie istnieje — oznaczyć migrację 001 jako przestarzałą, żeby nie myliła przy nowej bazie.
   8. `SUPABASE_ACCESS_TOKEN` (w `.env.example` opisany jako fallback `/api/migrate`) — sprawdzić, czy jest jeszcze używany; jeśli nie, usunąć z Vercel i unieważnić token.
   9. Next.js zgłasza, że konwencja `middleware` jest przestarzała (`proxy`) — zaplanować migrację.
+  10. Automatyczny cotygodniowy backup bazy do pliku — plan free Supabase nie ma backupów. Ustalić mechanizm (np. zaplanowany `pg_dump`/eksport tabel), miejsce przechowywania poza repo (dane prywatne) i test odtworzenia.
 
 ## 11. Aplikacja jednoosobowa i organizacja pracy na kilku komputerach
 - Aplikacja jest **wyłącznie prywatna**: jeden właściciel, bez kont rodzinnych, udostępniania paneli, multi-tenancy, uprawnień zespołowych czy funkcji SaaS. Jednocześnie wymaga realnego logowania i kontroli autoryzacji do prywatnych danych.
