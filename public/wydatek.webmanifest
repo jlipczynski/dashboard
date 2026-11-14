@@ -1,0 +1,17 @@
+{
+  "name": "Wydatek — Jan's Dashboard",
+  "short_name": "Wydatek",
+  "description": "Szybki zapis wydatku gotówkowego",
+  "id": "/wydatek",
+  "start_url": "/wydatek",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAFAF9",
+  "theme_color": "#FAFAF9",
+  "lang": "pl",
+  "icons": [
+    { "src": "/pwa/wydatek-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/wydatek-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/wydatek-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

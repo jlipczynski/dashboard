@@ -42,6 +42,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png).*)",
+    // Public static assets only (no data). The PWA manifest and icons must be fetchable
+    // without a session — browsers request them without cookies when installing the app.
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|wydatek\\.webmanifest$|pwa/).*)",
   ],
 };
