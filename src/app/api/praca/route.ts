@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/praca?days=31
- * Returns work check-ins for the last N days + weekly_goals existence per week
+ * Returns work check-ins for the last N days + weeks that have tasks in weekly_tasks
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -31,9 +31,9 @@ export async function GET(req: Request) {
       [sinceStr]
     );
 
-    // Get weeks that have goals (from existing weekly_goals table)
+    // Weeks that have a plan. weekly_goals was replaced by weekly_tasks (the table no longer exists).
     const { rows: weeksWithGoals } = await client.query(
-      `SELECT DISTINCT week_start FROM weekly_goals WHERE week_start >= $1 ORDER BY week_start`,
+      `SELECT DISTINCT week_start FROM weekly_tasks WHERE week_start >= $1 ORDER BY week_start`,
       [sinceStr]
     );
 

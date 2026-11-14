@@ -1,5 +1,5 @@
 # Jan's Dashboard — Wizja 2029
-## Specyfikacja rozwojowa dla Claude Code, wersja 1.2
+## Specyfikacja rozwojowa dla Claude Code, wersja 1.3
 
 Data: 2026-11-14  |  Status: wymagania biznesowe do implementacji; bez zmian produkcyjnych
 Aplikacja: https://jan-dashboard.vercel.app/
@@ -161,6 +161,29 @@ Istnieje `/finanse` z napisem „Import z Santandera · Kategoryzacja · Eksport
 - 2026-11-14 v1.1: test nawigacyjny anonimowej sesji potwierdził dostęp bez logowania, poprawny bieżący tydzień po załadowaniu oraz krytyczny wymóg ochrony prywatnych danych; aktualizacja P0.
 
 - 2026-11-14 v1.2: użytkownik zdecydował, że Jan's Dashboard jest aplikacją tylko dla niego; anulowano backlog głosowy i jego dalszy rozwój. Dodano rekomendowany workflow GitHub + Claude Code na wielu komputerach.
+
+- 2026-11-14 v1.3: sesja bezpieczeństwa i porządków (Claude Code). Zmiany produkcyjne:
+  - **Instalacja:** `scripts/setup-mac.sh` naprawiony (zawieszanie na `npx vercel`, globalny `vercel`, natywny instalator Claude Code, PATH dla bash i zsh, `node@22`); `allowScripts` w `package.json`.
+  - **/weekly:** dostęp do danych przeniesiony z klienta anon na `/api/weekly/tasks` (service role, za middleware) — po RLS lista była pusta, a zapisy cicho się nie udawały. Usunięto `src/lib/supabase.ts`. Bez zmian w wyglądzie i punktacji.
+  - **Keepalive:** `CRON_SECRET` ustawiony w Production (Sensitive); `/api/keepalive` 401 bez nagłówka, 200 z sekretem.
+  - **Dostęp Claude do bazy:** MCP Supabase tylko do odczytu (`.mcp.json`), `scripts/db-query.mjs` (domyślnie READ ONLY), reguła w `CLAUDE.md` (SELECT samodzielnie; każda zmiana: SQL + kopia w `backups/` + „OK” Jana).
+  - **Hasło bazy:** `DATABASE_POOLER_URL` miał nieaktualne hasło (Production/Preview/Development) — trasy przez pg (`/api/praca`, dawne `src/lib/db.ts`) i migracje przy buildzie nie łączyły się. Poprawione.
+  - **Jedna ścieżka migracji:** build nie uruchamia migracji; `/api/migrate` zwraca 410; usunięto `src/lib/migrations.ts`, `src/lib/db.ts` i DDL wykonywane w runtime (`/api/goals`, `/api/rozwoj`, `/api/mfp`, `lib/finanse-db.ts`); jedyne źródło: `supabase/migrations/*.sql`, uruchamiane ręcznie `node --env-file=.env.local scripts/migrate.mjs` po „OK”. Z wszystkich migracji usunięto polityki „Allow all” (RLS włączone).
+  - **Migracje wykonane (za zgodą):** 012–015 (backlog: `backlog_audio_processed`, `weekly_tasks.backlog_item_id`), 017 (`finance_subcategories` + `subcategory_id`), 021 (`finance_transactions.merchant`, `notes`). Stan: 20 tabel, wszystkie z RLS, 0 polityk; `_migrations` = 25. Dane bez zmian (weekly_tasks 35, finance_transactions 449).
+  - **Usunięto** funkcję `run_migration(text, text)` (SECURITY DEFINER, wykonywała dowolny SQL; dostępna dla roli `authenticated`) oraz `supabase/bootstrap.sql`.
+  - **/api/praca:** zamiast nieistniejącej `weekly_goals` (zastąpionej przez `weekly_tasks`) odpytuje `weekly_tasks`; bez zmian w UI.
+  - Incydenty: dwa pushe z niekompletnym kodem — Vercel odrzucił oba deploye (Error), produkcja pozostała na poprzedniej wersji; poprawki wdrożone tego samego dnia.
+
+  **Otwarte sprawy na następną sesję:**
+  1. Supabase → Authentication → Sign In / Providers: sprawdzić „Allow new users to sign up”; aplikacja loguje przez NextAuth, więc rejestracja w Supabase Auth powinna być wyłączona.
+  2. MCP Supabase: zatwierdzić serwer w `/mcp` i zalogować; potwierdzić listę tabel przez MCP.
+  3. Keepalive: po 05:00 UTC 2026-11-15 sprawdzić w logach Vercel, że cron dostał 200 (wartości `CRON_SECRET` nie da się odczytać z Vercel).
+  4. Test w UI na produkcji: `/weekly` (dodaj/odhacz/edytuj/usuń zadanie testowe, nawigacja tygodni) oraz `/rozwoj`, `/cele`, `/praca`, `/finanse` — potem kontrola logów Vercel.
+  5. `/weekly`: błędy odhaczania i usuwania są ignorowane bez komunikatu (zachowane 1:1 — osobna decyzja).
+  6. Wartości `weekly_tasks.project` w UI („Ovoc Malinovi”, „Plantacja”, „Zdrowie”…) nie zgadzają się ze stałymi w `CLAUDE.md` (`ovoc`/`plantacja`/`inne`) — ustalić, które są obowiązujące.
+  7. `_migrations` zawiera `001_weekly_goals.sql`, choć tabela świadomie nie istnieje — oznaczyć migrację 001 jako przestarzałą, żeby nie myliła przy nowej bazie.
+  8. `SUPABASE_ACCESS_TOKEN` (w `.env.example` opisany jako fallback `/api/migrate`) — sprawdzić, czy jest jeszcze używany; jeśli nie, usunąć z Vercel i unieważnić token.
+  9. Next.js zgłasza, że konwencja `middleware` jest przestarzała (`proxy`) — zaplanować migrację.
 
 ## 11. Aplikacja jednoosobowa i organizacja pracy na kilku komputerach
 - Aplikacja jest **wyłącznie prywatna**: jeden właściciel, bez kont rodzinnych, udostępniania paneli, multi-tenancy, uprawnień zespołowych czy funkcji SaaS. Jednocześnie wymaga realnego logowania i kontroli autoryzacji do prywatnych danych.
