@@ -17,7 +17,8 @@ BEGIN
       'bookly_reports', 'bookly_drive_skipped',
       'rozwoj_entries', 'fitness_goals', 'nutrition_log', 'rehab_entries',
       'finance_transactions', 'finance_categories', 'finance_subcategories',
-      'finance_tags', 'finance_category_tags', 'finance_rules'
+      'finance_tags', 'finance_category_tags', 'finance_rules',
+      'work_checkins', 'weekly_goals'
     ])
   LOOP
     FOR pol IN
