@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { NextResponse, type NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { authOptions } from "@/lib/google-auth";
+import { getGoogleAccessToken } from "@/lib/google-token";
 import { getSupabaseAdmin } from "@/lib/finanse-db";
 
 type GmailMessage = {
@@ -14,9 +13,8 @@ type GmailHeader = {
   value: string;
 };
 
-export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  const accessToken = session?.accessToken as string | undefined;
+export async function POST(request: NextRequest) {
+  const accessToken = await getGoogleAccessToken(request);
   if (!accessToken) {
     return NextResponse.json({ error: "Zaloguj się ponownie żeby przyznać dostęp do Gmail" }, { status: 401 });
   }

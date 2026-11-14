@@ -1,15 +1,13 @@
-import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/google-auth"
+import { NextResponse, type NextRequest } from "next/server"
+import { getGoogleAccessToken } from "@/lib/google-token"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ fileId: string }> }
 ) {
-  const session = await getServerSession(authOptions)
-  const accessToken = session?.accessToken
+  const accessToken = await getGoogleAccessToken(req)
 
   if (!accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })

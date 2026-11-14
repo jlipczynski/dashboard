@@ -94,7 +94,7 @@ function currentMonth() {
 /* ── Main Component ──────────────────────────────── */
 function FinansePageInner() {
   const { data: session } = useSession();
-  const gmailConnected = !!(session?.accessToken);
+  const gmailConnected = !!session?.googleConnected;
   const [tab, setTab] = useState<"import" | "historia" | "budzet" | "kategorie">("import");
 
   // Categories

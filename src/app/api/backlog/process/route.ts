@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/google-auth"
+import { NextResponse, type NextRequest } from "next/server"
+import { getGoogleAccessToken } from "@/lib/google-token"
 import OpenAI from "openai"
 import Anthropic from "@anthropic-ai/sdk"
 
@@ -9,9 +8,8 @@ export const maxDuration = 60
 
 const WHISPER_MAX_SIZE = 25 * 1024 * 1024
 
-export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
-  const accessToken = session?.accessToken
+export async function POST(req: NextRequest) {
+  const accessToken = await getGoogleAccessToken(req)
 
   if (!accessToken) {
     return NextResponse.json({ error: "Nie zalogowany do Google" }, { status: 401 })

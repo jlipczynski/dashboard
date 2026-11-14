@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/google-auth";
+import { NextResponse, type NextRequest } from "next/server";
+import { getGoogleAccessToken } from "@/lib/google-token";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { isSupportedImage, parseBooklyImage } from "@/lib/bookly-parse";
 import { saveReport } from "@/lib/bookly-db";
@@ -27,9 +26,8 @@ async function drive(path: string, token: string) {
  * reads new report images with Claude and saves them. Already imported
  * (or unreadable) files are skipped.
  */
-export async function POST() {
-  const session = await getServerSession(authOptions);
-  const token = session?.accessToken;
+export async function POST(req: NextRequest) {
+  const token = await getGoogleAccessToken(req);
   if (!token) {
     return NextResponse.json({ error: "Nie zalogowany do Google", needsLogin: true }, { status: 401 });
   }

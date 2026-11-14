@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
+import { NextResponse, type NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { authOptions } from "@/lib/google-auth"
+import { getGoogleAccessToken } from "@/lib/google-token"
 
 export const dynamic = "force-dynamic"
 
@@ -21,9 +20,8 @@ function getSupabaseAdmin() {
   return createClient(url, key)
 }
 
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  const accessToken = session?.accessToken
+export async function GET(req: NextRequest) {
+  const accessToken = await getGoogleAccessToken(req)
 
   if (!accessToken) {
     return NextResponse.json({ error: "Nie zalogowany do Google" }, { status: 401 })

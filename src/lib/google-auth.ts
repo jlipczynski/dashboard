@@ -1,5 +1,6 @@
 import type { AuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
+import { refreshGoogleAccessToken, isAccessTokenValid } from "@/lib/google-token"
 
 // Ensure NEXTAUTH_URL is set on Vercel even if not configured in dashboard.
 // Without this, NextAuth falls back to VERCEL_URL which is a deployment-specific
@@ -10,35 +11,6 @@ if (!process.env.NEXTAUTH_URL) {
     process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
   } else if (process.env.VERCEL_URL) {
     process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_URL}`
-  }
-}
-
-
-async function refreshAccessToken(token: any) {
-  try {
-    const url =
-      "https://oauth2.googleapis.com/token?" +
-      new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        grant_type: "refresh_token",
-        refresh_token: token.refreshToken,
-      })
-
-    const response = await fetch(url, { method: "POST" })
-    const refreshedTokens = await response.json()
-
-    if (!response.ok) throw refreshedTokens
-
-    return {
-      ...token,
-      accessToken: refreshedTokens.access_token,
-      accessTokenExpires: Date.now() + refreshedTokens.expires_in * 1000,
-      refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
-    }
-  } catch (error) {
-    console.error("[AUTH] Failed to refresh access token", error)
-    return { ...token, error: "RefreshAccessTokenError" }
   }
 }
 
@@ -53,6 +25,16 @@ export function isEmailAllowed(email: string | null | undefined): boolean {
   const allowed = getAllowedEmails()
   if (allowed.length === 0) return false // no allowlist = deny all
   return allowed.includes((email ?? "").toLowerCase())
+}
+
+// Logs NOTHING from NextAuth metadata: its debug/error payloads contain tokens,
+// the client secret, cookies and profile data. We keep only the code and the error name/message.
+function safeErrorSummary(metadata: unknown): string {
+  const m = metadata as { error?: { name?: string; message?: string }; name?: string; message?: string } | undefined
+  const err = m?.error ?? m
+  const name = typeof err?.name === "string" ? err.name : ""
+  const message = typeof err?.message === "string" ? err.message.slice(0, 200) : ""
+  return [name, message].filter(Boolean).join(": ")
 }
 
 export const authOptions: AuthOptions = {
@@ -76,38 +58,54 @@ export const authOptions: AuthOptions = {
       return isEmailAllowed(user.email)
     },
     async jwt({ token, account }) {
-      // First login — save tokens
+      // First login — keep the tokens ONLY in the encrypted JWT (cookie).
       if (account) {
         return {
           ...token,
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
           accessTokenExpires: Date.now() + (account.expires_in as number) * 1000,
+          error: undefined,
         }
       }
       // Token still valid
-      if (Date.now() < (token.accessTokenExpires as number)) {
+      if (isAccessTokenValid(token.accessTokenExpires)) {
         return token
       }
-      // Token expired — refresh
-      return refreshAccessToken(token)
+      if (!token.refreshToken) {
+        return { ...token, error: "RefreshAccessTokenError" }
+      }
+      // Token expired — refresh (shared mechanism with cache/deduplication)
+      const refreshed = await refreshGoogleAccessToken(token.refreshToken)
+      if (!refreshed.ok) {
+        return { ...token, error: refreshed.error }
+      }
+      return {
+        ...token,
+        accessToken: refreshed.accessToken,
+        accessTokenExpires: refreshed.accessTokenExpires,
+        refreshToken: refreshed.refreshToken ?? token.refreshToken,
+        error: undefined,
+      }
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken as string
+      // NEVER put Google tokens in the session — it goes to the browser (/api/auth/session).
+      // Routes fetch the token on the server: getGoogleAccessToken(req) in lib/google-token.ts.
+      session.googleConnected = !!token.refreshToken && !token.error
       session.error = token.error as string | undefined
       return session
     },
   },
   logger: {
     error(code, metadata) {
-      console.error("[NEXTAUTH ERROR]", code, JSON.stringify(metadata, null, 2))
+      console.error("[NEXTAUTH ERROR]", code, safeErrorSummary(metadata))
     },
     warn(code) {
       console.warn("[NEXTAUTH WARN]", code)
     },
-    debug(code, metadata) {
-      console.log("[NEXTAUTH DEBUG]", code, JSON.stringify(metadata, null, 2))
-    },
+    // Must be an explicit no-op: a custom logger.debug in NextAuth v4 overrides debug:false
+    // (next-auth/utils/logger.js) and used to log tokens and the client secret.
+    debug() {},
   },
   secret: process.env.NEXTAUTH_SECRET,
 }
