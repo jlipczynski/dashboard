@@ -17,7 +17,7 @@ description: |
 - **Push**: tylko na `claude/*-{SESSION_ID}` — nigdy bezpośrednio na main
 ## Stack technologiczny
 - **Frontend**: Next.js 16 (App Router), React, TypeScript
-- **Baza danych**: Supabase (Postgres) — projekt ID: `qvjvbkbgrisilvihxcsq`
+- **Baza danych**: Supabase (Postgres) — projekt ID: patrz Vercel env vars
 - **Auth**: next-auth z Google Provider (OAuth 2.0)
 - **Styl**: DM Sans + Space Mono, białe tło (#FAFAF9), light theme — **nigdy dark**
 - **Deploy**: Vercel CLI + auto-merge PR workflow
@@ -73,8 +73,8 @@ Jan używa metodologii 4DX:
 - **Plantacja (GR Lipczyński)** — farma malinowa (kontakt: Olgierd, Pani Marlena, Kulig)
 ## Backlog audio — jak działa
 1. iPhone Voice Memos → Udostępnij → Google Drive folder "Backlog Audio"
-2. `/backlog` strona listuje pliki z Drive (folder ID: `1Yiehs2yO_LjKjd_OtH7Cc51q4OHAaeIR`)
-3. Pliki posortowane + filtrowane (nowe/stare, przetworzone/nieprzetworzone)
+2. `/backlog` strona listuje pliki z Drive (folder ID w env GOOGLE_DRIVE_BACKLOG_FOLDER_ID)
+3. Pliki posortowane + filtrowane (nowe/stare, przetworzone/nieprzetworzone) — folder ID w env GOOGLE_DRIVE_BACKLOG_FOLDER_ID
 4. Klik play przy pliku → odtwarzanie audio inline w przeglądarce
 5. Klik "Przetwórz" → pobiera plik → Whisper API (model: `whisper-1`, autodetect PL)
 6. Transkrypcja → Claude API (`claude-sonnet-4-20250514`) → klasyfikacja na wpisy
