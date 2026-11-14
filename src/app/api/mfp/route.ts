@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { runMigrationSQL, hasDbUrl } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -31,8 +31,9 @@ CREATE INDEX IF NOT EXISTS idx_nutrition_log_date ON nutrition_log (date DESC);
 let tableReady = false;
 
 async function ensureTable(): Promise<boolean> {
-  if (tableReady || !supabase) return tableReady;
+  if (tableReady) return tableReady;
 
+  const supabase = getSupabaseAdmin();
   // Check if table exists via Supabase client
   const { error } = await supabase.from("nutrition_log").select("date").limit(1);
   if (!error) {
@@ -199,9 +200,7 @@ function parseMfpCsv(csv: string): NutritionRow[] {
 
 // POST: import CSV
 export async function POST(req: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   try {
     const body = await req.json();
@@ -243,9 +242,7 @@ export async function POST(req: Request) {
 
 // GET: fetch nutrition data (last 30 days by default)
 export async function GET(req: Request) {
-  if (!supabase) {
-    return NextResponse.json({ entries: [] });
-  }
+  const supabase = getSupabaseAdmin();
 
   try {
     await ensureTable();

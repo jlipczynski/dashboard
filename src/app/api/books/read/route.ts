@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 // POST /api/books/read — log a reading session
 // Body: { book_id, page_number, date }
 export async function POST(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const body = await request.json();
   const { book_id, page_number, date } = body;
@@ -104,9 +102,7 @@ export async function POST(request: Request) {
 
 // GET /api/books/read?book_id=...&days=90 — get reading history for a book
 export async function GET(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ readings: [] });
-  }
+  const supabase = getSupabaseAdmin();
 
   const { searchParams } = new URL(request.url);
   const bookId = searchParams.get("book_id");
@@ -141,9 +137,7 @@ export async function GET(request: Request) {
 // PATCH /api/books/read — edit a book reading's pages_read
 // Body: { id, pages_read }
 export async function PATCH(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const body = await request.json();
   const { id, pages_read } = body;
@@ -238,9 +232,7 @@ export async function PATCH(request: Request) {
 
 // DELETE /api/books/read?id=... — delete a book reading and subtract from rozwoj_entries
 export async function DELETE(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

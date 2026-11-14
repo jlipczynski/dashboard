@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -8,9 +8,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * Returns daily rehab entries in range (both optional).
  */
 export async function GET(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ entries: [] });
-  }
+  const supabase = getSupabaseAdmin();
 
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from");
@@ -39,9 +37,7 @@ export async function GET(request: Request) {
  * Upserts the entry for that day.
  */
 export async function POST(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const body = await request.json();
   const date = body.date;
@@ -69,9 +65,7 @@ export async function POST(request: Request) {
  * DELETE /api/rehab?date=YYYY-MM-DD
  */
 export async function DELETE(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const date = new URL(request.url).searchParams.get("date");
   if (!date || !DATE_RE.test(date)) {

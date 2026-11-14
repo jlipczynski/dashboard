@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { runMigrationSQL, hasDbUrl } from "@/lib/db";
 
 const MIGRATION_SQL = `
@@ -24,8 +24,9 @@ CREATE INDEX IF NOT EXISTS idx_rozwoj_entries_area_date ON rozwoj_entries (area,
 let tableReady = false;
 
 async function ensureTable() {
-  if (tableReady || !supabase) return;
+  if (tableReady) return;
 
+  const supabase = getSupabaseAdmin();
   const { error } = await supabase.from("rozwoj_entries").select("id").limit(1);
   if (!error) {
     tableReady = true;
@@ -50,9 +51,7 @@ async function ensureTable() {
 
 // GET /api/rozwoj?area=czytanie&days=90
 export async function GET(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ entries: [] });
-  }
+  const supabase = getSupabaseAdmin();
 
   await ensureTable();
 
@@ -92,9 +91,7 @@ export async function GET(request: Request) {
 
 // POST /api/rozwoj
 export async function POST(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   await ensureTable();
 
@@ -126,9 +123,7 @@ export async function POST(request: Request) {
 
 // DELETE /api/rozwoj?id=...
 export async function DELETE(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   await ensureTable();
 

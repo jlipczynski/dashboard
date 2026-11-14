@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { runMigrationSQL, hasDbUrl } from "@/lib/db";
 
 const ROW_ID = "default";
@@ -35,7 +35,8 @@ ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS bike_entries JSONB NOT NULL D
 let tableReady = false;
 
 async function ensureTable() {
-  if (tableReady || !supabase) return;
+  if (tableReady) return;
+  const supabase = getSupabaseAdmin();
 
   const { error } = await supabase.from("fitness_goals").select("id").limit(1);
   if (!error) {
@@ -61,11 +62,8 @@ async function ensureTable() {
 }
 
 export async function GET() {
-  if (!supabase) {
-    return NextResponse.json({ data: null });
-  }
-
   await ensureTable();
+  const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
     .from("fitness_goals")
@@ -88,12 +86,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
-
   await ensureTable();
-
+  const supabase = getSupabaseAdmin();
   const body = await request.json();
 
   const row = {
@@ -138,12 +132,8 @@ const ALLOWED_COLUMNS = new Set([
 ]);
 
 export async function PATCH(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
-
   await ensureTable();
-
+  const supabase = getSupabaseAdmin();
   const body = await request.json();
 
   // Only allow known columns

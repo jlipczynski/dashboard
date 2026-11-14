@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 // GET /api/books?status=reading
 export async function GET(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ books: [] });
-  }
+  const supabase = getSupabaseAdmin();
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
@@ -33,9 +31,7 @@ export async function GET(request: Request) {
 
 // POST /api/books — create a new book
 export async function POST(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const body = await request.json();
   const { title, total_pages, type, cover_url } = body;
@@ -68,9 +64,7 @@ export async function POST(request: Request) {
 
 // PATCH /api/books — update a book
 export async function PATCH(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const body = await request.json();
   const { id, ...updates } = body;
@@ -122,9 +116,7 @@ export async function PATCH(request: Request) {
 
 // DELETE /api/books?id=...
 export async function DELETE(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

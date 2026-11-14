@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/google-auth";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { isSupportedImage, parseBooklyImage } from "@/lib/bookly-parse";
 import { saveReport } from "@/lib/bookly-db";
 
@@ -33,9 +33,7 @@ export async function POST() {
   if (!token) {
     return NextResponse.json({ error: "Nie zalogowany do Google", needsLogin: true }, { status: 401 });
   }
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   // 1. Find the folder by name
   const folderQ = new URLSearchParams({

@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -27,7 +27,7 @@ export function validateReport(b: Partial<BooklyReportInput>): string | null {
 
 /** Upsert by period (same range imported again replaces the previous one). */
 export async function saveReport(b: BooklyReportInput) {
-  if (!supabase) throw new Error("Supabase not configured");
+  const supabase = getSupabaseAdmin();
   const row = {
     period_from: b.period_from,
     period_to: b.period_to,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -8,9 +8,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * Daily calories from nutrition_log (shared with MFP CSV import).
  */
 export async function GET(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ entries: [] });
-  }
+  const supabase = getSupabaseAdmin();
 
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from");
@@ -39,9 +37,7 @@ export async function GET(request: Request) {
  * Manual daily entry — upserts only the calories column (MFP macros stay intact).
  */
 export async function POST(request: Request) {
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+  const supabase = getSupabaseAdmin();
 
   const body = await request.json();
   const date = body.date;

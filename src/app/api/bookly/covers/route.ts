@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { lookupCover } from "@/lib/covers";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,8 @@ export const maxDuration = 60;
  * (Google Books, then Open Library) and caches the result in book_covers.
  */
 export async function POST(request: Request) {
+  const supabase = getSupabaseAdmin();
+
   const body = await request.json();
   const titles: string[] = Array.isArray(body.titles)
     ? [...new Set<string>(body.titles.filter((t: unknown) => typeof t === "string" && t.trim()).map((t: string) => t.trim()))].slice(0, 100)
@@ -18,10 +20,8 @@ export async function POST(request: Request) {
   if (titles.length === 0) return NextResponse.json({ covers: {} });
 
   const covers: Record<string, string | null> = {};
-  if (supabase) {
-    const { data } = await supabase.from("book_covers").select("title, cover_url").in("title", titles);
-    for (const row of (data ?? []) as { title: string; cover_url: string | null }[]) covers[row.title] = row.cover_url;
-  }
+  const { data } = await supabase.from("book_covers").select("title, cover_url").in("title", titles);
+  for (const row of (data ?? []) as { title: string; cover_url: string | null }[]) covers[row.title] = row.cover_url;
 
   // Look up missing titles a few at a time (free APIs rate-limit bursts)
   const missing = titles.filter((t) => !(t in covers));
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
   // Cache found covers and real "not found" results — never a failed lookup
   const toCache = found.filter((f) => f.url || f.definitive).map((f) => ({ title: f.title, cover_url: f.url }));
-  if (supabase && toCache.length > 0) {
+  if (toCache.length > 0) {
     await supabase.from("book_covers").upsert(toCache);
   }
 

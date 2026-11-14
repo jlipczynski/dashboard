@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { saveReport, validateReport, type BooklyReportInput } from "@/lib/bookly-db";
 
 const COLUMNS = "id, period_from, period_to, minutes, pages, reading_days, books_finished, finished_titles, source, created_at";
 
 /** GET /api/bookly/reports — all imported Bookly reports. */
 export async function GET() {
-  if (!supabase) return NextResponse.json({ reports: [] });
+  const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
     .from("bookly_reports")
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
 
 /** DELETE /api/bookly/reports?id=… */
 export async function DELETE(request: Request) {
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  const supabase = getSupabaseAdmin();
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Brak id" }, { status: 400 });
   const { error } = await supabase.from("bookly_reports").delete().eq("id", id);
