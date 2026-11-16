@@ -42,6 +42,7 @@ function table(name: string) {
     delete: () => { op = "delete"; return b },
     eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b },
     gte: (c: string, v: string) => { filters.push((r) => String(r[c]) >= v); return b },
+    is: (c: string, v: unknown) => { filters.push((r) => (r[c] ?? null) === v); return b },
     like: (c: string, p: string) => { filters.push((r) => String(r[c]).startsWith(p.replace(/%$/, ""))); return b },
     order: (col: string, o: { ascending: boolean }) => { order = { col, asc: o.ascending }; return b },
     limit: (n: number) => { limitN = n; return b },
@@ -192,6 +193,14 @@ describe("Cofnij (undo) and the list", () => {
     expect(d.recent).toHaveLength(5)
     expect(d.recent.map((r: { amountGrosze: number }) => r.amountGrosze)).toEqual([700, 600, 500, 400, 300])
     expect(d.recent.every((r: { key: string | null }) => r.key)).toBe(true)
+  })
+
+  it("GET: entries moved to the trash (deleted_at) are not listed", async () => {
+    await post({ amount: "1", idempotencyKey: key() })
+    await post({ amount: "2", idempotencyKey: key() })
+    db.tx[db.tx.length - 1].deleted_at = new Date().toISOString()
+    const d = await (await get()).json()
+    expect(d.recent.map((r: { amountGrosze: number }) => r.amountGrosze)).toEqual([100])
   })
 })
 

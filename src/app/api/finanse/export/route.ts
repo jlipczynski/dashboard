@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     .from("finance_transactions")
     .select("*, finance_categories(id, name, type)")
     .not("category_id", "is", null)
+    .is("deleted_at", null)
     .order("date", { ascending: false });
 
   if (month) {

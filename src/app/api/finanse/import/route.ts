@@ -36,14 +36,19 @@ export async function POST(request: Request) {
       subcategoryName: (r.finance_subcategories as unknown as { name: string } | null)?.name || null,
     }));
 
-  // Check which hashes already exist in DB (deduplication)
+  // Check which hashes already exist in DB (deduplication).
+  // Deliberately NO deleted_at filter: a transaction moved to the trash must still count as
+  // existing, otherwise re-importing the same period would bring it back.
   const hashes = parsed.map((t) => t.importHash);
   const { data: existingData } = await admin
     .from("finance_transactions")
-    .select("import_hash")
+    .select("import_hash, deleted_at")
     .in("import_hash", hashes);
 
   const existingHashes = new Set((existingData || []).map((r) => r.import_hash as string));
+  const trashedHashes = new Set(
+    (existingData || []).filter((r) => r.deleted_at).map((r) => r.import_hash as string)
+  );
 
   // Match rules against each transaction
   function matchRules(description: string, merchant: string, counterparty: string | null) {
@@ -65,6 +70,7 @@ export async function POST(request: Request) {
     return {
       ...t,
       isDuplicate,
+      inTrash: trashedHashes.has(t.importHash),
       categoryId: match?.categoryId || null,
       categoryName: match?.categoryName || null,
       subcategoryId: match?.subcategoryId || null,
@@ -83,6 +89,7 @@ export async function POST(request: Request) {
     total: transactions.length,
     new: newTx.length,
     duplicates: transactions.length - newTx.length,
+    inTrash: transactions.filter((t) => t.inTrash).length,
     autoCategorized: newTx.filter((t) => t.categoryId && !t.aiSuggested).length,
     aiSuggested: newTx.filter((t) => t.aiSuggested).length,
     needsReview: newTx.filter((t) => !t.categoryId).length,

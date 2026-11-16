@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin, ensureFinanceTables } from "@/lib/finanse-db";
 
 // GET /api/finanse/transactions?month=2026-03&categoryId=...
+// GET /api/finanse/transactions?trash=true — only rows in the trash (deleted_at set), newest deletion first, no month filter.
 export async function GET(request: Request) {
   await ensureFinanceTables();
 
@@ -9,11 +10,25 @@ export async function GET(request: Request) {
   const month = searchParams.get("month"); // YYYY-MM
   const categoryId = searchParams.get("categoryId");
   const uncategorized = searchParams.get("uncategorized") === "true";
+  const trash = searchParams.get("trash") === "true";
 
   const admin = getSupabaseAdmin();
+  const select = "*, finance_categories(id, name, type), finance_subcategories(id, name)";
+
+  if (trash) {
+    const { data, error } = await admin
+      .from("finance_transactions")
+      .select(select)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ transactions: data });
+  }
+
   let query = admin
     .from("finance_transactions")
-    .select("*, finance_categories(id, name, type), finance_subcategories(id, name)")
+    .select(select)
+    .is("deleted_at", null)
     .order("date", { ascending: false });
 
   if (uncategorized) {
@@ -95,10 +110,20 @@ export async function POST(request: Request) {
 }
 
 // PATCH /api/finanse/transactions?id=...  { categoryId }
+// PATCH /api/finanse/transactions?id=...&restore=true — take the row out of the trash.
 export async function PATCH(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+  if (searchParams.get("restore") === "true") {
+    const { error } = await getSupabaseAdmin()
+      .from("finance_transactions")
+      .update({ deleted_at: null })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
 
   const { categoryId, subcategoryId, tag, notes } = await request.json();
 
@@ -122,14 +147,20 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-// DELETE /api/finanse/transactions?id=...
+// DELETE /api/finanse/transactions?id=... — moves the row to the trash (soft delete).
+// The row stays in the DB so its import_hash keeps blocking a re-import of the same transaction.
+// No hard delete from the UI on purpose: it would bring the duplicates problem back.
 export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const admin = getSupabaseAdmin();
-  const { error } = await admin.from("finance_transactions").delete().eq("id", id);
+  const { error } = await admin
+    .from("finance_transactions")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("deleted_at", null); // already in the trash → keep the original deletion date
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });

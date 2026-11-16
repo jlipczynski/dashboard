@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSession, signIn, SessionProvider } from "next-auth/react";
 import { BackButton } from "@/components/dashboard/back-button";
+import { sortTransactions, defaultSortDir, type HistSortCol, type SortDir } from "@/lib/finanse-sort";
 
 /* ── Types ──────────────────────────────────────── */
 type Category = {
@@ -40,6 +41,7 @@ type ImportedTransaction = {
   balance: number | null;
   importHash: string;
   isDuplicate: boolean;
+  inTrash?: boolean;
   categoryId: string | null;
   categoryName: string | null;
   subcategoryId: string | null;
@@ -66,6 +68,8 @@ type SavedTransaction = {
   subcategory_id: string | null;
   tag: string | null;
   notes: string | null;
+  created_at?: string | null;
+  deleted_at?: string | null;
   finance_categories: { id: string; name: string; type: string } | null;
   finance_subcategories: { id: string; name: string } | null;
 };
@@ -74,6 +78,7 @@ type ImportStats = {
   total: number;
   new: number;
   duplicates: number;
+  inTrash?: number;
   autoCategorized: number;
   aiSuggested: number;
   needsReview: number;
@@ -93,6 +98,10 @@ function formatAmount(amount: number) {
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T12:00:00");
   return d.toLocaleDateString("pl-PL", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("pl-PL", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function currentMonth() {
@@ -161,8 +170,12 @@ function FinansePageInner() {
 
   // Historia state
   const [histMonth, setHistMonth] = useState(currentMonth());
-  const [histFilter, setHistFilter] = useState<"all" | "uncategorized">("all");
+  const [histFilter, setHistFilter] = useState<"all" | "uncategorized" | "trash">("all");
   const [transactions, setTransactions] = useState<SavedTransaction[]>([]);
+  const [trashCount, setTrashCount] = useState(0);
+  // Historia / Kosz sorting — own state (not shared with Budżet); survives month and filter changes.
+  const [histSortCol, setHistSortCol] = useState<HistSortCol>("date");
+  const [histSortDir, setHistSortDir] = useState<SortDir>("desc");
   const [loadingTx, setLoadingTx] = useState(false);
   const [pendingCategories, setPendingCategories] = useState<Record<string, string>>({});
   const [pendingSubcategories, setPendingSubcategories] = useState<Record<string, string>>({});
@@ -229,15 +242,27 @@ function FinansePageInner() {
   // Load transactions when historia tab active or month/filter changes
   const loadTransactions = useCallback(() => {
     setLoadingTx(true);
-    const url = histFilter === "uncategorized"
+    const url = histFilter === "trash"
+      ? `/api/finanse/transactions?trash=true`
+      : histFilter === "uncategorized"
       ? `/api/finanse/transactions?uncategorized=true`
       : `/api/finanse/transactions?month=${histMonth}`;
     fetch(url)
       .then((r) => r.json())
-      .then((d) => setTransactions(d.transactions || []))
+      .then((d) => {
+        setTransactions(d.transactions || []);
+        if (histFilter === "trash") setTrashCount((d.transactions || []).length);
+      })
       .catch(() => {})
       .finally(() => setLoadingTx(false));
   }, [histMonth, histFilter]);
+
+  const loadTrashCount = useCallback(() => {
+    fetch(`/api/finanse/transactions?trash=true`)
+      .then((r) => r.json())
+      .then((d) => setTrashCount((d.transactions || []).length))
+      .catch(() => {});
+  }, []);
 
   function subcatsFor(categoryId: string) {
     return subcategories.filter((s) => s.category_id === categoryId);
@@ -254,6 +279,10 @@ function FinansePageInner() {
         .finally(() => setLoadingTx(false));
     }
   }, [tab, loadTransactions, histMonth]);
+
+  useEffect(() => {
+    if (tab === "historia") loadTrashCount();
+  }, [tab, loadTrashCount]);
 
   // Load rules when kategorie tab active
   useEffect(() => {
@@ -909,10 +938,28 @@ function FinansePageInner() {
   }
 
   async function deleteTransaction(txId: string) {
-    if (!confirm("Usunąć transakcję?")) return;
-    await fetch(`/api/finanse/transactions?id=${txId}`, { method: "DELETE" });
-    loadTransactions();
+    if (!confirm("Przenieść do kosza? Transakcja nie wróci przy kolejnym imporcie.")) return;
+    const res = await fetch(`/api/finanse/transactions?id=${txId}`, { method: "DELETE" });
+    if (res.ok) setTransactions((prev) => prev.filter((t) => t.id !== txId));
+    else loadTransactions();
+    loadTrashCount();
   }
+
+  async function restoreTransaction(txId: string) {
+    const res = await fetch(`/api/finanse/transactions?id=${txId}&restore=true`, { method: "PATCH" });
+    if (res.ok) {
+      setTransactions((prev) => prev.filter((t) => t.id !== txId));
+      setTrashCount((n) => Math.max(0, n - 1));
+    } else {
+      loadTransactions();
+    }
+  }
+
+  function toggleHistSort(col: HistSortCol) {
+    if (histSortCol === col) setHistSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setHistSortCol(col); setHistSortDir(defaultSortDir(col)); }
+  }
+  const histSortIcon = (col: HistSortCol) => (histSortCol === col ? (histSortDir === "asc" ? " ▲" : " ▼") : "");
 
   function handleExport() {
     window.location.href = `/api/finanse/export?month=${histMonth}`;
@@ -1018,6 +1065,11 @@ function FinansePageInner() {
   const visibleRows = newRows.slice(importPage * IMPORT_PAGE_SIZE, (importPage + 1) * IMPORT_PAGE_SIZE);
   const expenseCategories = categories.filter((c) => c.type === "expense");
   const incomeCategories = categories.filter((c) => c.type === "income");
+
+  const sortedHistTransactions = useMemo(
+    () => sortTransactions(transactions, histSortCol, histSortDir),
+    [transactions, histSortCol, histSortDir]
+  );
 
   // Historia / Budżet stats
   const totalExpenses = transactions
@@ -1138,6 +1190,9 @@ function FinansePageInner() {
                   <div key={s.label} className="rounded-xl border border-border bg-card p-3 text-center">
                     <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
                     <p className="text-xs text-muted-foreground">{s.label}</p>
+                    {s.label === "Duplikatów" && (importStats.inTrash ?? 0) > 0 && (
+                      <p className="text-[10px] text-muted-foreground">w tym w koszu: {importStats.inTrash}</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1490,11 +1545,17 @@ function FinansePageInner() {
                   className={`px-3 py-2 border-l border-border transition-colors ${histFilter === "uncategorized" ? "bg-amber-500 text-white font-medium" : "bg-background text-muted-foreground hover:text-foreground"}`}
                 >
                   Do kategoryzacji
-                  {histFilter !== "uncategorized" && transactions.filter(t => !t.category_id).length > 0 && (
+                  {histFilter === "all" && transactions.filter(t => !t.category_id).length > 0 && (
                     <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
                       {transactions.filter(t => !t.category_id).length}
                     </span>
                   )}
+                </button>
+                <button
+                  onClick={() => setHistFilter("trash")}
+                  className={`px-3 py-2 border-l border-border transition-colors ${histFilter === "trash" ? "bg-slate-600 text-white font-medium" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                >
+                  🗑 Kosz ({trashCount})
                 </button>
               </div>
               {histFilter === "all" && (
@@ -1531,7 +1592,7 @@ function FinansePageInner() {
             )}
 
             {/* Summary */}
-            {!loadingTx && transactions.length > 0 && (
+            {!loadingTx && histFilter !== "trash" && transactions.length > 0 && (
               <div className="mt-4 grid grid-cols-3 gap-3">
                 <div className="rounded-xl border border-border bg-card p-3 text-center">
                   <p className="text-xl font-bold text-red-600">−{formatAmount(totalExpenses)}</p>
@@ -1555,23 +1616,64 @@ function FinansePageInner() {
               <p className="mt-6 text-center text-sm text-muted-foreground">Ładowanie...</p>
             ) : transactions.length === 0 ? (
               <div className="mt-6 rounded-xl border border-border bg-card p-8 text-center">
-                <p className="text-sm text-muted-foreground">Brak transakcji w tym miesiącu.</p>
+                <p className="text-sm text-muted-foreground">{histFilter === "trash" ? "Kosz jest pusty." : "Brak transakcji w tym miesiącu."}</p>
               </div>
             ) : (
               <div className="mt-4 overflow-x-auto rounded-xl border border-border">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/50">
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Data</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Opis</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Kategoria</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Tag</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Kwota</th>
+                      <th onClick={() => toggleHistSort("date")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Data{histSortIcon("date")}</th>
+                      <th onClick={() => toggleHistSort("name")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Opis{histSortIcon("name")}</th>
+                      <th onClick={() => toggleHistSort("category")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Kategoria{histSortIcon("category")}</th>
+                      <th onClick={() => toggleHistSort("tag")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Tag{histSortIcon("tag")}</th>
+                      <th onClick={() => toggleHistSort("amount")} className="cursor-pointer px-3 py-2 text-right font-medium text-muted-foreground hover:text-foreground">Kwota{histSortIcon("amount")}</th>
+                      {histFilter === "trash" && (
+                        <th onClick={() => toggleHistSort("deleted")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Usunięto{histSortIcon("deleted")}</th>
+                      )}
                       <th className="px-3 py-2" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {transactions.map((tx) => (
+                    {histFilter === "trash" ? sortedHistTransactions.map((tx) => (
+                      <tr key={tx.id} className="hover:bg-muted/30">
+                        <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
+                          {formatDate(tx.date)}
+                        </td>
+                        <td className="px-3 py-2 max-w-[320px]">
+                          <p className="break-words text-foreground">{tx.description}</p>
+                          {tx.counterparty && (
+                            <p className="text-xs text-muted-foreground break-words">{tx.counterparty}</p>
+                          )}
+                          {tx.notes && (
+                            <p className="mt-0.5 text-xs text-muted-foreground break-words">{tx.notes}</p>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-foreground">
+                          {tx.finance_categories?.name ?? <span className="text-muted-foreground">— bez kategorii —</span>}
+                          {tx.finance_subcategories?.name && (
+                            <p className="text-muted-foreground">{tx.finance_subcategories.name}</p>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-foreground">{tx.tag || ""}</td>
+                        <td className={`whitespace-nowrap px-3 py-2 text-right font-medium ${
+                          tx.amount < 0 ? "text-red-600" : "text-emerald-600"
+                        }`}>
+                          {formatAmount(tx.amount)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
+                          {tx.deleted_at ? formatDateTime(tx.deleted_at) : ""}
+                        </td>
+                        <td className="px-3 py-2">
+                          <button
+                            onClick={() => restoreTransaction(tx.id)}
+                            className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
+                          >
+                            Przywróć
+                          </button>
+                        </td>
+                      </tr>
+                    )) : sortedHistTransactions.map((tx) => (
                       <tr key={tx.id} className="hover:bg-muted/30">
                         <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                           {formatDate(tx.date)}
