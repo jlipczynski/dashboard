@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin, ensureFinanceTables, parseSantanderCSV } from "@/lib/finanse-db";
+import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 
 // POST /api/finanse/import  { content: string }
 // Parses CSV, matches rules, returns preview (does NOT save to DB)
@@ -11,7 +12,16 @@ export async function POST(request: Request) {
   if (!content) return NextResponse.json({ error: "Missing content" }, { status: 400 });
 
   const admin = getSupabaseAdmin();
-  const parsed = parseSantanderCSV(content);
+  // Payment intermediaries: strip "PAYPAL *"-style prefixes; mark opaque ones (PayU, PayPro…) for lookup.
+  // importHash stays computed from the original description (dedup of existing rows).
+  const parsed = parseSantanderCSV(content).map((t) => {
+    const info = classifyIntermediary(t.description, t.counterparty, t.merchant);
+    return {
+      ...t,
+      merchant: info.kind === "prefixed" ? info.cleanMerchant : t.merchant,
+      intermediary: info.kind ? { kind: info.kind, provider: info.provider } : null,
+    };
+  });
 
   // Load all rules
   const { data: rulesData } = await admin
@@ -49,7 +59,9 @@ export async function POST(request: Request) {
 
   const transactions = parsed.map((t) => {
     const isDuplicate = existingHashes.has(t.importHash);
-    const match = !isDuplicate ? matchRules(t.description, t.merchant, t.counterparty) : null;
+    const isOpaque = t.intermediary?.kind === "opaque";
+    // Opaque intermediary: a rule would match many different shops — leave for lookup instead.
+    const match = !isDuplicate && !isOpaque ? matchRules(t.description, t.merchant, t.counterparty) : null;
 
     return {
       ...t,
@@ -59,11 +71,12 @@ export async function POST(request: Request) {
       subcategoryId: match?.subcategoryId || null,
       subcategoryName: match?.subcategoryName || null,
       aiSuggested: false,
+      needsLookup: isOpaque && !isDuplicate,
     };
   });
 
   // AI suggestions for new, uncategorized transactions
-  const uncategorized = transactions.filter((t) => !t.isDuplicate && !t.categoryId);
+  const uncategorized = transactions.filter((t) => !t.isDuplicate && !t.categoryId && !t.needsLookup);
   if (uncategorized.length > 0 && process.env.ANTHROPIC_API_KEY) {
     try {
       const { data: categoriesData } = await admin
@@ -108,7 +121,7 @@ Jeśli nie jesteś pewny, wybierz najbardziej pasującą. Nie pomijaj żadnej tr
         const categoryMap = new Map((categoriesData || []).map((c) => [c.id, c.name]));
 
         for (const tx of transactions) {
-          if (!tx.isDuplicate && !tx.categoryId && suggestionMap.has(tx.importHash)) {
+          if (!tx.isDuplicate && !tx.categoryId && !tx.needsLookup && suggestionMap.has(tx.importHash)) {
             const suggestedId = suggestionMap.get(tx.importHash)!;
             tx.categoryId = suggestedId;
             tx.categoryName = categoryMap.get(suggestedId) || null;
@@ -129,6 +142,7 @@ Jeśli nie jesteś pewny, wybierz najbardziej pasującą. Nie pomijaj żadnej tr
     autoCategorized: newTx.filter((t) => t.categoryId && !t.aiSuggested).length,
     aiSuggested: newTx.filter((t) => t.aiSuggested).length,
     needsReview: newTx.filter((t) => !t.categoryId).length,
+    needsLookup: newTx.filter((t) => t.needsLookup).length,
   };
 
   return NextResponse.json({ transactions, stats });

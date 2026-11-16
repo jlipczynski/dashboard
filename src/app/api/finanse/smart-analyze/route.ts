@@ -3,6 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getGoogleAccessToken } from "@/lib/google-token";
 import { getSupabaseAdmin } from "@/lib/finanse-db";
 
+export const maxDuration = 60;
+
 type GmailMessage = { id: string };
 type GmailHeader = { name: string; value: string };
 type MessagePart = {
@@ -24,7 +26,7 @@ function extractText(part: MessagePart): string {
 export async function POST(request: NextRequest) {
   const accessToken = await getGoogleAccessToken(request);
 
-  const { date, merchant, amount, counterparty, description, key } = await request.json();
+  const { date, merchant, amount, counterparty, description, key, provider } = await request.json();
 
   const d = new Date(date + "T12:00:00Z");
   const fmt = (dt: Date) =>
@@ -122,7 +124,11 @@ TRANSAKCJA:
 - Opis w banku: "${description || merchant}"
 - Merchant: "${merchant}"${counterparty ? `\n- Kontrahent: "${counterparty}"` : ""}
 - Kwota: ${amount} PLN
-- Data: ${date}
+- Data: ${date}${
+            provider
+              ? `\n\nBank pokazuje tylko pośrednika płatności (${provider}). Ustal, za co faktycznie zapłacono — szukaj w mailach potwierdzeń od sklepu lub od ${provider} z tą kwotą.`
+              : ""
+          }
 
 MAILE Z TEGO OKRESU (szukane po kwocie ${amountComma} PLN i słowach kluczowych):
 ${emailContext}

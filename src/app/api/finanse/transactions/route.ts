@@ -67,6 +67,7 @@ export async function POST(request: Request) {
     categoryId: string | null;
     subcategoryId?: string | null;
     tag?: string | null;
+    notes?: string | null;
   }) => {
     const row: Record<string, unknown> = {
       date: t.date,
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
     };
     if (t.tag) row.tag = t.tag;
     if (t.merchant) row.merchant = t.merchant;
+    if (t.notes) row.notes = t.notes;
     return row;
   });
 

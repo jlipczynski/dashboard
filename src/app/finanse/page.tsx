@@ -46,7 +46,13 @@ type ImportedTransaction = {
   subcategoryName: string | null;
   aiSuggested: boolean;
   tag: string | null;
+  intermediary?: { kind: "opaque" | "prefixed"; provider: string | null } | null;
+  needsLookup?: boolean;
 };
+
+const isOpaque = (tx: ImportedTransaction) => tx.intermediary?.kind === "opaque";
+// Status messages from row analysis — shown in the UI, never saved as notes.
+const NON_NOTES = new Set(["Brak sugestii", "Błąd analizy"]);
 
 type SavedTransaction = {
   id: string;
@@ -70,6 +76,7 @@ type ImportStats = {
   autoCategorized: number;
   aiSuggested: number;
   needsReview: number;
+  needsLookup?: number;
 };
 
 /* ── Helpers ──────────────────────────────────────── */
@@ -124,6 +131,9 @@ function FinansePageInner() {
   const [gmailLoading, setGmailLoading] = useState<Record<string, boolean>>({});
   const [gmailResults, setGmailResults] = useState<Record<string, { subject: string; from: string; snippet: string }[]>>({});
   const [smartAnalyzing, setSmartAnalyzing] = useState<Record<string, boolean>>({});
+  // Automatic lookup of opaque intermediary payments (PayU, PayPro…) after import
+  const [lookupProgress, setLookupProgress] = useState<{ done: number; total: number; found: number } | null>(null);
+  const lookupRunRef = useRef(0);
   const [budgetExpandedCat, setBudgetExpandedCat] = useState<string | null>(null);
   const [budgetExpandedMerchants, setBudgetExpandedMerchants] = useState<Set<string>>(new Set());
   const [budgetSortCol, setBudgetSortCol] = useState<"date" | "amount" | "description">("date");
@@ -253,6 +263,8 @@ function FinansePageInner() {
     setImportStats(null);
     setImportRows([]);
     setSavedCount(0);
+    lookupRunRef.current++; // stop a lookup still running for the previous file
+    setLookupProgress(null);
 
     try {
       const content = await file.text();
@@ -279,6 +291,11 @@ function FinansePageInner() {
       setSaveRules(rules);
       setUserOverrides(new Set());
       setSavedCount(0);
+
+      // Background: look up what opaque intermediary payments were for (2 at a time)
+      runIntermediaryLookups(
+        ((data.transactions || []) as ImportedTransaction[]).filter((t) => t.needsLookup)
+      );
     } catch {
       alert("Błąd podczas parsowania pliku");
     } finally {
@@ -340,7 +357,8 @@ function FinansePageInner() {
 
   // Auto-apply category to all same-merchant transactions
   function handleCategoryChange(tx: ImportedTransaction, categoryId: string) {
-    const matches = sameMerchantRows(tx);
+    // Opaque intermediary: same "merchant" (e.g. PayPro) means different shops — don't copy.
+    const matches = isOpaque(tx) ? [] : sameMerchantRows(tx);
 
     setCategoryAssignments((prev) => {
       const updated = { ...prev, [tx.importHash]: categoryId };
@@ -360,7 +378,7 @@ function FinansePageInner() {
       setTimeout(() => setAutoApplied(0), 3000);
     }
 
-    if (tx.aiSuggested) {
+    if (tx.aiSuggested || tx.needsLookup) {
       setUserOverrides((prev) => new Set(prev).add(tx.importHash));
     }
   }
@@ -394,6 +412,11 @@ function FinansePageInner() {
     }
   }
 
+  function noteFor(t: ImportedTransaction): string | null {
+    const note = rowNotes[t.importHash];
+    return note && !NON_NOTES.has(note) ? note : null;
+  }
+
   // Partial save — only transactions with category assigned
   async function handleSaveImport() {
     const toSave = importRows.filter((t) => !t.isDuplicate && categoryAssignments[t.importHash]);
@@ -405,11 +428,12 @@ function FinansePageInner() {
         ...t,
         categoryId: categoryAssignments[t.importHash] || null,
         tag: tagAssignments[t.importHash] || null,
+        notes: noteFor(t),
       }));
 
       const rulesToSave: { pattern: string; categoryId: string }[] = [];
       for (const tx of toSave) {
-        if (saveRules[tx.importHash] && categoryAssignments[tx.importHash]) {
+        if (saveRules[tx.importHash] && categoryAssignments[tx.importHash] && !isOpaque(tx)) {
           const pattern = tx.merchant.toUpperCase().slice(0, 50);
           if (pattern.length > 3) {
             rulesToSave.push({ pattern, categoryId: categoryAssignments[tx.importHash] });
@@ -444,6 +468,7 @@ function FinansePageInner() {
         ...t,
         categoryId: null,
         tag: null,
+        notes: noteFor(t),
       }));
       const res = await fetch("/api/finanse/transactions", {
         method: "POST",
@@ -565,7 +590,9 @@ function FinansePageInner() {
     }
   }
 
-  async function handleSmartAnalyzeImport(tx: ImportedTransaction) {
+  /** Returns true when a category was suggested. */
+  async function handleSmartAnalyzeImport(tx: ImportedTransaction): Promise<boolean> {
+    let found = false;
     setSmartAnalyzing((prev) => ({ ...prev, [tx.importHash]: true }));
     try {
       const res = await fetch("/api/finanse/smart-analyze", {
@@ -578,14 +605,26 @@ function FinansePageInner() {
           amount: tx.amount,
           description: tx.description,
           counterparty: tx.counterparty,
+          provider: isOpaque(tx) ? tx.intermediary?.provider : undefined,
         }),
       });
       const data = await res.json();
       if (data.suggestion?.note) {
         setRowNotes((prev) => ({ ...prev, [tx.importHash]: data.suggestion.note }));
       }
-      if (data.suggestion?.categoryId && !categoryAssignments[tx.importHash]) {
-        handleCategoryChange(tx, data.suggestion.categoryId);
+      const suggestedId: string | undefined = data.suggestion?.categoryId;
+      if (suggestedId && isOpaque(tx)) {
+        // Suggestion for this row only; never overwrites a category Jan already picked.
+        found = true;
+        setCategoryAssignments((prev) =>
+          prev[tx.importHash] ? prev : { ...prev, [tx.importHash]: suggestedId }
+        );
+        setImportRows((prev) =>
+          prev.map((t) => (t.importHash === tx.importHash ? { ...t, aiSuggested: true } : t))
+        );
+      } else if (suggestedId && !categoryAssignments[tx.importHash]) {
+        found = true;
+        handleCategoryChange(tx, suggestedId);
       }
       if (data.emails?.length) {
         setGmailResults((prev) => ({ ...prev, [tx.importHash]: data.emails }));
@@ -595,6 +634,28 @@ function FinansePageInner() {
     } finally {
       setSmartAnalyzing((prev) => ({ ...prev, [tx.importHash]: false }));
     }
+    return found;
+  }
+
+  // Client-side loop: one request per row (each within its own Vercel time limit), max 2 at once.
+  async function runIntermediaryLookups(rows: ImportedTransaction[]) {
+    const runId = ++lookupRunRef.current;
+    if (rows.length === 0) return;
+    let next = 0;
+    let done = 0;
+    let found = 0;
+    setLookupProgress({ done, total: rows.length, found });
+    const worker = async () => {
+      while (next < rows.length && lookupRunRef.current === runId) {
+        const tx = rows[next++];
+        const ok = await handleSmartAnalyzeImport(tx);
+        if (lookupRunRef.current !== runId) return;
+        done++;
+        if (ok) found++;
+        setLookupProgress({ done, total: rows.length, found });
+      }
+    };
+    await Promise.all([worker(), worker()]);
   }
 
   async function handleSmartAnalyzeHistory(tx: SavedTransaction) {
@@ -1008,6 +1069,24 @@ function FinansePageInner() {
               </div>
             )}
 
+            {/* Intermediary lookup progress */}
+            {lookupProgress && (
+              <div className="mt-4 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground">
+                {lookupProgress.done < lookupProgress.total
+                  ? `🔎 Rozpoznaję płatności przez pośredników: ${lookupProgress.done} / ${lookupProgress.total}`
+                  : `🔎 Rozpoznano ${lookupProgress.found} z ${lookupProgress.total} — sprawdź propozycje`}
+                {!gmailConnected && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    ·{" "}
+                    <button onClick={() => signIn("google")} className="underline hover:text-foreground">
+                      Gmail niepołączony
+                    </button>{" "}
+                    — szukam tylko w internecie
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Transaction review table */}
             {newRows.length > 0 && (
               <div className="mt-4">
@@ -1049,6 +1128,11 @@ function FinansePageInner() {
                                 <p className="font-medium text-foreground truncate max-w-[180px]" title={tx.merchant}>
                                   {tx.merchant}
                                 </p>
+                                {isOpaque(tx) && (
+                                  <span className="inline-block rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                    via {tx.intermediary?.provider}
+                                  </span>
+                                )}
                                 {tx.counterparty && (
                                   <p className="text-xs text-muted-foreground truncate max-w-[180px]">{tx.counterparty}</p>
                                 )}
@@ -1192,15 +1276,19 @@ function FinansePageInner() {
                           <td className="px-3 py-2 text-center">
                             <input
                               type="checkbox"
-                              checked={saveRules[tx.importHash] || false}
+                              checked={(saveRules[tx.importHash] && !isOpaque(tx)) || false}
                               onChange={(e) =>
                                 setSaveRules((prev) => ({
                                   ...prev,
                                   [tx.importHash]: e.target.checked,
                                 }))
                               }
-                              disabled={!categoryAssignments[tx.importHash]}
-                              title="Zapamiętaj regułę dla tego merchanta"
+                              disabled={!categoryAssignments[tx.importHash] || isOpaque(tx)}
+                              title={
+                                isOpaque(tx)
+                                  ? "Pośrednik płatności — reguła złapałaby różne sklepy"
+                                  : "Zapamiętaj regułę dla tego merchanta"
+                              }
                               className="h-4 w-4 cursor-pointer accent-emerald-500"
                             />
                           </td>
