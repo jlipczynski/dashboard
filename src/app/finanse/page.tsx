@@ -124,6 +124,34 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/* ── Summary tiles (Historia + Budżet) ───────────── */
+// One definition of the numbers: summarizeExpenses (also used by the home page card).
+function SummaryTiles({ summary }: { summary: ReturnType<typeof summarizeExpenses> }) {
+  const balance = summary.income - summary.total - summary.savingsNet;
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="rounded-xl border border-border bg-card p-4 text-center">
+        <p className="text-2xl font-bold text-red-600">−{formatAmount(summary.total)}</p>
+        <p className="text-xs text-muted-foreground mt-1">Wydatki</p>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-4 text-center">
+        <p className="text-2xl font-bold text-emerald-600">+{formatAmount(summary.income)}</p>
+        <p className="text-xs text-muted-foreground mt-1">Przychody</p>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-4 text-center">
+        <p className="text-2xl font-bold text-blue-600">{formatAmount(summary.savingsNet)}</p>
+        <p className="text-xs text-muted-foreground mt-1">Na cele (netto)</p>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-4 text-center">
+        <p className={`text-2xl font-bold ${balance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+          {formatAmount(balance)}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">Bilans</p>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Component ──────────────────────────────── */
 function FinansePageInner() {
   const { data: session } = useSession();
@@ -1295,17 +1323,8 @@ function FinansePageInner() {
     [transactions, histSortCol, histSortDir]
   );
 
-  // Historia / Budżet stats
-  const totalExpenses = transactions
-    .filter((t) => (t.amount || 0) < 0)
-    .reduce((s, t) => s + Math.abs(t.amount || 0), 0);
-  const totalIncome = transactions
-    .filter((t) => (t.amount || 0) > 0)
-    .reduce((s, t) => s + (t.amount || 0), 0);
-
-  // Budżet: the same definition as the home page card (summarizeExpenses) — one source of truth.
+  // Historia + Budżet: the same definition as the home page card (summarizeExpenses) — one source of truth.
   const budgetSummary = useMemo(() => summarizeExpenses(transactions, categories), [transactions, categories]);
-  const budgetBalance = budgetSummary.income - budgetSummary.total - budgetSummary.savingsNet;
 
   return (
     <div className="min-h-screen bg-background">
@@ -1844,22 +1863,7 @@ function FinansePageInner() {
 
             {/* Summary */}
             {!loadingTx && histFilter !== "trash" && transactions.length > 0 && (
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                <div className="rounded-xl border border-border bg-card p-3 text-center">
-                  <p className="text-xl font-bold text-red-600">−{formatAmount(totalExpenses)}</p>
-                  <p className="text-xs text-muted-foreground">Wydatki</p>
-                </div>
-                <div className="rounded-xl border border-border bg-card p-3 text-center">
-                  <p className="text-xl font-bold text-emerald-600">+{formatAmount(totalIncome)}</p>
-                  <p className="text-xs text-muted-foreground">Przychody</p>
-                </div>
-                <div className="rounded-xl border border-border bg-card p-3 text-center">
-                  <p className={`text-xl font-bold ${totalIncome - totalExpenses >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                    {formatAmount(totalIncome - totalExpenses)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Bilans</p>
-                </div>
-              </div>
+              <SummaryTiles summary={budgetSummary} />
             )}
 
             {/* Transactions table */}
@@ -2159,26 +2163,7 @@ function FinansePageInner() {
             ) : (
               <>
                 {/* Summary cards — summarizeExpenses (same as the home page card) */}
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-xl border border-border bg-card p-4 text-center">
-                    <p className="text-2xl font-bold text-red-600">−{formatAmount(budgetSummary.total)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Wydatki</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-card p-4 text-center">
-                    <p className="text-2xl font-bold text-emerald-600">+{formatAmount(budgetSummary.income)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Przychody</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-card p-4 text-center">
-                    <p className="text-2xl font-bold text-blue-600">{formatAmount(budgetSummary.savingsNet)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Na cele (netto)</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-card p-4 text-center">
-                    <p className={`text-2xl font-bold ${budgetBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                      {formatAmount(budgetBalance)}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">Bilans</p>
-                  </div>
-                </div>
+                <SummaryTiles summary={budgetSummary} />
                 {budgetSummary.netNegativeCategories.length > 0 && (
                   <p className="mt-2 text-xs text-muted-foreground">
                     Zwroty przewyższające wydatki:{" "}
