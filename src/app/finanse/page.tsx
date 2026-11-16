@@ -4,7 +4,14 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useSession, signIn, SessionProvider } from "next-auth/react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { sortTransactions, defaultSortDir, type HistSortCol, type SortDir } from "@/lib/finanse-sort";
-import { similarSelection } from "@/lib/finanse-similar";
+import {
+  similarSelection,
+  isCashHash,
+  addDismissed,
+  parseDismissed,
+  DISMISSED_STORAGE_KEY,
+  type DismissedMap,
+} from "@/lib/finanse-similar";
 import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 
 /* ── Types ──────────────────────────────────────── */
@@ -70,6 +77,7 @@ type SavedTransaction = {
   subcategory_id: string | null;
   tag: string | null;
   notes: string | null;
+  import_hash?: string | null;
   created_at?: string | null;
   deleted_at?: string | null;
   finance_categories: { id: string; name: string; type: string } | null;
@@ -150,6 +158,23 @@ function FinansePageInner() {
   const [importSimilar, setImportSimilar] = useState<SimilarPanel | null>(null);
   const [histSimilar, setHistSimilar] = useState<SimilarPanel | null>(null);
   const [histSimilarApplied, setHistSimilarApplied] = useState(0);
+  // Remembered "no" decisions per source row (localStorage; session-only when storage is unavailable)
+  const [similarDismissed, setSimilarDismissed] = useState<DismissedMap>({});
+  useEffect(() => {
+    try {
+      setSimilarDismissed(parseDismissed(localStorage.getItem(DISMISSED_STORAGE_KEY)));
+    } catch {}
+  }, []);
+  function dismissSimilar(sourceId: string, ids: string[]) {
+    if (ids.length === 0) return;
+    setSimilarDismissed((prev) => {
+      const next = addDismissed(prev, sourceId, ids);
+      try {
+        localStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }
   const [analyzing, setAnalyzing] = useState(false);
   const [rowAnalyzing, setRowAnalyzing] = useState<Record<string, boolean>>({});
   const [rowNotes, setRowNotes] = useState<Record<string, string>>({});
@@ -378,9 +403,11 @@ function FinansePageInner() {
     return words.find((w) => w.length >= 4) || name.trim().toUpperCase().slice(0, 6);
   }
 
-  function fuzzyMerchantMatches(tx: ImportedTransaction) {
-    // Opaque intermediary: one name = many different shops — never "similar".
-    if (isOpaque(tx)) return [];
+  // Similar rows that still need a decision (see similarSelection); empty → no link.
+  function importSimilarSelection(tx: ImportedTransaction) {
+    const catId = categoryAssignments[tx.importHash];
+    // Opaque intermediary: one name = many different shops — never "similar". Cash never goes through import.
+    if (!catId || isOpaque(tx) || isCashHash(tx.importHash)) return null;
     const key = fuzzyMerchantKey(tx.merchant);
     const candidates = importRows.filter(
       (t) =>
@@ -388,21 +415,24 @@ function FinansePageInner() {
         t.importHash !== tx.importHash &&
         t.merchant.toUpperCase().includes(key)
     );
-    const { ids } = similarSelection(
-      candidates.map((t) => ({ id: t.importHash, categoryId: null, opaque: isOpaque(t) })),
-      ""
+    return similarSelection(
+      candidates.map((t) => ({
+        id: t.importHash,
+        categoryId: categoryAssignments[t.importHash] || null,
+        subcategoryId: null,
+        tag: tagAssignments[t.importHash] || null,
+        opaque: isOpaque(t),
+        isCash: isCashHash(t.importHash),
+      })),
+      { categoryId: catId, subcategoryId: null, tag: tagAssignments[tx.importHash] || null },
+      new Set(similarDismissed[tx.importHash] ?? [])
     );
-    return candidates.filter((t) => ids.includes(t.importHash));
   }
 
   function openImportSimilar(tx: ImportedTransaction) {
     const catId = categoryAssignments[tx.importHash];
-    if (!catId) return;
-    const matches = fuzzyMerchantMatches(tx);
-    const sel = similarSelection(
-      matches.map((t) => ({ id: t.importHash, categoryId: categoryAssignments[t.importHash] || null, opaque: isOpaque(t) })),
-      catId
-    );
+    const sel = importSimilarSelection(tx);
+    if (!catId || !sel) return;
     setImportSimilar({
       sourceKey: tx.importHash,
       ids: sel.ids,
@@ -416,8 +446,10 @@ function FinansePageInner() {
   function handleApplyToSimilar(panel: SimilarPanel) {
     const catId = panel.categoryId;
     const tag = panel.tag;
-    const matches = importRows.filter((t) => panel.selected.has(t.importHash));
+    const matches = importRows.filter((t) => panel.ids.includes(t.importHash) && panel.selected.has(t.importHash));
     setImportSimilar(null);
+    // Unchecked rows = a conscious "no" — don't offer them again for this source.
+    dismissSimilar(panel.sourceKey, panel.ids.filter((id) => !panel.selected.has(id)));
     if (matches.length === 0) return;
     const tx = { importHash: panel.sourceKey };
 
@@ -426,13 +458,15 @@ function FinansePageInner() {
       for (const m of matches) updated[m.importHash] = catId;
       return updated;
     });
-    if (tag) {
-      setTagAssignments((prev) => {
-        const updated = { ...prev };
-        for (const m of matches) if (!updated[m.importHash]) updated[m.importHash] = tag;
-        return updated;
-      });
-    }
+    // The panel header promises "kategoria · tag" — checked rows get exactly that (as in Historia).
+    setTagAssignments((prev) => {
+      const updated = { ...prev };
+      for (const m of matches) {
+        if (tag) updated[m.importHash] = tag;
+        else delete updated[m.importHash];
+      }
+      return updated;
+    });
     setSaveRules((prev) => {
       const updated = { ...prev, [tx.importHash]: true };
       for (const m of matches) updated[m.importHash] = true;
@@ -928,28 +962,35 @@ function FinansePageInner() {
     return classifyIntermediary(tx.description, tx.counterparty, merchant).kind === "opaque";
   }
 
-  function similarHistTransactions(tx: SavedTransaction) {
-    if (histIsOpaque(tx)) return [];
+  // Similar rows that still need a decision for this source (see similarSelection); null/empty → no link.
+  function histSimilarSelection(tx: SavedTransaction) {
+    const effectiveCategoryId = pendingCategories[tx.id] ?? tx.category_id;
+    if (!effectiveCategoryId || histIsOpaque(tx) || isCashHash(tx.import_hash)) return null;
     const key = histMerchantKey(tx);
-    if (key.length < 3) return [];
-    const candidates = transactions.filter(
-      (t) => t.id !== tx.id && histMerchantKey(t) === key
+    if (key.length < 3) return null;
+    const candidates = transactions.filter((t) => t.id !== tx.id && histMerchantKey(t) === key);
+    return similarSelection(
+      candidates.map((t) => ({
+        id: t.id,
+        categoryId: t.category_id,
+        subcategoryId: t.subcategory_id,
+        tag: t.tag,
+        opaque: histIsOpaque(t),
+        isCash: isCashHash(t.import_hash),
+      })),
+      {
+        categoryId: effectiveCategoryId,
+        subcategoryId: pendingSubcategories[tx.id] ?? tx.subcategory_id ?? null,
+        tag: histTagValues[tx.id] ?? tx.tag,
+      },
+      new Set(similarDismissed[tx.id] ?? [])
     );
-    const { ids } = similarSelection(
-      candidates.map((t) => ({ id: t.id, categoryId: null, opaque: histIsOpaque(t) })),
-      ""
-    );
-    return candidates.filter((t) => ids.includes(t.id));
   }
 
   function openSimilarHistory(tx: SavedTransaction) {
     const effectiveCategoryId = pendingCategories[tx.id] ?? tx.category_id;
-    if (!effectiveCategoryId) return;
-    const similar = similarHistTransactions(tx);
-    const sel = similarSelection(
-      similar.map((t) => ({ id: t.id, categoryId: t.category_id, opaque: false })),
-      effectiveCategoryId
-    );
+    const sel = histSimilarSelection(tx);
+    if (!effectiveCategoryId || !sel) return;
     setHistSimilar({
       sourceKey: tx.id,
       ids: sel.ids,
@@ -966,6 +1007,8 @@ function FinansePageInner() {
     const effectiveSubcategoryId = panel.subcategoryId;
     const selectedIds = panel.ids.filter((id) => panel.selected.has(id));
     setHistSimilar(null);
+    // Unchecked rows = a conscious "no" — don't offer them again for this source.
+    dismissSimilar(panel.sourceKey, panel.ids.filter((id) => !panel.selected.has(id)));
     const cat = categories.find((c) => c.id === effectiveCategoryId) || null;
     const subcat = effectiveSubcategoryId ? subcategories.find((s) => s.id === effectiveSubcategoryId) || null : null;
     const currentTag = panel.tag;
@@ -1075,7 +1118,10 @@ function FinansePageInner() {
             Zastosuj do zaznaczonych ({k})
           </button>
           <button
-            onClick={() => setPanel(null)}
+            onClick={() => {
+              dismissSimilar(panel.sourceKey, panel.ids);
+              setPanel(null);
+            }}
             className="rounded-lg border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
           >
             Anuluj
@@ -1497,9 +1543,8 @@ function FinansePageInner() {
                               )}
                             </select>
                             {(() => {
-                              const hasCat = !!categoryAssignments[tx.importHash];
-                              const similarCount = hasCat ? fuzzyMerchantMatches(tx).length : 0;
-                              if (!hasCat || similarCount === 0) return null;
+                              const similarCount = importSimilarSelection(tx)?.ids.length ?? 0;
+                              if (similarCount === 0) return null;
                               return (
                                 <button
                                   onClick={() => openImportSimilar(tx)}
@@ -1885,7 +1930,7 @@ function FinansePageInner() {
                             const effectiveSubcategoryId = pendingSubcategories[tx.id] ?? tx.subcategory_id ?? "";
                             const isPending = tx.id in pendingCategories || tx.id in pendingSubcategories;
                             const effectiveTx = { ...tx, category_id: effectiveCategoryId || null, subcategory_id: effectiveSubcategoryId || null };
-                            const similar = similarHistTransactions(effectiveTx);
+                            const similar = histSimilarSelection(effectiveTx)?.ids ?? [];
                             const catSubcats = subcatsFor(effectiveCategoryId);
                             return (
                               <>
