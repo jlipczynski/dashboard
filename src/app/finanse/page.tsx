@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useSession, signIn, SessionProvider } from "next-auth/react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { sortTransactions, defaultSortDir, type HistSortCol, type SortDir } from "@/lib/finanse-sort";
+import { similarSelection } from "@/lib/finanse-similar";
+import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 
 /* ── Types ──────────────────────────────────────── */
 type Category = {
@@ -136,6 +138,18 @@ function FinansePageInner() {
   const [saving, setSaving] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [autoApplied, setAutoApplied] = useState(0);
+  // "→ N podobnych" preview panels — nothing is applied until "Zastosuj do zaznaczonych"
+  type SimilarPanel = {
+    sourceKey: string; // importHash (import) or transaction id (Historia)
+    ids: string[];
+    selected: Set<string>;
+    categoryId: string;
+    subcategoryId: string | null;
+    tag: string;
+  };
+  const [importSimilar, setImportSimilar] = useState<SimilarPanel | null>(null);
+  const [histSimilar, setHistSimilar] = useState<SimilarPanel | null>(null);
+  const [histSimilarApplied, setHistSimilarApplied] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
   const [rowAnalyzing, setRowAnalyzing] = useState<Record<string, boolean>>({});
   const [rowNotes, setRowNotes] = useState<Record<string, string>>({});
@@ -365,21 +379,47 @@ function FinansePageInner() {
   }
 
   function fuzzyMerchantMatches(tx: ImportedTransaction) {
+    // Opaque intermediary: one name = many different shops — never "similar".
+    if (isOpaque(tx)) return [];
     const key = fuzzyMerchantKey(tx.merchant);
-    return importRows.filter(
+    const candidates = importRows.filter(
       (t) =>
         !t.isDuplicate &&
         t.importHash !== tx.importHash &&
         t.merchant.toUpperCase().includes(key)
     );
+    const { ids } = similarSelection(
+      candidates.map((t) => ({ id: t.importHash, categoryId: null, opaque: isOpaque(t) })),
+      ""
+    );
+    return candidates.filter((t) => ids.includes(t.importHash));
   }
 
-  function handleApplyToSimilar(tx: ImportedTransaction) {
+  function openImportSimilar(tx: ImportedTransaction) {
     const catId = categoryAssignments[tx.importHash];
     if (!catId) return;
-    const tag = tagAssignments[tx.importHash] || "";
     const matches = fuzzyMerchantMatches(tx);
+    const sel = similarSelection(
+      matches.map((t) => ({ id: t.importHash, categoryId: categoryAssignments[t.importHash] || null, opaque: isOpaque(t) })),
+      catId
+    );
+    setImportSimilar({
+      sourceKey: tx.importHash,
+      ids: sel.ids,
+      selected: new Set(sel.selected),
+      categoryId: catId,
+      subcategoryId: null,
+      tag: tagAssignments[tx.importHash] || "",
+    });
+  }
+
+  function handleApplyToSimilar(panel: SimilarPanel) {
+    const catId = panel.categoryId;
+    const tag = panel.tag;
+    const matches = importRows.filter((t) => panel.selected.has(t.importHash));
+    setImportSimilar(null);
     if (matches.length === 0) return;
+    const tx = { importHash: panel.sourceKey };
 
     setCategoryAssignments((prev) => {
       const updated = { ...prev };
@@ -883,24 +923,53 @@ function FinansePageInner() {
     return src.trim().toUpperCase().split(/[\s/\-_]+/)[0];
   }
 
-  function similarHistTransactions(tx: SavedTransaction) {
-    const key = histMerchantKey(tx);
-    if (key.length < 3) return [];
-    return transactions.filter(
-      (t) => t.id !== tx.id && histMerchantKey(t) === key
-    );
+  function histIsOpaque(tx: SavedTransaction) {
+    const merchant = tx.merchant || extractMerchantName(tx.description);
+    return classifyIntermediary(tx.description, tx.counterparty, merchant).kind === "opaque";
   }
 
-  async function applyToSimilarHistory(tx: SavedTransaction) {
+  function similarHistTransactions(tx: SavedTransaction) {
+    if (histIsOpaque(tx)) return [];
+    const key = histMerchantKey(tx);
+    if (key.length < 3) return [];
+    const candidates = transactions.filter(
+      (t) => t.id !== tx.id && histMerchantKey(t) === key
+    );
+    const { ids } = similarSelection(
+      candidates.map((t) => ({ id: t.id, categoryId: null, opaque: histIsOpaque(t) })),
+      ""
+    );
+    return candidates.filter((t) => ids.includes(t.id));
+  }
+
+  function openSimilarHistory(tx: SavedTransaction) {
     const effectiveCategoryId = pendingCategories[tx.id] ?? tx.category_id;
     if (!effectiveCategoryId) return;
-    const effectiveSubcategoryId = pendingSubcategories[tx.id] ?? tx.subcategory_id ?? null;
     const similar = similarHistTransactions(tx);
-    if (similar.length === 0) return;
+    const sel = similarSelection(
+      similar.map((t) => ({ id: t.id, categoryId: t.category_id, opaque: false })),
+      effectiveCategoryId
+    );
+    setHistSimilar({
+      sourceKey: tx.id,
+      ids: sel.ids,
+      selected: new Set(sel.selected),
+      categoryId: effectiveCategoryId,
+      subcategoryId: pendingSubcategories[tx.id] ?? tx.subcategory_id ?? null,
+      tag: histTagValues[tx.id] ?? (tx.tag || ""),
+    });
+  }
+
+  // Saves only after "Zastosuj do zaznaczonych": the source row + the checked rows.
+  async function applyToSimilarHistory(panel: SimilarPanel) {
+    const effectiveCategoryId = panel.categoryId;
+    const effectiveSubcategoryId = panel.subcategoryId;
+    const selectedIds = panel.ids.filter((id) => panel.selected.has(id));
+    setHistSimilar(null);
     const cat = categories.find((c) => c.id === effectiveCategoryId) || null;
     const subcat = effectiveSubcategoryId ? subcategories.find((s) => s.id === effectiveSubcategoryId) || null : null;
-    const currentTag = histTagValues[tx.id] ?? (tx.tag || "");
-    const allIds = [tx.id, ...similar.map((s) => s.id)];
+    const currentTag = panel.tag;
+    const allIds = [panel.sourceKey, ...selectedIds];
     setTransactions((prev) =>
       prev.map((t) =>
         allIds.includes(t.id)
@@ -924,17 +993,96 @@ function FinansePageInner() {
         return updated;
       });
     }
-    const effectiveTx = { ...tx, category_id: effectiveCategoryId, subcategory_id: effectiveSubcategoryId };
-    await Promise.all([
-      ...allIds.map((id) =>
+    await Promise.all(
+      allIds.map((id) =>
         fetch(`/api/finanse/transactions?id=${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ categoryId: effectiveCategoryId, subcategoryId: effectiveSubcategoryId, tag: currentTag || "" }),
         })
-      ),
-      saveHistRule(effectiveTx),
-    ]);
+      )
+    );
+    setHistSimilarApplied(selectedIds.length);
+    setTimeout(() => setHistSimilarApplied(0), 3000);
+  }
+
+  function toggleSimilar(panel: SimilarPanel, id: string, set: (p: SimilarPanel) => void) {
+    const selected = new Set(panel.selected);
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    set({ ...panel, selected });
+  }
+
+  type SimilarRow = { id: string; date: string; name: string; amount: number; categoryId: string | null; categoryName: string | null };
+
+  function renderSimilarPanel(
+    panel: SimilarPanel,
+    setPanel: (p: SimilarPanel | null) => void,
+    rows: SimilarRow[],
+    onApply: () => void
+  ) {
+    const catName = categories.find((c) => c.id === panel.categoryId)?.name ?? "";
+    const subName = panel.subcategoryId ? subcategories.find((s) => s.id === panel.subcategoryId)?.name : null;
+    const k = rows.filter((r) => panel.selected.has(r.id)).length;
+    return (
+      <div>
+        <div className="mb-1 flex flex-wrap items-center gap-3">
+          <p className="text-xs font-medium text-blue-700">
+            Zastosuj „{catName}{subName ? ` / ${subName}` : ""}{panel.tag ? ` · ${panel.tag}` : ""}” do:
+          </p>
+          <button
+            onClick={() => setPanel({ ...panel, selected: new Set(rows.map((r) => r.id)) })}
+            className="text-[10px] text-blue-700 hover:underline"
+          >
+            zaznacz wszystkie
+          </button>
+          <button
+            onClick={() => setPanel({ ...panel, selected: new Set() })}
+            className="text-[10px] text-blue-700 hover:underline"
+          >
+            odznacz wszystkie
+          </button>
+        </div>
+        <div className="space-y-1">
+          {rows.map((r) => {
+            const conflict = !!r.categoryId && r.categoryId !== panel.categoryId;
+            return (
+              <label key={r.id} className="flex cursor-pointer items-center gap-2 rounded border border-blue-200 bg-white px-2 py-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={panel.selected.has(r.id)}
+                  onChange={() => toggleSimilar(panel, r.id, setPanel)}
+                  className="h-3 w-3 cursor-pointer accent-emerald-500"
+                />
+                <span className="whitespace-nowrap text-muted-foreground">{formatDate(r.date)}</span>
+                <span className="min-w-0 flex-1 break-words text-foreground">{r.name}</span>
+                <span className={`whitespace-nowrap font-medium ${r.amount < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                  {formatAmount(r.amount)}
+                </span>
+                <span className={`whitespace-nowrap ${conflict ? "text-orange-600" : "text-muted-foreground"}`}>
+                  {conflict ? `ma już: ${r.categoryName ?? "?"}` : r.categoryName ?? "— bez kategorii —"}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={onApply}
+            disabled={k === 0}
+            className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Zastosuj do zaznaczonych ({k})
+          </button>
+          <button
+            onClick={() => setPanel(null)}
+            className="rounded-lg border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Anuluj
+          </button>
+        </div>
+      </div>
+    );
   }
 
   async function deleteTransaction(txId: string) {
@@ -1350,12 +1498,12 @@ function FinansePageInner() {
                             </select>
                             {(() => {
                               const hasCat = !!categoryAssignments[tx.importHash];
-                              const similarCount = hasCat ? fuzzyMerchantMatches(tx).filter(m => !categoryAssignments[m.importHash]).length : 0;
+                              const similarCount = hasCat ? fuzzyMerchantMatches(tx).length : 0;
                               if (!hasCat || similarCount === 0) return null;
                               return (
                                 <button
-                                  onClick={() => handleApplyToSimilar(tx)}
-                                  title={`Zastosuj tę kategorię i tag do wszystkich podobnych merchantów (${similarCount})`}
+                                  onClick={() => openImportSimilar(tx)}
+                                  title={`Pokaż podobne transakcje (${similarCount}) i wybierz, do których zastosować tę kategorię i tag`}
                                   className="mt-1 w-full rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
                                 >
                                   → {similarCount} podobnych
@@ -1431,6 +1579,30 @@ function FinansePageInner() {
                             />
                           </td>
                         </tr>
+                        {importSimilar?.sourceKey === tx.importHash && (
+                          <tr className="bg-blue-50/50">
+                            <td colSpan={7} className="px-4 py-2">
+                              {renderSimilarPanel(
+                                importSimilar,
+                                setImportSimilar,
+                                importSimilar.ids.flatMap((hash) => {
+                                  const t = importRows.find((x) => x.importHash === hash);
+                                  if (!t) return [];
+                                  const catId = categoryAssignments[hash] || null;
+                                  return [{
+                                    id: hash,
+                                    date: t.date,
+                                    name: t.merchant || t.description,
+                                    amount: t.amount,
+                                    categoryId: catId,
+                                    categoryName: catId ? categories.find((c) => c.id === catId)?.name ?? null : null,
+                                  }];
+                                }),
+                                () => handleApplyToSimilar(importSimilar)
+                              )}
+                            </td>
+                          </tr>
+                        )}
                         {gmailResults[tx.importHash]?.length > 0 && (
                           <tr className="bg-blue-50/50">
                             <td colSpan={7} className="px-4 py-2">
@@ -1591,6 +1763,12 @@ function FinansePageInner() {
               </div>
             )}
 
+            {histSimilarApplied > 0 && (
+              <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
+                Zastosowano do {histSimilarApplied} transakcji
+              </div>
+            )}
+
             {/* Summary */}
             {!loadingTx && histFilter !== "trash" && transactions.length > 0 && (
               <div className="mt-4 grid grid-cols-3 gap-3">
@@ -1674,7 +1852,8 @@ function FinansePageInner() {
                         </td>
                       </tr>
                     )) : sortedHistTransactions.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-muted/30">
+                      <React.Fragment key={tx.id}>
+                      <tr className="hover:bg-muted/30">
                         <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                           {formatDate(tx.date)}
                         </td>
@@ -1758,7 +1937,7 @@ function FinansePageInner() {
                                   <div className="mt-1 flex flex-col gap-0.5">
                                     {similar.length > 0 && (
                                       <button
-                                        onClick={() => applyToSimilarHistory(effectiveTx)}
+                                        onClick={() => openSimilarHistory(effectiveTx)}
                                         className="text-left text-[10px] font-medium text-emerald-700 hover:underline"
                                       >
                                         → Zastosuj do {similar.length} podobnych
@@ -1837,6 +2016,29 @@ function FinansePageInner() {
                           </div>
                         </td>
                       </tr>
+                      {histSimilar?.sourceKey === tx.id && (
+                        <tr className="bg-blue-50/50">
+                          <td colSpan={6} className="px-4 py-2">
+                            {renderSimilarPanel(
+                              histSimilar,
+                              setHistSimilar,
+                              histSimilar.ids.flatMap((id) => {
+                                const t = transactions.find((x) => x.id === id);
+                                return t ? [{
+                                  id,
+                                  date: t.date,
+                                  name: t.merchant || t.description,
+                                  amount: t.amount,
+                                  categoryId: t.category_id,
+                                  categoryName: t.finance_categories?.name ?? null,
+                                }] : [];
+                              }),
+                              () => applyToSimilarHistory(histSimilar)
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
