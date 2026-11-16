@@ -283,7 +283,7 @@ export function ExpensesByCategoryCard() {
       )}
 
       <div className="mt-3 text-right">
-        <Link href="/finanse" className="text-xs font-medium text-emerald-700 hover:underline">
+        <Link href="/finanse/dashboard" className="text-xs font-medium text-emerald-700 hover:underline">
           Szczegóły →
         </Link>
       </div>
