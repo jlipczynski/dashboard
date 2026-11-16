@@ -16,12 +16,13 @@ import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 import { extractMerchant } from "@/lib/finanse-merchant";
 import { similarityKey } from "@/lib/finanse-key";
 import { ruleFromTx, validateRule, ruleLabel } from "@/lib/finanse-rules";
+import { summarizeExpenses } from "@/lib/finanse-summary";
 
 /* ── Types ──────────────────────────────────────── */
 type Category = {
   id: string;
   name: string;
-  type: "expense" | "income";
+  type: "expense" | "income" | "transfer";
 };
 
 type Subcategory = {
@@ -227,7 +228,7 @@ function FinansePageInner() {
 
   // Kategorie state
   const [newCatName, setNewCatName] = useState("");
-  const [newCatType, setNewCatType] = useState<"expense" | "income">("expense");
+  const [newCatType, setNewCatType] = useState<"expense" | "income" | "transfer">("expense");
   const [newSubcatNames, setNewSubcatNames] = useState<Record<string, string>>({});
   const [rules, setRules] = useState<Rule[]>([]);
   const [loadingRules, setLoadingRules] = useState(false);
@@ -1287,6 +1288,7 @@ function FinansePageInner() {
   const visibleRows = newRows.slice(importPage * IMPORT_PAGE_SIZE, (importPage + 1) * IMPORT_PAGE_SIZE);
   const expenseCategories = categories.filter((c) => c.type === "expense");
   const incomeCategories = categories.filter((c) => c.type === "income");
+  const transferCategories = categories.filter((c) => c.type === "transfer");
 
   const sortedHistTransactions = useMemo(
     () => sortTransactions(transactions, histSortCol, histSortDir),
@@ -1301,20 +1303,9 @@ function FinansePageInner() {
     .filter((t) => (t.amount || 0) > 0)
     .reduce((s, t) => s + (t.amount || 0), 0);
 
-  // Budget: group expenses by category
-  type CategoryTotal = { id: string | null; name: string; total: number; count: number };
-  const expenseByCat: CategoryTotal[] = (() => {
-    const map = new Map<string, CategoryTotal>();
-    for (const tx of transactions.filter((t) => (t.amount || 0) < 0)) {
-      const key = tx.category_id || "__none__";
-      const name = tx.finance_categories?.name || "Bez kategorii";
-      const existing = map.get(key) || { id: tx.category_id || null, name, total: 0, count: 0 };
-      existing.total += Math.abs(tx.amount || 0);
-      existing.count += 1;
-      map.set(key, existing);
-    }
-    return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  })();
+  // Budżet: the same definition as the home page card (summarizeExpenses) — one source of truth.
+  const budgetSummary = useMemo(() => summarizeExpenses(transactions, categories), [transactions, categories]);
+  const budgetBalance = budgetSummary.income - budgetSummary.total - budgetSummary.savingsNet;
 
   return (
     <div className="min-h-screen bg-background">
@@ -1554,11 +1545,21 @@ function FinansePageInner() {
                                       <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
                                   </optgroup>
+                                  <optgroup label="Przelewy własne">
+                                    {transferCategories.map((c) => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </optgroup>
                                 </>
                               ) : (
                                 <>
                                   <optgroup label="Przychody">
                                     {incomeCategories.map((c) => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </optgroup>
+                                  <optgroup label="Przelewy własne">
+                                    {transferCategories.map((c) => (
                                       <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
                                   </optgroup>
@@ -1982,6 +1983,11 @@ function FinansePageInner() {
                                           <option key={c.id} value={c.id}>{c.name}</option>
                                         ))}
                                       </optgroup>
+                                      <optgroup label="Przelewy własne">
+                                        {transferCategories.map((c) => (
+                                          <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                      </optgroup>
                                     </select>
                                     {isPending && (
                                       <button
@@ -2152,23 +2158,38 @@ function FinansePageInner() {
               </div>
             ) : (
               <>
-                {/* Summary cards */}
-                <div className="mt-4 grid grid-cols-3 gap-3">
+                {/* Summary cards — summarizeExpenses (same as the home page card) */}
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div className="rounded-xl border border-border bg-card p-4 text-center">
-                    <p className="text-2xl font-bold text-red-600">−{formatAmount(totalExpenses)}</p>
+                    <p className="text-2xl font-bold text-red-600">−{formatAmount(budgetSummary.total)}</p>
                     <p className="text-xs text-muted-foreground mt-1">Wydatki</p>
                   </div>
                   <div className="rounded-xl border border-border bg-card p-4 text-center">
-                    <p className="text-2xl font-bold text-emerald-600">+{formatAmount(totalIncome)}</p>
+                    <p className="text-2xl font-bold text-emerald-600">+{formatAmount(budgetSummary.income)}</p>
                     <p className="text-xs text-muted-foreground mt-1">Przychody</p>
                   </div>
                   <div className="rounded-xl border border-border bg-card p-4 text-center">
-                    <p className={`text-2xl font-bold ${totalIncome - totalExpenses >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                      {formatAmount(totalIncome - totalExpenses)}
+                    <p className="text-2xl font-bold text-blue-600">{formatAmount(budgetSummary.savingsNet)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Na cele (netto)</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card p-4 text-center">
+                    <p className={`text-2xl font-bold ${budgetBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                      {formatAmount(budgetBalance)}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">Bilans</p>
                   </div>
                 </div>
+                {budgetSummary.netNegativeCategories.length > 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Zwroty przewyższające wydatki:{" "}
+                    {budgetSummary.netNegativeCategories.map((c) => `${c.name} +${formatAmount(c.amount)}`).join(", ")}
+                  </p>
+                )}
+                {budgetSummary.expensesInIncomeCats.amount > 0 && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    ⚠ Wydatki w kategoriach przychodowych: {formatAmount(budgetSummary.expensesInIncomeCats.amount)} ({budgetSummary.expensesInIncomeCats.count})
+                  </p>
+                )}
 
                 {/* Category breakdown */}
                 <div className="mt-4 rounded-xl border border-border bg-card overflow-hidden">
@@ -2176,12 +2197,14 @@ function FinansePageInner() {
                     <p className="text-sm font-semibold text-foreground">Wydatki wg kategorii</p>
                   </div>
                   <div className="divide-y divide-border">
-                    {expenseByCat.map((row) => {
-                      const pct = totalExpenses > 0 ? (row.total / totalExpenses) * 100 : 0;
+                    {budgetSummary.categories.map((row) => {
+                      const pct = row.share;
                       const catKey = row.id || "__none__";
                       const isExpanded = budgetExpandedCat === catKey;
+                      // Same rows summarizeExpenses counted: the whole expense category (refunds net out);
+                      // "Bez kategorii" = negative amounts only.
                       const catTxs = transactions.filter((t) =>
-                        (t.amount || 0) < 0 && (row.id ? t.category_id === row.id : !t.category_id)
+                        row.id ? t.category_id === row.id : !t.category_id && (t.amount || 0) < 0
                       );
                       return (
                         <div key={catKey}>
@@ -2197,7 +2220,7 @@ function FinansePageInner() {
                               </div>
                               <div className="flex items-center gap-3">
                                 <span className="text-xs text-muted-foreground">{pct.toFixed(1)}%</span>
-                                <span className="text-sm font-bold text-red-600">−{formatAmount(row.total)}</span>
+                                <span className="text-sm font-bold text-red-600">−{formatAmount(row.amount)}</span>
                               </div>
                             </div>
                             <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -2213,7 +2236,7 @@ function FinansePageInner() {
                               const key = label.trim().toUpperCase().split(/[\s/\-_]+/)[0];
                               const existing = merchantMap.get(key) || { label, txs: [], total: 0 };
                               existing.txs.push(tx);
-                              existing.total += Math.abs(tx.amount);
+                              existing.total -= Number(tx.amount); // net: refunds reduce the merchant
                               merchantMap.set(key, existing);
                             }
                             const merchants = Array.from(merchantMap.entries()).sort((a, b) => b[1].total - a[1].total);
@@ -2238,7 +2261,9 @@ function FinansePageInner() {
                                           <span className="font-medium text-foreground">{label.split(/\s+/).slice(0, 4).join(" ")}</span>
                                           <span className="text-xs text-muted-foreground">({txs.length} trans.)</span>
                                         </div>
-                                        <span className="text-sm font-semibold text-red-600">−{formatAmount(total)}</span>
+                                        <span className={`text-sm font-semibold ${total >= 0 ? "text-red-600" : "text-emerald-600"}`}>
+                                          {total >= 0 ? "−" : "+"}{formatAmount(Math.abs(total))}
+                                        </span>
                                       </button>
 
                                       {isMerchantExpanded && (() => {
@@ -2302,6 +2327,14 @@ function FinansePageInner() {
                                                         </optgroup>
                                                         <optgroup label="Przychody">
                                                           {incomeCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                                        </optgroup>
+                                                        <optgroup label="Przelewy własne">
+                                                          {transferCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                                        </optgroup>
+                                                        <optgroup label="Przelewy własne">
+                                                          {transferCategories.map((c) => (
+                                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                                          ))}
                                                         </optgroup>
                                                       </select>
                                                     </td>
@@ -2388,11 +2421,12 @@ function FinansePageInner() {
                 />
                 <select
                   value={newCatType}
-                  onChange={(e) => setNewCatType(e.target.value as "expense" | "income")}
+                  onChange={(e) => setNewCatType(e.target.value as "expense" | "income" | "transfer")}
                   className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 >
                   <option value="expense">Wydatek</option>
                   <option value="income">Przychód</option>
+                  <option value="transfer">Przelew własny</option>
                 </select>
                 <button
                   onClick={addCategory}
@@ -2404,13 +2438,13 @@ function FinansePageInner() {
             </div>
 
             {/* Categories list with tags */}
-            {(["expense", "income"] as const).map((type) => {
+            {(["expense", "income", "transfer"] as const).map((type) => {
               const cats = categories.filter((c) => c.type === type);
               if (cats.length === 0) return null;
               return (
                 <div key={type} className="rounded-xl border border-border bg-card p-4">
                   <p className="mb-3 text-sm font-semibold text-foreground">
-                    {type === "expense" ? "Wydatki" : "Przychody"}
+                    {type === "expense" ? "Wydatki" : type === "income" ? "Przychody" : "Przelewy własne"}
                   </p>
                   <div className="space-y-2">
                     {cats.map((c) => {

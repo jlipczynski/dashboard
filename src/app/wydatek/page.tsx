@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { parseAmountPL, formatPLN, todayWarsaw } from "@/lib/wydatek"
 
-type Category = { id: string; name: string; type: "expense" | "income" }
+type Category = { id: string; name: string; type: "expense" | "income" | "transfer" }
 type Recent = { id: string; date: string; amountGrosze: number; description: string; categoryName: string | null; key: string | null }
 type Status = { kind: "idle" } | { kind: "saving" } | { kind: "ok"; text: string; undoKey: string } | { kind: "error"; text: string }
 

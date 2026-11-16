@@ -1,18 +1,21 @@
-// "Wydatki wg kategorii" (home page card) — pure aggregation, no DB.
+// The ONE definition of "wydatki" — used by the home page card (/api/finanse/summary)
+// and by the Budżet tab (/finanse), so both show the same numbers. Pure aggregation, no DB.
 //
-// Definitions (brief Finanse 04):
+// Definitions (briefs Finanse 04 / 04b):
 // - expense = transaction in a category of type "expense"; category amount = NET (-sum(amount)),
 //   so refunds (positive amounts) reduce their category;
+// - total = net of ALL expense groups, including ones where refunds exceed spending (those are
+//   listed in netNegativeCategories, not as bars);
 // - uncategorized negative amounts → a separate "Bez kategorii" bar, counted in the total;
-// - "income" categories are never expenses: Investment net goes to savingsNet,
-//   negative amounts in other income categories go to the data-quality warning;
+// - "transfer" categories (own accounts, savings goals) are neither expense nor income → savingsNet;
+// - "income" categories are never expenses: positive amounts → income,
+//   negative amounts go to the data-quality warning (expensesInIncomeCats);
 // - rows in the trash (deleted_at set) are skipped.
 // All sums are done in grosze (integers) to avoid floating-point drift.
 
-import { extractMerchant } from "./finanse-db";
+import { extractMerchant } from "./finanse-merchant";
 import { classifyIntermediary } from "./finanse-intermediaries";
 
-export const INVESTMENT_CATEGORY = "Investment";
 export const TOP_MERCHANTS = 5;
 
 export type SummaryRow = {
@@ -32,7 +35,7 @@ export type SummaryCategory = {
   id: string | null;
   name: string;
   amount: number;
-  share: number; // % of total, 1 decimal
+  share: number; // % of the sum of positive bars (so the bars add up to 100%), 1 decimal
   count: number;
   topMerchants: SummaryMerchant[];
 };
@@ -40,6 +43,10 @@ export type SummaryCategory = {
 export type ExpenseSummary = {
   total: number;
   categories: SummaryCategory[];
+  /** Expense categories where refunds exceeded spending; amount > 0 = surplus of refunds. */
+  netNegativeCategories: { id: string | null; name: string; amount: number }[];
+  /** Positive amounts in "income" categories. */
+  income: number;
   savingsNet: number;
   expensesInIncomeCats: { amount: number; count: number };
   monthsWithData: string[];
@@ -60,6 +67,7 @@ export function summarizeExpenses(rows: SummaryRow[], categories: SummaryCategor
   type Acc = { id: string | null; name: string; gr: number; count: number; merchants: Map<string, { gr: number; count: number }> };
   const groups = new Map<string, Acc>();
   let savingsGr = 0;
+  let incomeGr = 0;
   let incomeCatExpGr = 0;
   let incomeCatExpCount = 0;
 
@@ -87,25 +95,33 @@ export function summarizeExpenses(rows: SummaryRow[], categories: SummaryCategor
     }
     if (cat.type === "expense") {
       add(cat.id, cat.id, cat.name, gr, r);
-    } else if (cat.name === INVESTMENT_CATEGORY) {
+    } else if (cat.type === "transfer") {
       savingsGr -= gr;
+    } else if (gr > 0) {
+      incomeGr += gr;
     } else if (gr < 0) {
       incomeCatExpGr -= gr;
       incomeCatExpCount++;
     }
   }
 
-  // Only categories with a positive net amount are bars (a category of pure refunds is not spending).
-  const bars = [...groups.values()].filter((g) => g.gr > 0).sort((a, b) => b.gr - a.gr);
-  const totalGr = bars.reduce((s, g) => s + g.gr, 0);
+  const all = [...groups.values()];
+  // Bars: only positive net groups. Total: ALL groups — a category with more refunds than spending lowers it.
+  const bars = all.filter((g) => g.gr > 0).sort((a, b) => b.gr - a.gr);
+  const negative = all.filter((g) => g.gr < 0).sort((a, b) => a.gr - b.gr);
+  const totalGr = all.reduce((s, g) => s + g.gr, 0);
+  // Shares are relative to the positive bars only, so the bars add up to 100%.
+  const barsGr = bars.reduce((s, g) => s + g.gr, 0);
 
   return {
     total: toZl(totalGr),
+    netNegativeCategories: negative.map((g) => ({ id: g.id, name: g.name, amount: toZl(-g.gr) })),
+    income: toZl(incomeGr),
     categories: bars.map((g) => ({
       id: g.id,
       name: g.name,
       amount: toZl(g.gr),
-      share: totalGr > 0 ? Math.round((g.gr / totalGr) * 1000) / 10 : 0,
+      share: barsGr > 0 ? Math.round((g.gr / barsGr) * 1000) / 10 : 0,
       count: g.count,
       topMerchants: [...g.merchants.entries()]
         .map(([name, m]) => ({ name, amount: toZl(m.gr), count: m.count }))

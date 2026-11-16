@@ -1,11 +1,10 @@
-// @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { summarizeExpenses, isValidIsoDate, payeeName, type SummaryRow } from "../lib/finanse-summary";
 
 const cats = [
   { id: "food", name: "Food & Drink", type: "expense" },
   { id: "shop", name: "Shopping", type: "expense" },
-  { id: "inv", name: "Investment", type: "income" },
+  { id: "inv", name: "Oszczędności (przelewy własne)", type: "transfer" },
   { id: "mal", name: "Maliny", type: "income" },
 ];
 const row = (p: Partial<SummaryRow>): SummaryRow => ({
@@ -29,7 +28,7 @@ describe("summarizeExpenses", () => {
     expect(s.total).toBe(70);
   });
 
-  it("Investment is not on the chart — goes to savingsNet (0 when not positive)", () => {
+  it("transfer category (recognized by type, not name) is not on the chart — goes to savingsNet (0 when not positive)", () => {
     const s = summarizeExpenses([row({ amount: -500, category_id: "inv" }), row({ amount: 100, category_id: "inv" })], cats);
     expect(s.categories).toEqual([]);
     expect(s.total).toBe(0);
@@ -37,13 +36,48 @@ describe("summarizeExpenses", () => {
     expect(summarizeExpenses([row({ amount: 50, category_id: "inv" })], cats).savingsNet).toBe(0);
   });
 
-  it("negative amounts in other income categories → warning, not the chart; positives ignored", () => {
+  it("negative amounts in income categories → warning, not the chart; positives → income", () => {
     const s = summarizeExpenses(
       [row({ amount: -1000, category_id: "mal" }), row({ amount: -661, category_id: "mal" }), row({ amount: 5000, category_id: "mal" })],
       cats
     );
     expect(s.categories).toEqual([]);
     expect(s.expensesInIncomeCats).toEqual({ amount: 1661, count: 2 });
+    expect(s.income).toBe(5000);
+  });
+
+  it("a transfer category with any name counts as savings; an income category named 'Investment' does not", () => {
+    const s = summarizeExpenses(
+      [row({ amount: -300, category_id: "own" }), row({ amount: -200, category_id: "legacy" })],
+      [
+        { id: "own", name: "Konto oszczędnościowe", type: "transfer" },
+        { id: "legacy", name: "Investment", type: "income" },
+      ]
+    );
+    expect(s.savingsNet).toBe(300);
+    expect(s.expensesInIncomeCats).toEqual({ amount: 200, count: 1 });
+  });
+
+  it("category with more refunds than spending lowers the total and is listed separately, not as a bar", () => {
+    const s = summarizeExpenses(
+      [
+        row({ amount: -1000, category_id: "food" }),
+        row({ amount: -434.66, category_id: "shop" }),
+        row({ amount: 1637.99, category_id: "shop" }),
+      ],
+      cats
+    );
+    expect(s.categories.map((c) => c.name)).toEqual(["Food & Drink"]);
+    expect(s.categories[0].share).toBe(100);
+    expect(s.netNegativeCategories).toEqual([{ id: "shop", name: "Shopping", amount: 1203.33 }]);
+    expect(s.total).toBe(-203.33);
+  });
+
+  it("a group with net exactly 0 is neither a bar nor a negative line", () => {
+    const s = summarizeExpenses([row({ amount: -50 }), row({ amount: 50 })], cats);
+    expect(s.categories).toEqual([]);
+    expect(s.netNegativeCategories).toEqual([]);
+    expect(s.total).toBe(0);
   });
 
   it("rows in the trash are skipped entirely", () => {

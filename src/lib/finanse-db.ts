@@ -8,7 +8,7 @@ export function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" }[] = [
+const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "transfer" }[] = [
   { name: "Travel", type: "expense" },
   { name: "Mati USA", type: "expense" },
   { name: "Zwierzaki", type: "expense" },
@@ -28,7 +28,8 @@ const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" }[] = [
   { name: "Giving", type: "expense" },
   { name: "Maliny", type: "income" },
   { name: "Salary", type: "income" },
-  { name: "Investment", type: "income" },
+  { name: "Najem", type: "income" },
+  { name: "Oszczędności (przelewy własne)", type: "transfer" },
 ];
 
 let tablesReady = false;

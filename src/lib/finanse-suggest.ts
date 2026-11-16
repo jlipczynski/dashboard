@@ -13,9 +13,16 @@ export type SuggestInput = {
 
 export type SuggestCategory = { id: string; name: string; type: string };
 
+/** How a category type is described to the model. */
+export function categoryTypeLabel(type: string): string {
+  if (type === "expense") return "wydatek";
+  if (type === "transfer") return "przelew własny / oszczędności";
+  return "przychód";
+}
+
 export function buildSuggestPrompt(categories: SuggestCategory[], txs: SuggestInput[]): string {
   const categoryList = categories
-    .map((c) => `${c.id} | ${c.name} (${c.type === "expense" ? "wydatek" : "przychód"})`)
+    .map((c) => `${c.id} | ${c.name} (${categoryTypeLabel(c.type)})`)
     .join("\n");
   const txList = txs
     .map(

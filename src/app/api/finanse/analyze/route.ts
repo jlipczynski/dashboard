@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { categoryTypeLabel } from "@/lib/finanse-suggest";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin } from "@/lib/finanse-db";
 
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
 
   const categories = categoriesData || [];
   const categoryList = categories
-    .map((c) => `${c.id} | ${c.name} (${c.type === "expense" ? "wydatek" : "przychód"})`)
+    .map((c) => `${c.id} | ${c.name} (${categoryTypeLabel(c.type)})`)
     .join("\n");
 
   const client = new Anthropic({

@@ -14,6 +14,7 @@ type Summary = {
   total: number;
   categories: Category[];
   savingsNet: number;
+  netNegativeCategories?: { id: string | null; name: string; amount: number }[];
   expensesInIncomeCats: { amount: number; count: number };
   monthsWithData: string[];
 };
@@ -257,7 +258,18 @@ export function ExpensesByCategoryCard() {
         <div className="mt-3 space-y-1 text-[11px]">
           {data.savingsNet > 0 && (
             <p className="text-muted-foreground">
-              Na cele / inwestycje (netto): <span className="font-mono tabular-nums text-foreground">{formatZl(data.savingsNet)}</span>
+              Na cele / przelewy własne (netto): <span className="font-mono tabular-nums text-foreground">{formatZl(data.savingsNet)}</span>
+            </p>
+          )}
+          {(data.netNegativeCategories ?? []).length > 0 && (
+            <p className="text-muted-foreground">
+              Zwroty przewyższające wydatki:{" "}
+              {(data.netNegativeCategories ?? []).map((c, i) => (
+                <span key={c.id ?? "__none__"}>
+                  {i > 0 && ", "}
+                  {c.name} <span className="font-mono tabular-nums text-emerald-700">+{formatZl(c.amount)}</span>
+                </span>
+              ))}
             </p>
           )}
           {data.expensesInIncomeCats.amount > 0 && (
