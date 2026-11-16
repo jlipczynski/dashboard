@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { pillars, monthlyGoals, sportAreas } from "@/lib/data";
 import { TopNav } from "@/components/dashboard/top-nav";
+import { ExpensesByCategoryCard } from "@/components/finanse/ExpensesByCategoryCard";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { calcAllScores, calcOverallScore, type RozwojData, type PracaData, type RehabScoreInput } from "@/lib/scores";
 import { DEFAULT_REHAB_PLAN, averagePercent, isPlanActive, monthStartStr, toDateStr, type RehabEntry } from "@/lib/rehab";
@@ -258,6 +259,9 @@ export default function Home() {
           <span className="text-green-600">65+</span> na dobrej drodze · <span className="text-amber-600">40–64</span> wymaga uwagi ·{" "}
           <span className="text-red-600">&lt;40</span> poniżej celu
         </p>
+
+        {/* ── Finanse: separate card, not part of any pillar score ── */}
+        <ExpensesByCategoryCard />
       </div>
     </div>
   );
