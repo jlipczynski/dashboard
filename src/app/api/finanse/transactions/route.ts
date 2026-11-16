@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, ensureFinanceTables } from "@/lib/finanse-db";
+import { normalizeRule, validateRule } from "@/lib/finanse-rules";
 
 // GET /api/finanse/transactions?month=2026-03&categoryId=...
 // GET /api/finanse/transactions?trash=true — only rows in the trash (deleted_at set), newest deletion first, no month filter.
@@ -63,12 +64,23 @@ export async function POST(request: Request) {
 
   const admin = getSupabaseAdmin();
 
+  // Rules from the import preview ("Zapamiętaj"). Too general ones are skipped (the transactions are still saved);
+  // one row per (pattern, recipient) — Postgres rejects an upsert touching the same row twice.
+  let rulesRejected = 0;
   if (Array.isArray(rules) && rules.length > 0) {
-    const rulesPayload = rules.map((r: { pattern: string; categoryId: string }) => ({
-      pattern: r.pattern.toUpperCase(),
-      category_id: r.categoryId,
-    }));
-    await admin.from("finance_rules").upsert(rulesPayload, { onConflict: "pattern" });
+    const byKey = new Map<string, { pattern: string; counterparty_pattern: string | null; category_id: string }>();
+    for (const r of rules as { pattern: string; counterpartyPattern?: string | null; categoryId: string }[]) {
+      if (!r?.pattern || !r.categoryId) continue;
+      const rule = normalizeRule(String(r.pattern), r.counterpartyPattern ? String(r.counterpartyPattern) : null);
+      if (validateRule(rule.pattern, rule.counterparty_pattern)) {
+        rulesRejected++;
+        continue;
+      }
+      byKey.set(`${rule.pattern}|${rule.counterparty_pattern ?? ""}`, { ...rule, category_id: r.categoryId });
+    }
+    if (byKey.size > 0) {
+      await admin.from("finance_rules").upsert([...byKey.values()], { onConflict: "pattern,counterparty_pattern" });
+    }
   }
 
   const payload = transactions.map((t: {
@@ -106,7 +118,7 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, saved: payload.length });
+  return NextResponse.json({ ok: true, saved: payload.length, rulesRejected });
 }
 
 // PATCH /api/finanse/transactions?id=...  { categoryId }

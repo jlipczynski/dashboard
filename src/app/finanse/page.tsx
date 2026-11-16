@@ -13,6 +13,9 @@ import {
   type DismissedMap,
 } from "@/lib/finanse-similar";
 import { classifyIntermediary } from "@/lib/finanse-intermediaries";
+import { extractMerchant } from "@/lib/finanse-merchant";
+import { similarityKey } from "@/lib/finanse-key";
+import { ruleFromTx, validateRule, ruleLabel } from "@/lib/finanse-rules";
 
 /* ── Types ──────────────────────────────────────── */
 type Category = {
@@ -35,6 +38,7 @@ type Tag = {
 type Rule = {
   id: string;
   pattern: string;
+  counterparty_pattern?: string | null;
   category_id: string;
   subcategory_id: string | null;
   finance_categories: { name: string; type: string } | null;
@@ -219,6 +223,7 @@ function FinansePageInner() {
   const [pendingCategories, setPendingCategories] = useState<Record<string, string>>({});
   const [pendingSubcategories, setPendingSubcategories] = useState<Record<string, string>>({});
   const [savedRuleIds, setSavedRuleIds] = useState<Record<string, string>>({});
+  const [histRuleErrors, setHistRuleErrors] = useState<Record<string, string>>({});
 
   // Kategorie state
   const [newCatName, setNewCatName] = useState("");
@@ -397,10 +402,20 @@ function FinansePageInner() {
     );
   }
 
-  // Fuzzy match by first significant word (>=4 chars) in merchant name
-  function fuzzyMerchantKey(name: string) {
-    const words = name.trim().toUpperCase().split(/[\s/\-_]+/);
-    return words.find((w) => w.length >= 4) || name.trim().toUpperCase().slice(0, 6);
+  const importKeyTx = (t: ImportedTransaction) => ({
+    description: t.description,
+    counterparty: t.counterparty,
+    merchant: t.merchant,
+    importHash: t.importHash,
+  });
+
+  // Rule "Zapamiętaj" would save for this import row (null = none possible), plus the reason when refused.
+  function importRule(tx: ImportedTransaction) {
+    if (isOpaque(tx)) return { rule: null, error: "Pośrednik płatności — reguła złapałaby różne sklepy" };
+    const rule = ruleFromTx(importKeyTx(tx));
+    if (!rule) return { rule: null, error: "Dla tej transakcji nie da się zapisać reguły" };
+    const error = validateRule(rule.pattern, rule.counterparty_pattern);
+    return error ? { rule: null, error } : { rule, error: null };
   }
 
   // Similar rows that still need a decision (see similarSelection); empty → no link.
@@ -408,12 +423,11 @@ function FinansePageInner() {
     const catId = categoryAssignments[tx.importHash];
     // Opaque intermediary: one name = many different shops — never "similar". Cash never goes through import.
     if (!catId || isOpaque(tx) || isCashHash(tx.importHash)) return null;
-    const key = fuzzyMerchantKey(tx.merchant);
+    // Transfers: same recipient AND title; purchases: same shop (first word) — see similarityKey.
+    const key = similarityKey(importKeyTx(tx));
+    if (!key) return null;
     const candidates = importRows.filter(
-      (t) =>
-        !t.isDuplicate &&
-        t.importHash !== tx.importHash &&
-        t.merchant.toUpperCase().includes(key)
+      (t) => !t.isDuplicate && t.importHash !== tx.importHash && similarityKey(importKeyTx(t)) === key
     );
     return similarSelection(
       candidates.map((t) => ({
@@ -552,12 +566,16 @@ function FinansePageInner() {
         notes: noteFor(t),
       }));
 
-      const rulesToSave: { pattern: string; categoryId: string }[] = [];
+      const rulesToSave: { pattern: string; counterpartyPattern: string | null; categoryId: string }[] = [];
       for (const tx of toSave) {
-        if (saveRules[tx.importHash] && categoryAssignments[tx.importHash] && !isOpaque(tx)) {
-          const pattern = tx.merchant.toUpperCase().slice(0, 50);
-          if (pattern.length > 3) {
-            rulesToSave.push({ pattern, categoryId: categoryAssignments[tx.importHash] });
+        if (saveRules[tx.importHash] && categoryAssignments[tx.importHash]) {
+          const { rule } = importRule(tx);
+          if (rule) {
+            rulesToSave.push({
+              pattern: rule.pattern,
+              counterpartyPattern: rule.counterparty_pattern,
+              categoryId: categoryAssignments[tx.importHash],
+            });
           }
         }
       }
@@ -930,35 +948,44 @@ function FinansePageInner() {
     );
   }
 
+  const histKeyTx = (t: SavedTransaction) => ({
+    description: t.description,
+    counterparty: t.counterparty,
+    merchant: t.merchant,
+    importHash: t.import_hash,
+  });
+
+  // Transfer → title + recipient; purchase → full shop name; cash / opaque → no rule. The API validates again.
   async function saveHistRule(tx: SavedTransaction) {
-    const pattern = histMerchantKey(tx);
-    if (!pattern || pattern.length < 3 || !tx.category_id) return;
+    if (!tx.category_id) return;
+    const rule = histIsOpaque(tx) ? null : ruleFromTx(histKeyTx(tx));
+    const localError = rule ? validateRule(rule.pattern, rule.counterparty_pattern) : "Dla tej transakcji nie da się zapisać reguły";
+    if (!rule || localError) {
+      setHistRuleErrors((prev) => ({ ...prev, [tx.id]: localError ?? "" }));
+      return;
+    }
     const subcategoryId = tx.subcategory_id || pendingSubcategories[tx.id] || null;
-    await fetch("/api/finanse/rules", {
+    const res = await fetch("/api/finanse/rules", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pattern, categoryId: tx.category_id, subcategoryId }),
+      body: JSON.stringify({
+        pattern: rule.pattern,
+        counterpartyPattern: rule.counterparty_pattern,
+        categoryId: tx.category_id,
+        subcategoryId,
+      }),
     });
-    setSavedRuleIds((prev) => ({ ...prev, [tx.id]: pattern }));
-  }
-
-  function extractMerchantName(description: string): string {
-    const cardMatch = description.match(/PŁATNOŚĆ KARTĄ [\d,.]+ PLN (.+)/);
-    if (cardMatch) return cardMatch[1].trim();
-    const blikMatch = description.match(/Zakup BLIK (.+?) ref:/);
-    if (blikMatch) return blikMatch[1].trim();
-    const standingMatch = description.match(/Platnosc powtarzalna ([^\s].*?) (sp\b|S\.A\.|ul\.|ref:|$)/i);
-    if (standingMatch) return standingMatch[1].trim();
-    return description;
-  }
-
-  function histMerchantKey(tx: SavedTransaction) {
-    const src = tx.merchant || tx.counterparty || extractMerchantName(tx.description);
-    return src.trim().toUpperCase().split(/[\s/\-_]+/)[0];
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setHistRuleErrors((prev) => ({ ...prev, [tx.id]: data.error || "Nie udało się zapisać reguły" }));
+      return;
+    }
+    setHistRuleErrors((prev) => { const n = { ...prev }; delete n[tx.id]; return n; });
+    setSavedRuleIds((prev) => ({ ...prev, [tx.id]: ruleLabel(rule) }));
   }
 
   function histIsOpaque(tx: SavedTransaction) {
-    const merchant = tx.merchant || extractMerchantName(tx.description);
+    const merchant = tx.merchant || extractMerchant(tx.description);
     return classifyIntermediary(tx.description, tx.counterparty, merchant).kind === "opaque";
   }
 
@@ -966,9 +993,10 @@ function FinansePageInner() {
   function histSimilarSelection(tx: SavedTransaction) {
     const effectiveCategoryId = pendingCategories[tx.id] ?? tx.category_id;
     if (!effectiveCategoryId || histIsOpaque(tx) || isCashHash(tx.import_hash)) return null;
-    const key = histMerchantKey(tx);
-    if (key.length < 3) return null;
-    const candidates = transactions.filter((t) => t.id !== tx.id && histMerchantKey(t) === key);
+    // Transfers: same recipient AND title; purchases: same shop (first word) — see similarityKey.
+    const key = similarityKey(histKeyTx(tx));
+    if (!key) return null;
+    const candidates = transactions.filter((t) => t.id !== tx.id && similarityKey(histKeyTx(t)) === key);
     return similarSelection(
       candidates.map((t) => ({
         id: t.id,
@@ -1607,19 +1635,18 @@ function FinansePageInner() {
                           <td className="px-3 py-2 text-center">
                             <input
                               type="checkbox"
-                              checked={(saveRules[tx.importHash] && !isOpaque(tx)) || false}
+                              checked={(saveRules[tx.importHash] && !!importRule(tx).rule) || false}
                               onChange={(e) =>
                                 setSaveRules((prev) => ({
                                   ...prev,
                                   [tx.importHash]: e.target.checked,
                                 }))
                               }
-                              disabled={!categoryAssignments[tx.importHash] || isOpaque(tx)}
-                              title={
-                                isOpaque(tx)
-                                  ? "Pośrednik płatności — reguła złapałaby różne sklepy"
-                                  : "Zapamiętaj regułę dla tego merchanta"
-                              }
+                              disabled={!categoryAssignments[tx.importHash] || !importRule(tx).rule}
+                              title={(() => {
+                                const r = importRule(tx);
+                                return r.rule ? `Zapamiętaj regułę: ${ruleLabel(r.rule)}` : r.error ?? "";
+                              })()}
                               className="h-4 w-4 cursor-pointer accent-emerald-500"
                             />
                           </td>
@@ -1993,14 +2020,20 @@ function FinansePageInner() {
                                         ✓ Reguła zapisana: <code className="rounded bg-emerald-100 px-1 font-mono">{savedRuleIds[tx.id]}</code>
                                       </span>
                                     ) : (
-                                      <label className="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-700">
-                                        <input
-                                          type="checkbox"
-                                          onChange={(e) => { if (e.target.checked) saveHistRule(effectiveTx); }}
-                                          className="h-3 w-3 cursor-pointer accent-emerald-500"
-                                        />
-                                        Zapamiętaj regułę
-                                      </label>
+                                      <>
+                                        <label className="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-700">
+                                          <input
+                                            type="checkbox"
+                                            checked={false}
+                                            onChange={(e) => { if (e.target.checked) saveHistRule(effectiveTx); }}
+                                            className="h-3 w-3 cursor-pointer accent-emerald-500"
+                                          />
+                                          Zapamiętaj regułę
+                                        </label>
+                                        {histRuleErrors[tx.id] && (
+                                          <span className="text-[10px] text-orange-600">{histRuleErrors[tx.id]}</span>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                 )}
@@ -2176,7 +2209,7 @@ function FinansePageInner() {
                             // Group by merchant
                             const merchantMap = new Map<string, { label: string; txs: typeof catTxs; total: number }>();
                             for (const tx of catTxs) {
-                              const label = tx.merchant || extractMerchantName(tx.description);
+                              const label = tx.merchant || extractMerchant(tx.description);
                               const key = label.trim().toUpperCase().split(/[\s/\-_]+/)[0];
                               const existing = merchantMap.get(key) || { label, txs: [], total: 0 };
                               existing.txs.push(tx);
@@ -2542,7 +2575,7 @@ function FinansePageInner() {
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono truncate max-w-[180px]">
-                          {r.pattern}
+                          {ruleLabel(r)}
                         </code>
                         <span className="text-muted-foreground">→</span>
                         <span className="font-medium">{r.finance_categories?.name || "—"}</span>

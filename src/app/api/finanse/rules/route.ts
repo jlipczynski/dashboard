@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, ensureFinanceTables } from "@/lib/finanse-db";
+import { normalizeRule, validateRule } from "@/lib/finanse-rules";
 
 // GET /api/finanse/rules
 export async function GET() {
@@ -16,22 +17,29 @@ export async function GET() {
   return NextResponse.json({ rules: data });
 }
 
-// POST /api/finanse/rules  { pattern, categoryId, subcategoryId? }
+// POST /api/finanse/rules  { pattern, counterpartyPattern?, categoryId, subcategoryId? }
+// Transfer rules: pattern = title + counterpartyPattern = recipient (both must match on import).
+// A pattern-only rule that is too general (PRZELEW, JAN, < 4 chars…) is rejected with 400.
 export async function POST(request: Request) {
   await ensureFinanceTables();
 
-  const { pattern, categoryId, subcategoryId } = await request.json();
+  const { pattern, counterpartyPattern, categoryId, subcategoryId } = await request.json();
   if (!pattern || !categoryId) return NextResponse.json({ error: "Missing pattern or categoryId" }, { status: 400 });
+
+  const rule = normalizeRule(String(pattern), counterpartyPattern ? String(counterpartyPattern) : null);
+  const invalid = validateRule(rule.pattern, rule.counterparty_pattern);
+  if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
   const admin = getSupabaseAdmin();
   const payload: Record<string, string | null> = {
-    pattern: pattern.toUpperCase(),
+    pattern: rule.pattern,
+    counterparty_pattern: rule.counterparty_pattern,
     category_id: categoryId,
     subcategory_id: subcategoryId || null,
   };
   const { data, error } = await admin
     .from("finance_rules")
-    .upsert(payload, { onConflict: "pattern" })
+    .upsert(payload, { onConflict: "pattern,counterparty_pattern" })
     .select()
     .single();
 

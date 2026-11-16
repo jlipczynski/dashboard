@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { matchRule, sortRules } from "@/lib/finanse-rules";
 import { getSupabaseAdmin, ensureFinanceTables, parseSantanderCSV } from "@/lib/finanse-db";
 import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 
@@ -25,16 +26,20 @@ export async function POST(request: Request) {
   // Load all rules
   const { data: rulesData } = await admin
     .from("finance_rules")
-    .select("pattern, category_id, subcategory_id, finance_categories(id, name, type), finance_subcategories(id, name)");
+    .select("pattern, counterparty_pattern, created_at, category_id, subcategory_id, finance_categories(id, name, type), finance_subcategories(id, name)");
 
-  const rules: { pattern: string; categoryId: string; categoryName: string; subcategoryId: string | null; subcategoryName: string | null }[] =
+  // Most specific rule wins: recipient + title first, then longer patterns; deterministic order (sortRules).
+  const rules = sortRules(
     (rulesData || []).map((r) => ({
       pattern: r.pattern as string,
+      counterparty_pattern: (r.counterparty_pattern as string | null) ?? null,
+      created_at: (r.created_at as string | null) ?? null,
       categoryId: r.category_id as string,
       categoryName: (r.finance_categories as unknown as { name: string } | null)?.name || "",
       subcategoryId: r.subcategory_id as string | null,
       subcategoryName: (r.finance_subcategories as unknown as { name: string } | null)?.name || null,
-    }));
+    }))
+  );
 
   // Check which hashes already exist in DB (deduplication).
   // Deliberately NO deleted_at filter: a transaction moved to the trash must still count as
@@ -52,13 +57,10 @@ export async function POST(request: Request) {
 
   // Match rules against each transaction
   function matchRules(description: string, merchant: string, counterparty: string | null) {
-    const haystack = `${description} ${merchant} ${counterparty || ""}`.toUpperCase();
-    for (const rule of rules) {
-      if (haystack.includes(rule.pattern)) {
-        return { categoryId: rule.categoryId, categoryName: rule.categoryName, subcategoryId: rule.subcategoryId, subcategoryName: rule.subcategoryName };
-      }
-    }
-    return null;
+    const rule = matchRule(rules, { description, merchant, counterparty });
+    return rule
+      ? { categoryId: rule.categoryId, categoryName: rule.categoryName, subcategoryId: rule.subcategoryId, subcategoryName: rule.subcategoryName }
+      : null;
   }
 
   const transactions = parsed.map((t) => {

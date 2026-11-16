@@ -96,23 +96,9 @@ function parseDate(str: string): string {
   return `${year}-${month}-${day}`;
 }
 
-export function extractMerchant(description: string): string {
-  // Card payment: "DOP. MC ... PŁATNOŚĆ KARTĄ 80.49 PLN OPENAI *CHATGPT SUBSCR DUBLIN"
-  const cardMatch = description.match(/PŁATNOŚĆ KARTĄ [\d,.]+ PLN (.+)/);
-  if (cardMatch) return cardMatch[1].trim();
-
-  // BLIK
-  if (description.includes("Zakup BLIK")) {
-    const blikMatch = description.match(/Zakup BLIK (.+?) ref:/);
-    return blikMatch ? blikMatch[1].trim() : "BLIK";
-  }
-
-  // Standing order: "Platnosc powtarzalna {payee} ..."
-  const standingMatch = description.match(/Platnosc powtarzalna ([^\s].*?) (sp\b|S\.A\.|ul\.|ref:|$)/i);
-  if (standingMatch) return standingMatch[1].trim();
-
-  return description;
-}
+// Merchant extraction lives in a pure module (also used in the browser); re-exported for existing callers.
+export { extractMerchant } from "./finanse-merchant";
+import { extractMerchant } from "./finanse-merchant";
 
 export function makeImportHash(date: string, description: string, amount: number): string {
   return crypto

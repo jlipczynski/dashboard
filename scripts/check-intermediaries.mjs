@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { classifyIntermediary } from "../src/lib/finanse-intermediaries.ts";
-import { extractMerchant } from "../src/lib/finanse-db.ts";
+import { extractMerchant } from "../src/lib/finanse-merchant.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
