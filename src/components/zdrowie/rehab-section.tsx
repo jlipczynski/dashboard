@@ -9,6 +9,7 @@ import {
   type RehabEntry,
   type RehabPlan,
 } from "@/lib/rehab";
+import { RehabReset } from "./rehab-reset";
 
 const DAY_LABELS = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"];
 const QUICK = [0, 25, 50, 75, 100];
@@ -39,10 +40,12 @@ function Stat({ label, value, suffix = "%" }: { label: string; value: number | n
 export function RehabSection({
   plan,
   onEndPlan,
+  onResetPlan,
   onEntriesChange,
 }: {
   plan: RehabPlan;
   onEndPlan: () => void;
+  onResetPlan: (start: string, end: string) => void;
   onEntriesChange?: (entries: RehabEntry[]) => void;
 }) {
   const today = toDateStr(new Date());
@@ -247,9 +250,18 @@ export function RehabSection({
             </button>
           </div>
         ) : (
-          <button onClick={() => setConfirmEnd(true)} className="text-muted-foreground hover:text-foreground">
-            Zakończ tryb rehabilitacji (przywróć cele sportowe)
-          </button>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button onClick={() => setConfirmEnd(true)} className="text-muted-foreground hover:text-foreground">
+              Zakończ tryb rehabilitacji (przywróć cele sportowe)
+            </button>
+            <RehabReset
+              plan={plan}
+              onReset={(start, end) => {
+                setSelected(today);
+                onResetPlan(start, end);
+              }}
+            />
+          </div>
         )}
       </div>
     </div>

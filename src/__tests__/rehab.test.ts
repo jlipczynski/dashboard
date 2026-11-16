@@ -7,6 +7,8 @@ import {
   weekStartStr,
   isPlanActive,
   DEFAULT_REHAB_PLAN,
+  defaultPlanEnd,
+  validateReset,
 } from "../lib/rehab";
 import { calcHealthScore } from "../lib/scores";
 
@@ -105,5 +107,25 @@ describe("calcHealthScore with rehab", () => {
 
   it("falls back to sport goals without rehab", () => {
     expect(calcHealthScore(goals, 0, 12).subcategories).toHaveLength(4);
+  });
+});
+
+describe("plan reset helpers", () => {
+  it("defaultPlanEnd = start + 4 months − 1 day", () => {
+    expect(defaultPlanEnd("2026-11-16")).toBe("2027-03-15");
+    expect(defaultPlanEnd("2026-10-19")).toBe(DEFAULT_REHAB_PLAN.end);
+    expect(defaultPlanEnd("2026-10-31")).toBe("2027-02-27"); // Feb has no 31st
+  });
+
+  it("validateReset", () => {
+    const today = "2026-11-16";
+    expect(validateReset("2026-11-16", "2027-03-15", today)).toBeNull();
+    expect(validateReset("2026-11-01", "2026-11-02", today)).toBeNull();
+    expect(validateReset("2026-11-17", "2027-03-15", today)).not.toBeNull(); // future start
+    expect(validateReset("2026-11-16", "2026-11-16", today)).not.toBeNull(); // end == start
+    expect(validateReset("2026-11-16", "2026-11-10", today)).not.toBeNull(); // end < start
+    expect(validateReset("16.11.2026", "2027-03-15", today)).not.toBeNull(); // bad format
+    expect(validateReset("2026-11-16", "", today)).not.toBeNull();
+    expect(validateReset("2026-02-30", "2027-03-15", today)).not.toBeNull(); // non-existent day
   });
 });

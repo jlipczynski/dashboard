@@ -1522,6 +1522,9 @@ export default function ZdrowiePage() {
             <RehabSection
               plan={rehabPlan}
               onEndPlan={() => setGoals((prev) => ({ ...prev, rehab: { ...rehabPlan, active: false } }))}
+              onResetPlan={(start, end) =>
+                setGoals((prev) => ({ ...prev, rehab: { ...rehabPlan, active: true, start, end } }))
+              }
               onEntriesChange={setRehabEntries}
             />
             <CaloriesSection plan={rehabPlan} onEntriesChange={setCalorieEntries} />

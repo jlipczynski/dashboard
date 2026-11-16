@@ -122,3 +122,27 @@ export function rehabStats(plan: RehabPlan, entries: RehabEntry[], today: string
     planDays,
   };
 }
+
+/** Default end for a fresh plan: start + 4 months − 1 day (day clamped to month length). */
+export function defaultPlanEnd(start: string): string {
+  const d = parseDate(start);
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + 4);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
+  return addDays(toDateStr(d), -1);
+}
+
+function isValidDateStr(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && toDateStr(parseDate(s)) === s;
+}
+
+/** Validates reset input. Returns error message (PL) or null. */
+export function validateReset(start: string, end: string, today: string): string | null {
+  if (!isValidDateStr(start)) return "Nieprawidłowa data startu";
+  if (!isValidDateStr(end)) return "Nieprawidłowa data końca";
+  if (start > today) return "Start nie może być w przyszłości";
+  if (end <= start) return "Koniec musi być po starcie";
+  return null;
+}
