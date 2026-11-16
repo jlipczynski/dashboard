@@ -48,6 +48,7 @@ type ImportedTransaction = {
   tag: string | null;
   intermediary?: { kind: "opaque" | "prefixed"; provider: string | null } | null;
   needsLookup?: boolean;
+  needsAi?: boolean;
 };
 
 const isOpaque = (tx: ImportedTransaction) => tx.intermediary?.kind === "opaque";
@@ -77,6 +78,7 @@ type ImportStats = {
   aiSuggested: number;
   needsReview: number;
   needsLookup?: number;
+  needsAi?: number;
 };
 
 /* ── Helpers ──────────────────────────────────────── */
@@ -134,6 +136,16 @@ function FinansePageInner() {
   // Automatic lookup of opaque intermediary payments (PayU, PayPro…) after import
   const [lookupProgress, setLookupProgress] = useState<{ done: number; total: number; found: number } | null>(null);
   const lookupRunRef = useRef(0);
+  // Background AI category suggestions (batches of 40, one at a time)
+  const [aiProgress, setAiProgress] = useState<{ done: number; total: number; found: number } | null>(null);
+  const aiRunRef = useRef(0);
+  // Current values for background loops (their closures would otherwise see stale state)
+  const categoryAssignmentsRef = useRef(categoryAssignments);
+  const userOverridesRef = useRef(userOverrides);
+  useEffect(() => {
+    categoryAssignmentsRef.current = categoryAssignments;
+    userOverridesRef.current = userOverrides;
+  }, [categoryAssignments, userOverrides]);
   const [budgetExpandedCat, setBudgetExpandedCat] = useState<string | null>(null);
   const [budgetExpandedMerchants, setBudgetExpandedMerchants] = useState<Set<string>>(new Set());
   const [budgetSortCol, setBudgetSortCol] = useState<"date" | "amount" | "description">("date");
@@ -265,6 +277,8 @@ function FinansePageInner() {
     setSavedCount(0);
     lookupRunRef.current++; // stop a lookup still running for the previous file
     setLookupProgress(null);
+    aiRunRef.current++;
+    setAiProgress(null);
 
     try {
       const content = await file.text();
@@ -287,15 +301,19 @@ function FinansePageInner() {
         rules[tx.importHash] = false;
       }
       setCategoryAssignments(assignments);
+      categoryAssignmentsRef.current = assignments;
       setTagAssignments({});
       setSaveRules(rules);
       setUserOverrides(new Set());
+      userOverridesRef.current = new Set();
       setSavedCount(0);
 
       // Background: look up what opaque intermediary payments were for (2 at a time)
       runIntermediaryLookups(
         ((data.transactions || []) as ImportedTransaction[]).filter((t) => t.needsLookup)
       );
+      // Background, in parallel: AI category suggestions in batches
+      runAiSuggestions(((data.transactions || []) as ImportedTransaction[]).filter((t) => t.needsAi));
     } catch {
       alert("Błąd podczas parsowania pliku");
     } finally {
@@ -378,7 +396,7 @@ function FinansePageInner() {
       setTimeout(() => setAutoApplied(0), 3000);
     }
 
-    if (tx.aiSuggested || tx.needsLookup) {
+    if (tx.aiSuggested || tx.needsLookup || tx.needsAi) {
       setUserOverrides((prev) => new Set(prev).add(tx.importHash));
     }
   }
@@ -656,6 +674,62 @@ function FinansePageInner() {
       }
     };
     await Promise.all([worker(), worker()]);
+  }
+
+  // Sequential batches of 40 → /api/finanse/suggest. A suggestion is applied only to a row that
+  // still has no category and that Jan hasn't touched; it never overwrites a manual choice.
+  async function runAiSuggestions(rows: ImportedTransaction[]) {
+    const runId = ++aiRunRef.current;
+    if (rows.length === 0) return;
+    const BATCH = 40;
+    let done = 0;
+    let found = 0;
+    setAiProgress({ done, total: rows.length, found });
+    for (let start = 0; start < rows.length; start += BATCH) {
+      if (aiRunRef.current !== runId) return;
+      const batch = rows.slice(start, start + BATCH);
+      let suggestions: Record<string, string> = {};
+      try {
+        const res = await fetch("/api/finanse/suggest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transactions: batch.map((t) => ({
+              key: t.importHash,
+              amount: t.amount,
+              merchant: t.merchant,
+              counterparty: t.counterparty,
+            })),
+          }),
+        });
+        const data = await res.json();
+        suggestions = data.suggestions || {};
+      } catch {
+        // batch failed — continue with the next one
+      }
+      if (aiRunRef.current !== runId) return;
+
+      const applied: Record<string, string> = {};
+      for (const [key, categoryId] of Object.entries(suggestions)) {
+        if (!categoryAssignmentsRef.current[key] && !userOverridesRef.current.has(key)) {
+          applied[key] = categoryId;
+        }
+      }
+      const appliedKeys = Object.keys(applied);
+      if (appliedKeys.length > 0) {
+        setCategoryAssignments((prev) => {
+          const next = { ...prev };
+          for (const key of appliedKeys) if (!next[key]) next[key] = applied[key];
+          return next;
+        });
+        setImportRows((prev) =>
+          prev.map((t) => (applied[t.importHash] ? { ...t, aiSuggested: true } : t))
+        );
+      }
+      done += batch.length;
+      found += appliedKeys.length;
+      setAiProgress({ done, total: rows.length, found });
+    }
   }
 
   async function handleSmartAnalyzeHistory(tx: SavedTransaction) {
@@ -1084,6 +1158,15 @@ function FinansePageInner() {
                     — szukam tylko w internecie
                   </span>
                 )}
+              </div>
+            )}
+
+            {/* AI category suggestions progress */}
+            {aiProgress && (
+              <div className="mt-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground">
+                {aiProgress.done < aiProgress.total
+                  ? `🤖 Podpowiadam kategorie: ${aiProgress.done} / ${aiProgress.total}`
+                  : `🤖 Podpowiedziano ${aiProgress.found} z ${aiProgress.total}`}
               </div>
             )}
 
