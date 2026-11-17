@@ -60,7 +60,7 @@ async function mergeWithEmailRows(
     const row = fresh[i];
     const d = plan[i];
     if (d.action === "update") {
-      // Keep category, subcategory, person, one_off, reviewed_at, notes, email_message_id.
+      // Keep category, subcategory, one_off, reviewed_at, notes, email_message_id.
       const { error: upErr } = await admin
         .from("finance_transactions")
         .update({
@@ -205,7 +205,7 @@ export async function POST(request: Request) {
   });
 
   // CSV ↔ e-mail (Finanse 08): a payment that already came in from an Erste alert is UPDATED with the CSV
-  // data instead of inserted again (category, person, notes, review state stay).
+  // data instead of inserted again (category, notes, review state stay).
   const matched = await mergeWithEmailRows(admin, payload);
   if ("error" in matched) return NextResponse.json({ error: matched.error }, { status: 500 });
 

@@ -19,12 +19,11 @@ type Tx = {
   merchant: string | null;
   category_id: string | null;
   subcategory_id: string | null;
-  person: string | null;
   one_off: boolean;
 };
 type Cat = { id: string; name: string; type: string; icon: string | null; color: string | null };
 type Sub = { id: string; name: string; category_id: string; kind: string | null };
-type Edit = { categoryId?: string | null; subcategoryId?: string | null; person?: string | null; oneOff?: boolean };
+type Edit = { categoryId?: string | null; subcategoryId?: string | null; oneOff?: boolean };
 
 const PAGE = 30;
 const STEPS = ["Potwierdź transakcje", "Duże wydatki", "Co jeszcze kupisz", "Prognoza miesiąca", "Zobowiązanie"];
@@ -35,7 +34,6 @@ export default function PrzegladPage() {
   const [total, setTotal] = useState(0);
   const [cats, setCats] = useState<Cat[]>([]);
   const [subs, setSubs] = useState<Sub[]>([]);
-  const [persons, setPersons] = useState<string[]>([]);
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -107,7 +105,6 @@ export default function PrzegladPage() {
       setTotal(d.total);
       setCats(d.categories);
       setSubs(d.subcategories);
-      setPersons(d.persons);
     } catch {
       setError("Nie udało się pobrać transakcji.");
     } finally {
@@ -126,7 +123,6 @@ export default function PrzegladPage() {
     return {
       categoryId: e.categoryId !== undefined ? e.categoryId : t.category_id,
       subcategoryId: e.subcategoryId !== undefined ? e.subcategoryId : t.subcategory_id,
-      person: e.person !== undefined ? e.person : t.person,
       oneOff: e.oneOff !== undefined ? e.oneOff : t.one_off,
     };
   }
@@ -288,20 +284,7 @@ export default function PrzegladPage() {
                       </option>
                     ))}
                   </select>
-                  <select
-                    aria-label="Osoba"
-                    value={c.person ?? ""}
-                    onChange={(e) => patch(t.id, { person: e.target.value || null })}
-                    className="min-w-0 rounded-lg border border-border bg-background px-2 py-2 text-sm"
-                  >
-                    <option value="">— osoba —</option>
-                    {persons.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                  <label className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-2 text-sm">
+                  <label className="col-span-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-2 text-sm">
                     <input type="checkbox" checked={c.oneOff} onChange={(e) => patch(t.id, { oneOff: e.target.checked })} className="h-4 w-4" />
                     Jednorazowy
                   </label>

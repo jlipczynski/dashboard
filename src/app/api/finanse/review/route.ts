@@ -10,10 +10,10 @@ const MAX_BATCH = 200;
 // newest first, plus the category/subcategory lists the review page needs.
 export async function GET() {
   const admin = getSupabaseAdmin();
-  const [tx, count, cats, subs, people] = await Promise.all([
+  const [tx, count, cats, subs] = await Promise.all([
     admin
       .from("finance_transactions")
-      .select("id, date, amount, description, counterparty, merchant, category_id, subcategory_id, person, place, one_off, tag, notes")
+      .select("id, date, amount, description, counterparty, merchant, category_id, subcategory_id, place, one_off, tag, notes")
       .is("deleted_at", null)
       .is("reviewed_at", null)
       .order("date", { ascending: false })
@@ -22,18 +22,15 @@ export async function GET() {
     admin.from("finance_transactions").select("id", { count: "exact", head: true }).is("deleted_at", null).is("reviewed_at", null),
     admin.from("finance_categories").select("id, name, type, icon, color, sort_order").order("sort_order").order("name"),
     admin.from("finance_subcategories").select("id, name, category_id, kind, sort_order").order("sort_order").order("name"),
-    admin.from("finance_transactions").select("person").not("person", "is", null).limit(1000),
   ]);
-  const err = tx.error || count.error || cats.error || subs.error || people.error;
+  const err = tx.error || count.error || cats.error || subs.error;
   if (err) return NextResponse.json({ error: err.message }, { status: 500 });
 
-  const persons = [...new Set(["Jan", "Krzyś", "Mati", ...(people.data ?? []).map((p) => p.person as string)])];
   return NextResponse.json({
     transactions: tx.data ?? [],
     total: count.count ?? 0,
     categories: cats.data ?? [],
     subcategories: subs.data ?? [],
-    persons,
   });
 }
 
@@ -41,7 +38,6 @@ type ReviewItem = {
   id: string;
   categoryId?: string | null;
   subcategoryId?: string | null;
-  person?: string | null;
   oneOff?: boolean;
 };
 
@@ -63,7 +59,6 @@ export async function POST(request: Request) {
     const update: Record<string, string | boolean | null> = {};
     if (it.categoryId !== undefined) update.category_id = it.categoryId || null;
     if (it.subcategoryId !== undefined) update.subcategory_id = it.subcategoryId || null;
-    if (it.person !== undefined) update.person = it.person?.trim() || null;
     if (it.oneOff !== undefined) update.one_off = !!it.oneOff;
     if (Object.keys(update).length === 0) {
       plainIds.push(it.id);
