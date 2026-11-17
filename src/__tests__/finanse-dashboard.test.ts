@@ -80,8 +80,7 @@ describe("buildDashboard", () => {
     expect(jed.subcategories.find((s) => s.name === "Bez podkategorii")?.amount).toBe(50);
   });
 
-  it("counts big expenses that are not marked one-off, and unreviewed rows", () => {
-    expect(d.bigCount).toBe(1);
+  it("counts unreviewed rows (big expenses come from the coach: bigExpensesToDiscuss)", () => {
     expect(d.unreviewedInPeriod).toBe(rows.length - 2); // one reviewed, one in the trash
   });
 

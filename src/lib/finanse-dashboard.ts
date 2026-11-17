@@ -43,11 +43,9 @@ export type Dashboard = Omit<ExpenseSummary, "categories"> & {
   last7: { date: string; amount: number }[];
   weekDiscretionary: number;
   weekStart: string;
-  bigCount: number;
   unreviewedInPeriod: number;
 };
 
-export const BIG_EXPENSE = 1000;
 
 const toGr = (v: number | string) => Math.round(Number(v) * 100);
 const toZl = (gr: number) => gr / 100;
@@ -94,7 +92,6 @@ export function buildDashboard(
 
   const kinds = { fixed: 0, essential: 0, discretionary: 0, unassigned: 0 };
   let oneOffGr = 0;
-  let bigCount = 0;
   let unreviewed = 0;
   const subGroups = new Map<string, Map<string, { id: string | null; name: string; kind: SubKind | null; gr: number; count: number }>>();
 
@@ -107,7 +104,6 @@ export function buildDashboard(
     const kind = asKind(sub?.kind);
     kinds[kind ?? "unassigned"] += net;
     if (r.one_off) oneOffGr += net;
-    if (net >= BIG_EXPENSE * 100 && !r.one_off) bigCount++;
 
     const catKey = r.category_id ?? "__none__";
     let g = subGroups.get(catKey);
@@ -155,7 +151,6 @@ export function buildDashboard(
     last7: days.map((d) => ({ date: d, amount: toZl(Math.max(0, perDay.get(d) ?? 0)) })),
     weekDiscretionary: toZl(weekDiscGr),
     weekStart,
-    bigCount,
     unreviewedInPeriod: unreviewed,
   };
 }

@@ -69,20 +69,42 @@ describe("1. fixed costs per year + Liczba wolności", () => {
     expect(p.evidence.cases.map((c) => c.payee)).toContain("TRENER (cyklicznie)");
   });
 
+  it("Podatek od nieruchomości is a quarterly instalment: × 4, not × 12", () => {
+    const subs2 = [...subcategories, { id: "pdn", name: "Podatek od nieruchomości", category_id: "dom", kind: "fixed" }];
+    const rows = [...nov, row("2026-11-05", -489.57, "US CHODZIEZ", "dom", "pdn")];
+    const [p] = findPatterns({ rows, categories, subcategories: subs2, planned: [], monthlyLimit: 20000, today: "2026-11-17" }).filter((x) => x.kind === "fixed_costs");
+    const tax = p.evidence.cases.find((c) => c.payee === "Dom / Podatek od nieruchomości")!;
+    expect(tax.amount).toBe(1958.28);
+    expect(tax.frequency).toBe("quarterly");
+  });
+
+  it("each fixed item appears once, even with several payments to the same payee", () => {
+    const rows = [...nov, row("2026-11-20", -1000, "SPRZĄTANIE", "dom", "sprz")];
+    const [p] = ofKind(rows, "2026-11-25", "fixed_costs");
+    const names = p.evidence.cases.map((c) => c.payee);
+    expect(new Set(names).size).toBe(names.length);
+    expect(p.evidence.cases.find((c) => c.payee === "Dom / Sprzątanie")!.monthly).toBe(2000);
+  });
+
   it("threshold: fewer than 3 items → no pattern", () => {
     expect(ofKind(nov.slice(0, 2), "2026-11-17", "fixed_costs")).toEqual([]);
   });
 });
 
-describe("2. month pace vs the 20 000 zł limit (from day 10)", () => {
-  const rows = [row("2026-11-03", -6000, "A", "dom", "sprz"), row("2026-11-12", -6000, "B", "jed", "spoz")];
+describe("2. month pace = monthStatus (the same forecast as the dashboard, review and coach)", () => {
+  // 15.11: running spending 15 × 400 = 6 000 (→ 400/day × 15 days left = 6 000) + a 9 000 payment (not running)
+  const rows = [
+    ...Array.from({ length: 15 }, (_, i) => row(`2026-11-${String(i + 1).padStart(2, "0")}`, -400, `S${i}`, "jed", "spoz")),
+    row("2026-11-03", -9000, "A", "dom", "sprz"),
+  ];
 
-  it("spent ÷ days × days in month, compared with the limit", () => {
-    const [p] = ofKind(rows, "2026-11-15", "month_pace");
-    expect(p.evidence.spent).toBe(12000);
-    expect(p.evidence.projected).toBe(24000); // 12 000 / 15 × 30
-    expect(p.evidence.difference).toBe(4000);
-    expect(p.text).toContain("4 000,00 zł ponad limit");
+  it("spent + running rest + planned vs the limit", () => {
+    const [p] = run(rows, "2026-11-15").filter((x) => x.kind === "month_pace");
+    expect(p.evidence.spent).toBe(15000);
+    expect(p.evidence.runRest).toBe(6000);
+    expect(p.evidence.forecast).toBe(21000);
+    expect(p.evidence.difference).toBe(1000);
+    expect(p.text).toContain("1 000,00 zł ponad limit");
   });
 
   it("not before the 10th day of the month", () => {

@@ -5,8 +5,7 @@
 // and "after a big inflow" / month-to-month trend (too little data — revisit after 3 months).
 // All sums in grosze internally; output in zł.
 
-import { payeeOf } from "./finanse-coach";
-import { summarizeExpenses } from "./finanse-summary";
+import { payeeOf, monthStatus } from "./finanse-coach";
 
 export const MIN_CASES = 3;
 export const ANALYSIS_START = "2026-11-01"; // monitoring of finances starts here
@@ -48,9 +47,19 @@ export type PatternInput = {
   categories: PatternCategory[];
   subcategories: PatternSubcategory[];
   planned: PlannedPurchase[];
-  monthlyLimit: number; // zł (finance_goals.cost_of_living)
+  monthlyLimit: number; // zł (finance_goals.cost_of_living, counts = all)
+  plannedRemaining?: number; // planned purchases still "planned" this month (zł) — same input as the coach
   today: string; // YYYY-MM-DD, Jan's time zone
 };
+
+/**
+ * How often a fixed cost is paid, by subcategory name (default: monthly).
+ * TODO: a frequency field on finance_subcategories (not in brief 12).
+ */
+export const FIXED_FREQUENCY: Record<string, "monthly" | "quarterly" | "yearly"> = {
+  "Podatek od nieruchomości": "quarterly",
+};
+const PER_YEAR = { monthly: 12, quarterly: 4, yearly: 1 } as const;
 
 const toGr = (v: number | string) => Math.round(Number(v) * 100);
 const zl = (gr: number) => gr / 100;
@@ -125,11 +134,13 @@ function fixedCosts(tx: Tx[], today: string): Pattern[] {
   const period = fullPrev ?? { from: cur.from, to: today, days: cur.days };
   const partial = !fullPrev;
 
-  type Acc = { name: string; regularGr: number; oneOffGr: number; dates: string[] };
+  type Acc = { name: string; regularGr: number; oneOffGr: number; dates: string[]; perYear: number };
+  // One entry per fixed subcategory (keyed by its id) — a transaction is counted once.
   const groups = new Map<string, Acc>();
   for (const t of tx) {
     if (t.date < period.from || t.date > period.to || t.kind !== "fixed" || !t.subId) continue;
-    const g = groups.get(t.subId) ?? { name: `${t.catName} / ${t.subName}`, regularGr: 0, oneOffGr: 0, dates: [] };
+    const perYear = PER_YEAR[FIXED_FREQUENCY[t.subName ?? ""] ?? "monthly"];
+    const g = groups.get(t.subId) ?? { name: `${t.catName} / ${t.subName}`, regularGr: 0, oneOffGr: 0, dates: [], perYear };
     if (t.oneOff) g.oneOffGr -= t.gr;
     else g.regularGr -= t.gr;
     g.dates.push(t.date);
@@ -147,13 +158,14 @@ function fixedCosts(tx: Tx[], today: string): Pattern[] {
     const amounts = list.map((t) => -t.gr);
     const avg = amounts.reduce((s, a) => s + a, 0) / amounts.length;
     if (amounts.some((a) => Math.abs(a - avg) > avg * 0.1)) continue;
-    groups.set(`payee:${list[0].payee}`, { name: `${list[0].payee} (cyklicznie)`, regularGr: Math.round(avg), oneOffGr: 0, dates: list.map((t) => t.date) });
+    groups.set(`payee:${list[0].payee}`, { name: `${list[0].payee} (cyklicznie)`, regularGr: Math.round(avg), oneOffGr: 0, dates: list.map((t) => t.date), perYear: 12 });
   }
 
   const items = [...groups.values()]
     .map((g) => {
-      const monthlyGr = Math.max(0, g.regularGr);
-      const yearlyGr = monthlyGr * 12 + Math.max(0, g.oneOffGr);
+      const regularYearGr = Math.max(0, g.regularGr) * g.perYear; // a quarterly instalment × 4, monthly × 12
+      const yearlyGr = regularYearGr + Math.max(0, g.oneOffGr);
+      const monthlyGr = Math.round(regularYearGr / 12); // monthly equivalent
       return { ...g, monthlyGr, yearlyGr, dates: [...g.dates].sort() };
     })
     .filter((g) => g.yearlyGr > 0)
@@ -177,6 +189,7 @@ function fixedCosts(tx: Tx[], today: string): Pattern[] {
         amount: zl(g.yearlyGr),
         payee: g.name,
         monthly: zl(g.monthlyGr),
+        frequency: g.perYear === 4 ? "quarterly" : g.perYear === 1 ? "yearly" : "monthly",
         yearlyOnce: zl(Math.max(0, g.oneOffGr)),
         freedomNumber: zl(Math.round(g.yearlyGr / SAFE_WITHDRAWAL)),
         dates: g.dates,
@@ -185,29 +198,28 @@ function fixedCosts(tx: Tx[], today: string): Pattern[] {
       monthly: zl(monthlyGr),
       yearly: zl(yearlyGr),
       freedomNumber: zl(freedomGr),
-      assumption: "płatności niejednorazowe w podkategoriach stałych liczone jako miesięczne; jednorazowe — jako roczne",
+      assumption: "płatności niejednorazowe w podkategoriach stałych liczone jako miesięczne (Podatek od nieruchomości: kwartalnie ×4); jednorazowe — jako roczne",
     },
   }];
 }
 
-// ── 2. Month pace: spent so far ÷ days elapsed × days in month vs the limit (from day 10) ───
+// ── 2. Month pace: the SAME forecast as the dashboard, review step 4 and the coach (monthStatus) ─────
 function monthPace(input: PatternInput): Pattern[] {
-  const { from, days } = monthBounds(input.today);
+  const { from } = monthBounds(input.today);
   const day = Number(input.today.slice(8, 10));
   if (day < PACE_FROM_DAY || from < ANALYSIS_START) return [];
   const monthRows = input.rows.filter((r) => !r.deleted_at && r.date >= from && r.date <= input.today);
-  const spentGr = toGr(summarizeExpenses(monthRows, input.categories).total); // the ONE definition of expenses
-  const projectedGr = Math.round((spentGr / day) * days);
-  const limitGr = toGr(input.monthlyLimit);
-  const diffGr = projectedGr - limitGr;
+  const s = monthStatus(monthRows, input.categories, input.subcategories, input.plannedRemaining ?? 0, { monthly_limit: input.monthlyLimit, counts: "all" }, input.today);
+  const diffGr = toGr(s.forecast) - toGr(s.limit);
   return [{
     kind: "month_pace",
     text:
-      `Tempo miesiąca: ${fmt(spentGr)} w ${day} dni → ${fmt(projectedGr)} na ${days} dni; limit ${fmt(limitGr)} — ` +
+      `Tempo miesiąca: wydane ${fmt(toGr(s.spent))} · bieżące do końca ~${fmt(toGr(s.runRest))} (${fmt(toGr(s.dailyRate))}/dzień × ${s.daysLeft} dni)` +
+      ` · planowane ${fmt(toGr(s.plannedRemaining))} → prognoza ${fmt(toGr(s.forecast))}; limit ${fmt(toGr(s.limit))} — ` +
       (diffGr > 0 ? `${fmt(diffGr)} ponad limit.` : `${fmt(-diffGr)} poniżej limitu.`),
     cases: day,
-    total: zl(projectedGr),
-    evidence: { cases: [], month: from.slice(0, 7), spent: zl(spentGr), day, daysInMonth: days, projected: zl(projectedGr), limit: zl(limitGr), difference: zl(diffGr) },
+    total: s.forecast,
+    evidence: { cases: [], month: from.slice(0, 7), ...s, difference: zl(diffGr) },
   }];
 }
 

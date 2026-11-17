@@ -41,7 +41,7 @@ export type CoachState = {
   today: string;
   weekStart: string;
   month: { from: string; to: string };
-  goal: Goal & { key: string; status: GoalStatus };
+  goal: Goal & { key: string; status: GoalStatus; approved_at: string | null };
   status: MonthStatus;
   big: BigExpense[];
   planned: Planned[];
@@ -76,7 +76,7 @@ export async function loadCoachState(): Promise<CoachState> {
   const [cats, subs, goals, planned, decisions, reviews] = await Promise.all([
     admin.from("finance_categories").select("id, name, type"),
     admin.from("finance_subcategories").select("id, name, category_id, kind"),
-    admin.from("finance_goals").select("key, monthly_limit, counts, valid_from, status").eq("key", "cost_of_living").lte("valid_from", today),
+    admin.from("finance_goals").select("key, monthly_limit, counts, valid_from, status, approved_at").eq("key", "cost_of_living").lte("valid_from", today),
     admin.from("finance_planned_purchases").select("id, month, name, amount, category_id, status").eq("month", from).order("created_at"),
     admin.from("finance_expense_decisions").select("transaction_id, necessary, recurring, horizon_until, plan, created_at").order("created_at", { ascending: false }),
     admin.from("finance_weekly_reviews").select("week_start, month_forecast, commitment, coach_summary, completed_at").order("week_start", { ascending: false }).limit(10),
@@ -91,6 +91,7 @@ export async function loadCoachState(): Promise<CoachState> {
     monthly_limit: Number(goalRow.monthly_limit),
     counts: goalRow.counts as Goal["counts"],
     status: (goalRow.status === "approved" ? "approved" : "pending") as GoalStatus,
+    approved_at: (goalRow.approved_at as string | null) ?? null,
   };
 
   const plannedList = (planned.data ?? []).map((p) => ({ ...p, amount: Number(p.amount) })) as Planned[];
@@ -98,7 +99,7 @@ export async function loadCoachState(): Promise<CoachState> {
 
   const categories = cats.data ?? [];
   const decided = new Set((decisions.data ?? []).map((d) => d.transaction_id as string));
-  const status = monthStatus(rows, categories, plannedRemaining, goal, today);
+  const status = monthStatus(rows, categories, (subs.data ?? []) as { id: string; kind: string | null }[], plannedRemaining, goal, today);
   const big = bigExpensesToDiscuss(rows, categories, decided);
 
   // Discretionary subcategories this month — hints for "what will you cut?"

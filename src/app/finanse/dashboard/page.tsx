@@ -51,7 +51,6 @@ type Dash = {
   last7: { date: string; amount: number }[];
   weekDiscretionary: number;
   weekStart: string;
-  bigCount: number;
   unreviewedInPeriod: number;
   unreviewedTotal: number;
   lastReviewedAt: string | null;
@@ -59,10 +58,22 @@ type Dash = {
 };
 
 type WigStatus = {
-  status: { spent: number; spentRecurring: number; plannedRemaining: number; forecast: number; limit: number; overBy: number; perDayLeft: number; daysLeft: number };
+  status: {
+    spent: number;
+    spentRecurring: number;
+    plannedRemaining: number;
+    runRest: number;
+    dailyRate: number;
+    forecast: number;
+    limit: number;
+    overBy: number;
+    perDayLeft: number;
+    daysLeft: number;
+    preliminary: boolean;
+  };
   big: { id: string }[];
   lastCompletedAt: string | null;
-  goal: { status: "pending" | "approved" };
+  goal: { status: "pending" | "approved"; monthly_limit: number };
 };
 
 const STORAGE_KEY = "finanse_dashboard_period";
@@ -89,11 +100,18 @@ export default function FinanseDashboardPage() {
   useEffect(() => setDrill(null), [open, data]);
   // WIG bar: always the current month (independent of the chosen period) — /api/finanse/coach/status
   const [wig, setWig] = useState<WigStatus | null>(null);
-  useEffect(() => {
+  const loadWig = () =>
     fetch("/api/finanse/coach/status", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setWig(d))
       .catch(() => {});
+  useEffect(() => {
+    loadWig();
+  }, []);
+  // "Zmień limit": a small inline form here (review step 4 links to /finanse/dashboard?limit=edit).
+  const [limitOpen, setLimitOpen] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("limit") === "edit") setLimitOpen(true);
   }, []);
 
   useEffect(() => {
@@ -237,10 +255,12 @@ export default function FinanseDashboardPage() {
                   />
                 </div>
                 <p className="text-sm text-[#C9D8CE]">
-                  ten miesiąc · bez jednorazowych {formatZl(wig.status.spentRecurring)} · planowane {formatZl(wig.status.plannedRemaining)}
+                  Wydane {formatZl(wig.status.spent)} · bieżące do końca miesiąca ~{formatZl(wig.status.runRest)} ({formatZl(wig.status.dailyRate)}/dzień ×{" "}
+                  {wig.status.daysLeft} dni) · planowane {formatZl(wig.status.plannedRemaining)}
                 </p>
                 <p className={`text-sm font-semibold ${wig.status.overBy > 0 ? "text-red-300" : "text-[#8FD1A8]"}`}>
                   Prognoza {formatZl(wig.status.forecast)}
+                  {wig.status.preliminary ? " (wstępna)" : ""}
                   {wig.status.overBy > 0
                     ? wig.goal.status === "approved"
                       ? ` · przekroczysz o ${formatZl(wig.status.overBy)}`
@@ -248,10 +268,19 @@ export default function FinanseDashboardPage() {
                     : ""}
                 </p>
                 <p className="text-xs">
-                  <Link href="/finanse/przeglad?step=4" className="text-[#A9C9B5] underline hover:text-[#F4F1EC]">
+                  <button type="button" onClick={() => setLimitOpen((o) => !o)} aria-expanded={limitOpen} className="text-[#A9C9B5] underline hover:text-[#F4F1EC]">
                     {wig.goal.status === "approved" ? "Zmień limit" : "Ustal i zatwierdź limit"}
-                  </Link>
+                  </button>
                 </p>
+                {limitOpen && (
+                  <LimitForm
+                    goal={wig.goal}
+                    onDone={() => {
+                      setLimitOpen(false);
+                      loadWig();
+                    }}
+                  />
+                )}
                 {wig.big.length > 0 && (
                   <Link
                     href="/finanse/przeglad?step=2"
@@ -523,7 +552,13 @@ export default function FinanseDashboardPage() {
               {data && (
                 <div className="mt-3 flex flex-col gap-2">
                   <Decision href="/finanse/przeglad" n={data.unreviewedTotal} text="transakcji czeka na przegląd" warn={data.unreviewedTotal > 0} />
-                  <Decision href="/finanse/przeglad" n={data.bigCount} text={`wydatków ≥ 1 000 zł w okresie — oznacz jednorazowe`} warn={data.bigCount > 0} />
+                  {/* One definition with review step 2: big expenses (≥ 1 000 zł, this month) without a decision. */}
+                  {wig &&
+                    (wig.big.length > 0 ? (
+                      <Decision href="/finanse/przeglad?step=2" n={wig.big.length} text="dużych wydatków do omówienia" warn />
+                    ) : (
+                      <p className="flex items-center gap-3 rounded-xl bg-muted p-3 text-sm text-muted-foreground">Duże wydatki omówione ✓</p>
+                    ))}
                   {data.expensesInIncomeCats.amount > 0 && (
                     <Decision href="/finanse" n={Math.round(data.expensesInIncomeCats.amount)} text={`zł wydatków w kategoriach przychodowych (${data.expensesInIncomeCats.count})`} warn />
                   )}
@@ -543,6 +578,76 @@ function Tile({ label, value, note, valueClass = "text-foreground" }: { label: s
       <p className="text-sm font-medium text-muted-foreground">{label}</p>
       <p className={`font-mono text-2xl font-bold tabular-nums ${valueClass}`}>{value}</p>
       <p className="text-xs text-muted-foreground">{note}</p>
+    </div>
+  );
+}
+
+// Changing the limit: an approved limit needs an explicit inline confirmation (no window.confirm); the change
+// is saved as approved and logged in finance_goal_history by PATCH /api/finanse/coach/goal.
+function LimitForm({ goal, onDone }: { goal: WigStatus["goal"]; onDone: () => void }) {
+  const [value, setValue] = useState(String(goal.monthly_limit));
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const parsed = Number(value.replace(/\s/g, "").replace(",", "."));
+  const valid = Number.isFinite(parsed) && parsed > 0;
+  const approved = goal.status === "approved";
+  async function save() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await fetch("/api/finanse/coach/goal", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlyLimit: parsed, status: "approved" }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) setMsg(d.error || "Nie zapisano");
+      else onDone();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="mt-1 rounded-xl bg-[#2A4A39] p-3 text-sm">
+      <label className="flex flex-wrap items-center gap-2">
+        <span className="text-[#C9D8CE]">Limit kosztów życia / mies.</span>
+        <input
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setConfirming(false);
+          }}
+          inputMode="decimal"
+          aria-label="Limit miesięczny w zł"
+          className="w-32 rounded-lg border border-[#3B5A48] bg-[#1F3A2C] px-2 py-1.5 font-mono text-[#F4F1EC]"
+        />
+      </label>
+      {!confirming ? (
+        <button
+          type="button"
+          onClick={() => (approved ? setConfirming(true) : save())}
+          disabled={busy || !valid || (approved && parsed === goal.monthly_limit)}
+          className="mt-2 rounded-lg bg-[#8FD1A8] px-3 py-1.5 text-xs font-semibold text-[#1F3A2C] disabled:opacity-40"
+        >
+          {approved ? "Zmień" : `Zatwierdzam ${valid ? formatZl(parsed) : ""}`}
+        </button>
+      ) : (
+        <div className="mt-2">
+          <p className="text-[#F4F1EC]">
+            Zmieniasz zatwierdzony limit z {formatZl(goal.monthly_limit)} na {formatZl(parsed)}. Potwierdź.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button type="button" onClick={save} disabled={busy} className="rounded-lg bg-[#F0C99A] px-3 py-1.5 text-xs font-semibold text-[#1F3A2C] disabled:opacity-40">
+              Potwierdzam zmianę
+            </button>
+            <button type="button" onClick={() => setConfirming(false)} disabled={busy} className="rounded-lg border border-[#3B5A48] px-3 py-1.5 text-xs text-[#C9D8CE]">
+              Anuluj
+            </button>
+          </div>
+        </div>
+      )}
+      {msg && <p className="mt-1 text-xs text-red-300">{msg}</p>}
     </div>
   );
 }

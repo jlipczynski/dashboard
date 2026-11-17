@@ -1,6 +1,6 @@
 // "Coach wydatków" (brief Finanse 09) — pure logic, no DB, no AI.
-// Monthly spending limit: an editable value with a status. Until Jan approves it, it is a working
-// proposal ("Do zatwierdzenia") — NOT a target (20 000 zł in Visionary OS is the passive-income goal). "Spent" uses the ONE definition of expenses
+// Monthly cost-of-living limit: an editable value with a status (approved by Jan on 17.11.2026: 20 000 zł,
+// all expenses). Until approved it is a working proposal ("Do zatwierdzenia"). "Spent" uses the ONE definition of expenses
 // (summarizeExpenses), so the coach, the dashboard and the home card show the same number.
 // All sums in grosze (integers).
 
@@ -37,13 +37,23 @@ export type MonthStatus = {
   spent: number; // net expenses this month (all, incl. one-off)
   spentRecurring: number; // without one-off expenses
   plannedRemaining: number; // planned purchases not bought / dropped yet
-  forecast: number; // counted spend + plannedRemaining
+  runRateBase: number; // running variable spending so far (see RUN_RATE_*), zł
+  dailyRate: number; // runRateBase / dayOfMonth, zł (rounded to the grosz for display)
+  runRest: number; // dailyRate × daysLeft — expected running spending until the end of the month
+  forecast: number; // counted spend + runRest + plannedRemaining
   limit: number;
   left: number; // limit − forecast (negative = over)
   overBy: number; // max(0, −left)
-  daysLeft: number; // today … end of month, inclusive
-  perDayLeft: number; // left / daysLeft when left > 0, else 0
+  dayOfMonth: number;
+  daysInMonth: number;
+  daysLeft: number; // daysInMonth − dayOfMonth (0 on the last day)
+  perDayLeft: number; // left / daysLeft when left > 0 and days are left, else 0
+  preliminary: boolean; // dayOfMonth < 5: too little data, the forecast is only indicative
 };
+
+/** A single expense at or above this amount is not "running" spending (it would distort the daily rate). */
+export const RUN_RATE_MAX_ZL = 1000;
+export const PRELIMINARY_BEFORE_DAY = 5;
 
 const toGr = (v: number | string) => Math.round(Number(v) * 100);
 const toZl = (gr: number) => gr / 100;
@@ -75,9 +85,36 @@ function oneOffGr(rows: DashRow[], categories: SummaryCategoryDef[]): number {
  * @param plannedRemaining sum of planned purchases still "planned" (zł)
  * @param today            YYYY-MM-DD (Jan's time zone)
  */
+/**
+ * Running variable spending of the month so far, in grosze: outflows in "expense" categories from the 1st to
+ * `today` that are NOT one-off, NOT ≥ 1 000 zł, NOT in a "fixed" subcategory, and not refunds.
+ */
+export function runRateBaseGr(rows: DashRow[], categories: SummaryCategoryDef[], subcategories: { id: string; kind?: string | null }[], today: string): number {
+  const type = new Map(categories.map((c) => [c.id, c.type]));
+  const kind = new Map(subcategories.map((s) => [s.id, s.kind ?? null]));
+  const { from } = monthBounds(today);
+  let gr = 0;
+  for (const r of rows) {
+    if (r.deleted_at || r.one_off || r.date < from || r.date > today) continue;
+    if (!r.category_id || type.get(r.category_id) !== "expense") continue;
+    if (r.subcategory_id && kind.get(r.subcategory_id) === "fixed") continue;
+    const a = toGr(r.amount);
+    if (a >= 0 || a <= -RUN_RATE_MAX_ZL * 100) continue;
+    gr -= a;
+  }
+  return gr;
+}
+
+/**
+ * THE month forecast — one function for the dashboard WIG bar, review step 4, the coach and the "tempo" pattern.
+ *   forecast = spent + runRest + plannedRemaining,  runRest = runRateBase / dayOfMonth × daysLeft
+ * TODO (from January 2027): add fixed costs of the previous month that have not arrived yet this month
+ * (now there is data for November only, so they are not added).
+ */
 export function monthStatus(
   rows: DashRow[],
   categories: SummaryCategoryDef[],
+  subcategories: { id: string; kind?: string | null }[],
   plannedRemaining: number,
   goal: Goal,
   today: string
@@ -86,21 +123,30 @@ export function monthStatus(
   const recurringGr = spentGr - oneOffGr(rows, categories);
   const plannedGr = toGr(plannedRemaining);
   const countedGr = goal.counts === "recurring" ? recurringGr : spentGr;
-  const forecastGr = countedGr + plannedGr;
+  const { days: daysInMonth } = monthBounds(today);
+  const dayOfMonth = Number(today.slice(8, 10));
+  const daysLeft = daysInMonth - dayOfMonth;
+  const baseGr = runRateBaseGr(rows, categories, subcategories, today);
+  const runRestGr = Math.round((baseGr * daysLeft) / dayOfMonth); // rounded to the grosz at the end
+  const forecastGr = countedGr + runRestGr + plannedGr;
   const limitGr = toGr(goal.monthly_limit);
   const leftGr = limitGr - forecastGr;
-  const { to } = monthBounds(today);
-  const daysLeft = Math.max(1, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) + 1);
   return {
     spent: toZl(spentGr),
     spentRecurring: toZl(recurringGr),
     plannedRemaining: toZl(plannedGr),
+    runRateBase: toZl(baseGr),
+    dailyRate: toZl(Math.round(baseGr / dayOfMonth)),
+    runRest: toZl(runRestGr),
     forecast: toZl(forecastGr),
     limit: toZl(limitGr),
     left: toZl(leftGr),
     overBy: toZl(Math.max(0, -leftGr)),
+    dayOfMonth,
+    daysInMonth,
     daysLeft,
-    perDayLeft: leftGr > 0 ? Math.floor(leftGr / daysLeft) / 100 : 0,
+    perDayLeft: leftGr > 0 && daysLeft > 0 ? Math.floor(leftGr / daysLeft) / 100 : 0,
+    preliminary: dayOfMonth < PRELIMINARY_BEFORE_DAY,
   };
 }
 
@@ -209,6 +255,8 @@ export type CoachContext = {
 
 export const COACH_SYSTEM = `Jesteś coachem wydatków Jana. Pomagasz mu kontrolować koszty życia.
 Ton: konkretny i wymagający, bez komplementów i bez ogólników. Operuj liczbami z danych.
+„Wydane” to stan na dziś, a nie wynik miesiąca: nigdy nie pisz, że wydana kwota to finalne przekroczenie.
+O końcu miesiąca mów wyłącznie na podstawie prognozy (wydane + bieżące wydatki do końca miesiąca + planowane zakupy).
 Limit miesięczny może być ROBOCZY (niezatwierdzony). Wtedy nie traktuj go jako celu Jana: mów o nim jako o propozycji
 i zachęć do decyzji, jaki limit ma obowiązywać. Gdy limit jest zatwierdzony i miesiąc idzie ponad niego,
 powiedz to wprost i zapytaj, co Jan obetnie.
@@ -224,14 +272,15 @@ export function buildCoachPrompt(step: CoachStep, ctx: CoachContext, answer?: st
   const limitLabel = ctx.limitApproved ? `Limit (zatwierdzony): ${zlText(s.limit)}.` : `Limit ROBOCZY, niezatwierdzony przez Jana: ${zlText(s.limit)}.`;
   const vsLimit = ctx.limitApproved
     ? s.overBy > 0
-      ? `PRZEKROCZENIE o ${zlText(s.overBy)}.`
+      ? `Prognoza ponad limit: PRZEKROCZENIE o ${zlText(s.overBy)} (prognoza, nie wynik końcowy).`
       : `Zostało ${zlText(s.left)} na ${s.daysLeft} dni (${zlText(s.perDayLeft)} dziennie).`
     : s.overBy > 0
       ? `Prognoza jest o ${zlText(s.overBy)} powyżej limitu roboczego.`
       : `Do limitu roboczego brakuje ${zlText(s.left)}.`;
   const lines = [
-    `Dziś: ${ctx.today}. ${limitLabel} Wydane w miesiącu: ${zlText(s.spent)} (bez jednorazowych ${zlText(s.spentRecurring)}).`,
-    `Planowane zakupy do końca miesiąca: ${zlText(s.plannedRemaining)}. Prognoza: ${zlText(s.forecast)}. ${vsLimit}`,
+    `Dziś: ${ctx.today} (${s.dayOfMonth}. dzień z ${s.daysInMonth}). ${limitLabel} Wydane do dziś: ${zlText(s.spent)} (bez jednorazowych ${zlText(s.spentRecurring)}).`,
+    `Bieżące wydatki do końca miesiąca: ~${zlText(s.runRest)} (${zlText(s.dailyRate)}/dzień × ${s.daysLeft} dni). Planowane zakupy: ${zlText(s.plannedRemaining)}.`,
+    `Prognoza na koniec miesiąca: ${zlText(s.forecast)}${s.preliminary ? " (wstępna — mało danych)" : ""}. ${vsLimit}`,
   ];
   if (step === 2 && ctx.big) {
     lines.push(

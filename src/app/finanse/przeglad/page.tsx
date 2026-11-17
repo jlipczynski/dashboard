@@ -396,69 +396,23 @@ type CoachData = {
     spent: number;
     spentRecurring: number;
     plannedRemaining: number;
+    runRest: number;
+    dailyRate: number;
     forecast: number;
     limit: number;
     left: number;
     overBy: number;
     daysLeft: number;
     perDayLeft: number;
+    preliminary: boolean;
   };
   big: BigExp[];
   planned: PlannedItem[];
   thisWeek: { commitment: string | null; completed_at: string | null } | null;
   lastCommitment: { week_start: string; commitment: string | null } | null;
   discretionaryTop: { category: string; subcategory: string; amount: number }[];
-  goal: { monthly_limit: number; status: "pending" | "approved" };
+  goal: { monthly_limit: number; status: "pending" | "approved"; approved_at: string | null };
 };
-
-function LimitEditor({ goal, onSaved }: { goal: CoachData["goal"]; onSaved: () => void }) {
-  const [value, setValue] = useState(String(goal.monthly_limit));
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  async function save(body: Record<string, unknown>) {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const r = await fetch("/api/finanse/coach/goal", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) setMsg(d.error || "Nie zapisano");
-      else onSaved();
-    } finally {
-      setBusy(false);
-    }
-  }
-  const pending = goal.status !== "approved";
-  return (
-    <div className={`mt-3 rounded-xl border p-3 ${pending ? "border-amber-300 bg-amber-50" : "border-border bg-card"}`}>
-      <p className="text-xs font-semibold text-foreground">
-        Miesięczny limit wydatków · <span className={pending ? "text-amber-800" : "text-emerald-700"}>{pending ? "Do zatwierdzenia" : "Zatwierdzony"}</span>
-      </p>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">
-        Wartość robocza — to Twoja decyzja. 20 000 zł z Visionary OS to cel dochodu pasywnego, nie limit wydatków.
-      </p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" aria-label="Limit miesięczny w zł" className="w-32 rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
-        <button
-          onClick={() => save({ monthlyLimit: value })}
-          disabled={busy || !value.trim() || Number(value.replace(/\s/g, "").replace(",", ".")) === goal.monthly_limit}
-          className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs disabled:opacity-40"
-        >
-          Zapisz kwotę
-        </button>
-        {pending && (
-          <button onClick={() => save({ status: "approved" })} disabled={busy} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">
-            Zatwierdzam {formatZl(goal.monthly_limit)}
-          </button>
-        )}
-      </div>
-      {msg && <p className="mt-1 text-xs text-red-700">{msg}</p>}
-    </div>
-  );
-}
 
 const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
 const pillCls = (on: boolean) =>
@@ -751,7 +705,9 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
               <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
             </div>
             <p className="mt-3 text-sm text-[#C9D8CE]">
-              Planowane {formatZl(s.plannedRemaining)} · prognoza <span className="font-mono font-semibold text-[#F4F1EC]">{formatZl(s.forecast)}</span>
+              Wydane {formatZl(s.spent)} · bieżące do końca miesiąca ~{formatZl(s.runRest)} ({formatZl(s.dailyRate)}/dzień × {s.daysLeft} dni) · planowane{" "}
+              {formatZl(s.plannedRemaining)} · prognoza <span className="font-mono font-semibold text-[#F4F1EC]">{formatZl(s.forecast)}</span>
+              {s.preliminary ? " (wstępna)" : ""}
             </p>
             {over ? (
               <p className="mt-2 text-lg font-bold text-red-300">
@@ -763,7 +719,17 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
               </p>
             )}
           </div>
-          <LimitEditor goal={data.goal} onSaved={reload} />
+          {/* The limit is changed on the dashboard (with an explicit confirmation), not here. */}
+          <p className="mt-3 rounded-xl border border-border bg-card p-3 text-sm text-foreground">
+            Limit kosztów życia: <span className="font-mono font-semibold">{formatZl(data.goal.monthly_limit)}</span> / mies. ·{" "}
+            {data.goal.status === "approved"
+              ? `zatwierdzony${data.goal.approved_at ? ` ${new Date(data.goal.approved_at).toLocaleDateString("pl-PL", { timeZone: "Europe/Warsaw" })}` : ""}`
+              : "do zatwierdzenia"}{" "}
+            ·{" "}
+            <Link href="/finanse/dashboard?limit=edit" className="font-medium text-emerald-700 hover:underline">
+              {data.goal.status === "approved" ? "Zmień limit" : "Ustal i zatwierdź limit"}
+            </Link>
+          </p>
           {data.discretionaryTop.length > 0 && (
             <div className="mt-3 rounded-xl border border-border bg-card p-3">
               <p className="text-xs font-semibold text-foreground">Uznaniowe w tym miesiącu — tu najłatwiej ciąć:</p>

@@ -31,39 +31,70 @@ const row = (p: Partial<CoachRow>): CoachRow => ({
 });
 const goal = { monthly_limit: 20000, counts: "all" as const };
 
-describe("monthStatus", () => {
-  it("over the limit: spent = net expenses (refunds net out, transfers/income ignored), forecast adds planned", () => {
+const subs = [
+  { id: "media", kind: "fixed" },
+  { id: "jedz", kind: "essential" },
+];
+
+describe("monthStatus — forecast = spent + running rest of the month + planned (brief 12.1)", () => {
+  it("November example (17.11): run rate 13 074,61 / 17 days → +9 998,23 → forecast 35 421,74", () => {
+    // 13 × 999,00 + 87,61 = 13 074,61 of running spending; a 12 348,90 payment (≥ 1 000) only in "spent"
+    const rows = [...Array.from({ length: 13 }, () => row({ amount: -999 })), row({ amount: -87.61 }), row({ amount: -12348.9 })];
+    const s = monthStatus(rows, cats, subs, 0, goal, "2026-11-17");
+    expect(s.spent).toBe(25423.51);
+    expect(s.runRateBase).toBe(13074.61);
+    expect(s.dailyRate).toBe(769.09);
+    expect(s.dayOfMonth).toBe(17);
+    expect(s.daysLeft).toBe(13);
+    expect(s.runRest).toBe(9998.23);
+    expect(s.forecast).toBe(35421.74);
+    expect(s.overBy).toBe(15421.74);
+    expect(s.preliminary).toBe(false);
+  });
+
+  it("a −1 200 zł expense is not running spending", () => {
+    expect(monthStatus([row({ amount: -1200 })], cats, subs, 0, goal, "2026-11-10").runRateBase).toBe(0);
+    expect(monthStatus([row({ amount: -999.99 })], cats, subs, 0, goal, "2026-11-10").runRateBase).toBe(999.99);
+  });
+
+  it("one-off, fixed-kind and refunds are not running spending; transfers/income ignored", () => {
     const rows = [
-      row({ amount: -25000 }),
-      row({ amount: -2500, category_id: "zak", one_off: true }),
-      row({ amount: 500, category_id: "zak" }),
-      row({ amount: -9000, category_id: "osz" }),
-      row({ amount: 12000, category_id: "pla" }),
+      row({ amount: -100, one_off: true }),
+      row({ amount: -200, subcategory_id: "media" }),
+      row({ amount: 50 }),
+      row({ amount: -300, category_id: "osz" }),
+      row({ amount: 400, category_id: "pla" }),
+      row({ amount: -10, subcategory_id: "jedz" }),
     ];
-    const s = monthStatus(rows, cats, 1500, goal, "2026-11-17");
-    expect(s.spent).toBe(27000);
-    expect(s.spentRecurring).toBe(24500);
-    expect(s.forecast).toBe(28500);
-    expect(s.left).toBe(-8500);
-    expect(s.overBy).toBe(8500);
-    expect(s.daysLeft).toBe(14);
+    const s = monthStatus(rows, cats, subs, 0, goal, "2026-11-10");
+    expect(s.runRateBase).toBe(10);
+    expect(s.spent).toBe(260); // 100 + 200 − 50 + 10
+  });
+
+  it("last day of the month: daysLeft = 0 and forecast = spent + planned", () => {
+    const s = monthStatus([row({ amount: -500 })], cats, subs, 1500, goal, "2026-11-30");
+    expect(s.daysLeft).toBe(0);
+    expect(s.runRest).toBe(0);
+    expect(s.forecast).toBe(2000);
     expect(s.perDayLeft).toBe(0);
   });
 
-  it("under the limit: per-day budget for the rest of the month", () => {
-    const s = monthStatus([row({ amount: -10000 })], cats, 0, goal, "2026-11-21");
+  it("before the 5th day the forecast is preliminary", () => {
+    expect(monthStatus([row({ amount: -50, date: "2026-11-02" })], cats, subs, 0, goal, "2026-11-04").preliminary).toBe(true);
+  });
+
+  it("under the limit: per-day budget for the days left", () => {
+    const s = monthStatus([row({ amount: -10000 })], cats, subs, 0, goal, "2026-11-21");
     expect(s.left).toBe(10000);
-    expect(s.overBy).toBe(0);
-    expect(s.daysLeft).toBe(10);
-    expect(s.perDayLeft).toBe(1000);
+    expect(s.daysLeft).toBe(9);
+    expect(s.perDayLeft).toBe(1111.11);
   });
 
   it("goal counting only recurring spend ignores one-offs", () => {
-    const s = monthStatus([row({ amount: -15000 }), row({ amount: -8000, one_off: true })], cats, 0, { monthly_limit: 20000, counts: "recurring" }, "2026-11-30");
+    const s = monthStatus([row({ amount: -15000 }), row({ amount: -8000, one_off: true })], cats, subs, 0, { monthly_limit: 20000, counts: "recurring" }, "2026-11-30");
     expect(s.spent).toBe(23000);
     expect(s.forecast).toBe(15000);
     expect(s.left).toBe(5000);
-    expect(s.daysLeft).toBe(1);
   });
 });
 
@@ -138,14 +169,15 @@ describe("validateDecision", () => {
 });
 
 describe("buildCoachPrompt", () => {
-  const status = monthStatus([row({ amount: -26999 })], cats, 0, goal, "2026-11-17");
+  const status = monthStatus([row({ amount: -26999 })], cats, subs, 0, goal, "2026-11-17");
   const big = { id: "x", date: "2026-11-12", amount: 2461.95, payee: "modivo.pl Zielona Gora", categoryId: "zak", categoryName: "Zakupy" };
   it("step 2: payee, amount, category, date; an APPROVED limit is reported as an overrun", () => {
     const p = buildCoachPrompt(2, { today: "2026-11-17", status, big, limitApproved: true });
     expect(p).toContain("modivo.pl Zielona Gora");
     expect(p).toContain("2461,95 zł");
     expect(p).toContain("Limit (zatwierdzony)");
-    expect(p).toContain("PRZEKROCZENIE o 6999,00 zł");
+    expect(p).toContain("PRZEKROCZENIE o 6999,00 zł (prognoza, nie wynik końcowy)");
+    expect(p).toContain("Bieżące wydatki do końca miesiąca");
   });
   it("a PENDING limit is a working proposal: no 'PRZEKROCZENIE', marked as not approved", () => {
     const p = buildCoachPrompt(2, { today: "2026-11-17", status, big });
