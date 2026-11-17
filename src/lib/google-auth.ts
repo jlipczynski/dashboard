@@ -74,6 +74,17 @@ export const authOptions: AuthOptions = {
     async jwt({ token, account }) {
       // First login — keep the tokens ONLY in the encrypted JWT (cookie).
       if (account) {
+        // Nightly e-mail import (Finanse 08) needs the refresh token without a cookie:
+        // store it AES-256-GCM encrypted for the allowed user only. Failures never block sign-in
+        // and never log the token.
+        if (account.refresh_token && process.env.FINANCE_TOKEN_KEY && isEmailAllowed(token.email)) {
+          try {
+            const { saveRefreshToken } = await import("@/lib/finance-google-store")
+            await saveRefreshToken(token.email as string, account.refresh_token)
+          } catch (e) {
+            console.error("[google-auth] refresh token not stored:", e instanceof Error ? e.name : "unknown_error")
+          }
+        }
         return {
           ...token,
           accessToken: account.access_token,

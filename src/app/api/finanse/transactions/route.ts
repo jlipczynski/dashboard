@@ -1,6 +1,79 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, ensureFinanceTables } from "@/lib/finanse-db";
 import { normalizeRule, validateRule } from "@/lib/finanse-rules";
+import { planEmailMatches, toGrosze, DUPLICATE_NOTE, MATCH_WINDOW_DAYS } from "@/lib/finanse-email-match";
+
+type Admin = ReturnType<typeof getSupabaseAdmin>;
+const shiftDate = (iso: string, days: number) =>
+  new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+/** Applies planEmailMatches to the new CSV rows; returns the rows that still have to be inserted. */
+async function mergeWithEmailRows(
+  admin: Admin,
+  payload: Record<string, unknown>[]
+): Promise<{ insert: Record<string, unknown>[]; updated: number; flagged: number } | { error: string }> {
+  // Only rows that are really new (a known import_hash is skipped by the upsert anyway).
+  const hashes = payload.map((r) => r.import_hash as string);
+  const { data: existing, error: exErr } = await admin.from("finance_transactions").select("import_hash").in("import_hash", hashes);
+  if (exErr) return { error: exErr.message };
+  const known = new Set((existing ?? []).map((e) => e.import_hash as string));
+  const fresh = payload.filter((r) => !known.has(r.import_hash as string));
+  if (fresh.length === 0) return { insert: payload, updated: 0, flagged: 0 };
+
+  const dates = fresh.map((r) => r.date as string).sort();
+  const { data: emailRows, error } = await admin
+    .from("finance_transactions")
+    .select("id, date, amount, notes")
+    .eq("source", "email")
+    .gte("date", shiftDate(dates[0], -MATCH_WINDOW_DAYS))
+    .lte("date", shiftDate(dates[dates.length - 1], MATCH_WINDOW_DAYS));
+  if (error) return { error: error.message };
+  if (!emailRows || emailRows.length === 0) return { insert: payload, updated: 0, flagged: 0 };
+
+  const plan = planEmailMatches(
+    fresh.map((r) => ({ date: r.date as string, amountGrosze: toGrosze(r.amount as number) })),
+    emailRows.map((e) => ({ id: e.id as string, date: e.date as string, amountGrosze: toGrosze(e.amount as string) }))
+  );
+  const notesById = new Map(emailRows.map((e) => [e.id as string, (e.notes as string | null) ?? null]));
+  const withNote = (n: string | null) => (n && n.includes(DUPLICATE_NOTE) ? n : n ? `${n} · ${DUPLICATE_NOTE}` : DUPLICATE_NOTE);
+
+  const insert = payload.filter((r) => known.has(r.import_hash as string));
+  let updated = 0;
+  let flagged = 0;
+  for (let i = 0; i < fresh.length; i++) {
+    const row = fresh[i];
+    const d = plan[i];
+    if (d.action === "update") {
+      // Keep category, subcategory, person, one_off, reviewed_at, notes, email_message_id.
+      const { error: upErr } = await admin
+        .from("finance_transactions")
+        .update({
+          import_hash: row.import_hash,
+          description: row.description,
+          counterparty: row.counterparty,
+          merchant: row.merchant ?? null,
+          balance: row.balance ?? null,
+          source: "csv",
+        })
+        .eq("id", d.emailId);
+      if (upErr) return { error: upErr.message };
+      updated++;
+    } else if (d.action === "insert_flag") {
+      insert.push({ ...row, reviewed_at: null, notes: withNote((row.notes as string | null) ?? null) });
+      for (const id of d.emailIds) {
+        const { error: flagErr } = await admin
+          .from("finance_transactions")
+          .update({ reviewed_at: null, notes: withNote(notesById.get(id) ?? null) })
+          .eq("id", id);
+        if (flagErr) return { error: flagErr.message };
+      }
+      flagged++;
+    } else {
+      insert.push(row);
+    }
+  }
+  return { insert, updated, flagged };
+}
 
 // GET /api/finanse/transactions?month=2026-03&categoryId=...
 // GET /api/finanse/transactions?trash=true — only rows in the trash (deleted_at set), newest deletion first, no month filter.
@@ -105,6 +178,7 @@ export async function POST(request: Request) {
       category_id: t.categoryId || null,
       subcategory_id: t.subcategoryId || null,
       import_hash: t.importHash,
+      source: "csv",
     };
     if (t.tag) row.tag = t.tag;
     if (t.merchant) row.merchant = t.merchant;
@@ -112,13 +186,25 @@ export async function POST(request: Request) {
     return row;
   });
 
-  const { error } = await admin
-    .from("finance_transactions")
-    .upsert(payload, { onConflict: "import_hash", ignoreDuplicates: true });
+  // CSV ↔ e-mail (Finanse 08): a payment that already came in from an Erste alert is UPDATED with the CSV
+  // data instead of inserted again (category, person, notes, review state stay).
+  const matched = await mergeWithEmailRows(admin, payload);
+  if ("error" in matched) return NextResponse.json({ error: matched.error }, { status: 500 });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (matched.insert.length > 0) {
+    const { error } = await admin
+      .from("finance_transactions")
+      .upsert(matched.insert, { onConflict: "import_hash", ignoreDuplicates: true });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
-  return NextResponse.json({ ok: true, saved: payload.length, rulesRejected });
+  return NextResponse.json({
+    ok: true,
+    saved: payload.length,
+    rulesRejected,
+    emailMatched: matched.updated,
+    emailPossibleDuplicates: matched.flagged,
+  });
 }
 
 // PATCH /api/finanse/transactions?id=...  { categoryId }

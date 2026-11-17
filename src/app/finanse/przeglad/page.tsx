@@ -39,6 +39,40 @@ export default function PrzegladPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(0);
+  // Erste e-mail alerts (Finanse 08): status of the last import + "Pobierz alerty teraz"
+  type ImportStatus = { ran_at: string; fetched: number; inserted: number; unparsed: number } | null;
+  const [lastImport, setLastImport] = useState<ImportStatus>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+
+  async function loadImportStatus() {
+    try {
+      const r = await fetch("/api/finanse/email-import", { cache: "no-store" });
+      if (r.ok) setLastImport((await r.json()).last ?? null);
+    } catch {}
+  }
+  useEffect(() => {
+    loadImportStatus();
+  }, []);
+
+  async function importNow() {
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const r = await fetch("/api/finanse/email-import", { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) setImportMsg(d.error || "Import nie powiódł się");
+      else {
+        setImportMsg(`Pobrano maili: ${d.fetched}, nowe: ${d.inserted}, nierozpoznane: ${d.unparsed}`);
+        if (d.inserted > 0) load();
+      }
+      loadImportStatus();
+    } catch {
+      setImportMsg("Import nie powiódł się");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -130,6 +164,21 @@ export default function PrzegladPage() {
         <p className="mt-1 text-xs text-muted-foreground">
           Sprawdź kategorię, osobę i czy to wydatek jednorazowy. ✓ zatwierdza pozycję — znika z listy.
         </p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+          <span>
+            {lastImport
+              ? `Ostatni import: ${new Date(lastImport.ran_at).toLocaleString("pl-PL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}, nowe: ${lastImport.inserted}, nierozpoznane: ${lastImport.unparsed}`
+              : "Alerty Erste: jeszcze nie importowano"}
+          </span>
+          <button
+            onClick={importNow}
+            disabled={importing}
+            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {importing ? "Pobieram…" : "Pobierz alerty teraz"}
+          </button>
+          {importMsg && <span className="w-full text-foreground">{importMsg}</span>}
+        </div>
 
         {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 

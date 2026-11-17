@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { matchRule, sortRules } from "@/lib/finanse-rules";
+import { planEmailMatches, toGrosze, MATCH_WINDOW_DAYS } from "@/lib/finanse-email-match";
 import { getSupabaseAdmin, ensureFinanceTables, parseSantanderCSV } from "@/lib/finanse-db";
 import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 
@@ -83,6 +84,28 @@ export async function POST(request: Request) {
     };
   });
 
+  // Rows that will merge into a transaction which already came in from an Erste e-mail alert
+  // (the actual update happens on save, in POST /api/finanse/transactions — same planEmailMatches).
+  const freshTx = transactions.filter((t) => !t.isDuplicate);
+  const emailMatched = new Set<string>();
+  if (freshTx.length > 0) {
+    const dates = freshTx.map((t) => t.date).sort();
+    const shift = (iso: string, d: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
+    const { data: emailRows } = await admin
+      .from("finance_transactions")
+      .select("id, date, amount")
+      .eq("source", "email")
+      .gte("date", shift(dates[0], -MATCH_WINDOW_DAYS))
+      .lte("date", shift(dates[dates.length - 1], MATCH_WINDOW_DAYS));
+    if (emailRows && emailRows.length > 0) {
+      const plan = planEmailMatches(
+        freshTx.map((t) => ({ date: t.date, amountGrosze: toGrosze(t.amount) })),
+        emailRows.map((e) => ({ id: e.id as string, date: e.date as string, amountGrosze: toGrosze(e.amount as string) }))
+      );
+      plan.forEach((d, i) => d.action === "update" && emailMatched.add(freshTx[i].importHash));
+    }
+  }
+
   // AI category suggestions are fetched afterwards, in batches, by the client (/api/finanse/suggest),
   // so the preview returns immediately.
 
@@ -97,6 +120,7 @@ export async function POST(request: Request) {
     needsReview: newTx.filter((t) => !t.categoryId).length,
     needsLookup: newTx.filter((t) => t.needsLookup).length,
     needsAi: newTx.filter((t) => t.needsAi).length,
+    emailMatched: emailMatched.size,
   };
 
   return NextResponse.json({ transactions, stats });

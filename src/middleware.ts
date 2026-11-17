@@ -23,6 +23,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Vercel cron (no cookie): the route itself checks "Bearer $CRON_SECRET" (timing-safe).
+  if (
+    pathname === "/api/finanse/email-import" &&
+    request.method === "GET" &&
+    (request.headers.get("authorization") ?? "").startsWith("Bearer ")
+  ) {
+    return NextResponse.next();
+  }
+
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
