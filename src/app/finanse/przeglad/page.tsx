@@ -6,9 +6,10 @@ import { BackButton } from "@/components/dashboard/back-button";
 import { CategoryIcon } from "@/components/finanse/CategoryIcon";
 import { FinanseNav } from "@/components/finanse/FinanseNav";
 import { formatZl } from "@/lib/finanse-period";
+import { reviewRule } from "@/lib/finanse-review-rule";
 
 // Przegląd tygodniowy (sesja WIG) — mobile-first.
-// Każda karta: sprawdź kategorię / osobę / jednorazowe → ✓. Potwierdzone znikają (reviewed_at).
+// Każda karta: sprawdź kategorię / jednorazowe → ✓ (zmiana kategorii → „Zapamiętaj dla …” tworzy regułę). Potwierdzone znikają (reviewed_at).
 
 type Tx = {
   id: string;
@@ -17,13 +18,14 @@ type Tx = {
   description: string | null;
   counterparty: string | null;
   merchant: string | null;
+  import_hash: string | null;
   category_id: string | null;
   subcategory_id: string | null;
   one_off: boolean;
 };
 type Cat = { id: string; name: string; type: string; icon: string | null; color: string | null };
 type Sub = { id: string; name: string; category_id: string; kind: string | null };
-type Edit = { categoryId?: string | null; subcategoryId?: string | null; oneOff?: boolean };
+type Edit = { categoryId?: string | null; subcategoryId?: string | null; oneOff?: boolean; remember?: boolean };
 
 const PAGE = 30;
 const STEPS = ["Potwierdź transakcje", "Duże wydatki", "Co jeszcze kupisz", "Prognoza miesiąca", "Zobowiązanie"];
@@ -38,6 +40,7 @@ export default function PrzegladPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ruleMsg, setRuleMsg] = useState<string | null>(null);
   const [done, setDone] = useState(0);
   // Weekly review wizard (Finanse 09): 1 transactions · 2 big expenses · 3 planned · 4 forecast · 5 commitment
   const [step, setStep] = useState(1);
@@ -135,7 +138,19 @@ export default function PrzegladPage() {
     if (ids.length === 0 || saving) return;
     setSaving(true);
     setError(null);
-    const items = ids.map((id) => ({ id, ...(edits[id] ?? {}) }));
+    const items = ids.map((id) => {
+      const e = edits[id] ?? {};
+      return { id, categoryId: e.categoryId, subcategoryId: e.subcategoryId, oneOff: e.oneOff };
+    });
+    // Rules to remember (category/subcategory changed + checkbox on) — decided before the cards disappear.
+    const toRemember = ids.flatMap((id) => {
+      const t = txs.find((x) => x.id === id);
+      if (!t || edits[id]?.remember === false) return [];
+      const c = current(t);
+      const r = reviewRule(t, c.categoryId, c.subcategoryId);
+      return r.kind === "ok" ? [{ id, rule: r, categoryId: c.categoryId!, subcategoryId: c.subcategoryId ?? null }] : [];
+    });
+    setRuleMsg(null);
     try {
       const r = await fetch("/api/finanse/review", {
         method: "POST",
@@ -154,6 +169,30 @@ export default function PrzegladPage() {
         return next;
       });
       if (failed.size > 0) setError(`Nie zapisano ${failed.size} pozycji — spróbuj ponownie.`);
+      // Same as "Zapamiętaj" in Historia: POST /api/finanse/rules (validated again there).
+      const saved: string[] = [];
+      const ruleErrors: string[] = [];
+      for (const x of toRemember.filter((x) => ok.includes(x.id))) {
+        const rr = await fetch("/api/finanse/rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pattern: x.rule.pattern,
+            counterpartyPattern: x.rule.counterparty_pattern,
+            categoryId: x.categoryId,
+            subcategoryId: x.subcategoryId,
+          }),
+        }).catch(() => null);
+        if (rr?.ok) saved.push(x.rule.target);
+        else ruleErrors.push(`${x.rule.target}: ${((await rr?.json().catch(() => ({}))) as { error?: string })?.error || "nie zapisano reguły"}`);
+      }
+      if (saved.length || ruleErrors.length) {
+        setRuleMsg(
+          [saved.length ? `Zapamiętano: ${saved.join(", ")}` : "", ruleErrors.length ? `Reguły nie zapisane — ${ruleErrors.join("; ")}` : ""]
+            .filter(Boolean)
+            .join(" · ")
+        );
+      }
       if (ok.length > 0 && txs.length - ok.length === 0 && total - ok.length > 0) load();
     } catch {
       setError("Błąd zapisu — spróbuj ponownie.");
@@ -203,7 +242,7 @@ export default function PrzegladPage() {
           {done > 0 && ` · ${done} potwierdzonych w tej sesji`}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Sprawdź kategorię, osobę i czy to wydatek jednorazowy. ✓ zatwierdza pozycję — znika z listy.
+          Sprawdź kategorię i czy to wydatek jednorazowy. ✓ zatwierdza pozycję — znika z listy. Zmienioną kategorię możesz zapamiętać jako regułę.
         </p>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
           <span>
@@ -222,6 +261,7 @@ export default function PrzegladPage() {
         </div>
 
         {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {ruleMsg && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{ruleMsg}</p>}
 
         {!loading && total === 0 && (
           <div className="mt-8 rounded-2xl border border-border bg-card p-6 text-center">
@@ -239,6 +279,7 @@ export default function PrzegladPage() {
             const cat = c.categoryId ? catById.get(c.categoryId) : undefined;
             const catSubs = subs.filter((s) => s.category_id === c.categoryId);
             const title = t.merchant || t.counterparty || t.description || "—";
+            const rr = reviewRule(t, c.categoryId, c.subcategoryId);
             return (
               <li key={t.id} className="rounded-2xl border border-border bg-card p-4">
                 <div className="flex items-start gap-3">
@@ -289,6 +330,19 @@ export default function PrzegladPage() {
                     Jednorazowy
                   </label>
                 </div>
+
+                {rr.kind === "ok" && (
+                  <label className="mt-2 flex items-center gap-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={edits[t.id]?.remember ?? true}
+                      onChange={(e) => patch(t.id, { remember: e.target.checked })}
+                      className="h-4 w-4"
+                    />
+                    <span className="min-w-0 truncate">Zapamiętaj dla {rr.target}</span>
+                  </label>
+                )}
+                {rr.kind === "invalid" && <p className="mt-2 text-xs text-amber-700">Nie zapamiętam: {rr.message}</p>}
 
                 <button
                   onClick={() => confirm([t.id])}

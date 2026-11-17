@@ -13,7 +13,7 @@ export async function GET() {
   const [tx, count, cats, subs] = await Promise.all([
     admin
       .from("finance_transactions")
-      .select("id, date, amount, description, counterparty, merchant, category_id, subcategory_id, place, one_off, tag, notes")
+      .select("id, date, amount, description, counterparty, merchant, import_hash, category_id, subcategory_id, place, one_off, tag, notes")
       .is("deleted_at", null)
       .is("reviewed_at", null)
       .order("date", { ascending: false })
