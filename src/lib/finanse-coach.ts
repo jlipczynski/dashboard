@@ -251,6 +251,8 @@ export type CoachContext = {
   discretionaryTop?: { category: string; subcategory: string; amount: number }[];
   lastCommitment?: string | null;
   recentDecisions?: { payee: string; amount: number; necessary: string; recurring: boolean; plan: string | null }[];
+  /** Brief 10: what Jan accepted (finance_coach_insights) + facts from finanse-patterns. */
+  knowledge?: { insights: { kind: string; text: string }[]; patterns: string[] };
 };
 
 export const COACH_SYSTEM = `Jesteś coachem wydatków Jana. Pomagasz mu kontrolować koszty życia.
@@ -262,10 +264,13 @@ i zachęć do decyzji, jaki limit ma obowiązywać. Gdy limit jest zatwierdzony 
 powiedz to wprost i zapytaj, co Jan obetnie.
 Odpowiadasz po polsku, maksymalnie ~120 słów: 1–3 krótkie, konkretne pytania albo jeden challenge.
 Nie wymyślaj danych, których nie dostałeś.
+Jeśli dostajesz ustalenia Jana (zaakceptowaną wiedzę), odwołuj się do nich, gdy dotyczą tematu
+(np. „Ustaliłeś zasadę 48 godzin. Ten zakup…”). Wzorce to fakty z danych: cytuj liczby, nie interpretuj psychologii.
 Pisz zwykłym tekstem: bez markdown (żadnych **, #, list z myślnikami), pytania numeruj „1.”, „2.”.`;
 
 const zlText = (v: number) => `${v.toFixed(2).replace(".", ",")} zł`;
 const cleanText = (s: string) => s.replace(/\d{2}(?:[  ]?\d{4}){6}/g, "…").slice(0, 60);
+const longText = (s: string) => s.replace(/\d{2}(?:[ \u00a0]?\d{4}){6}/g, "…").slice(0, 300);
 
 export function buildCoachPrompt(step: CoachStep, ctx: CoachContext, answer?: string): string {
   const s = ctx.status;
@@ -322,6 +327,11 @@ export function buildCoachPrompt(step: CoachStep, ctx: CoachContext, answer?: st
           .join("; ")
     );
   }
+  const k = ctx.knowledge;
+  if (k?.insights.length) {
+    lines.push("Ustalenia Jana (zaakceptowane): " + k.insights.map((i) => `[${i.kind}] ${longText(i.text)}`).join(" | "));
+  }
+  if (k?.patterns.length) lines.push("Wzorce w danych (fakty): " + k.patterns.map(longText).join(" | "));
   if (answer?.trim()) lines.push(`Odpowiedź Jana: „${answer.trim().slice(0, 500)}”. Odnieś się do niej konkretnie.`);
   return lines.join("\n");
 }

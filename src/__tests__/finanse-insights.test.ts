@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateInsightPatch, insightUpdate, groupByKind, MAX_TEXT } from "../lib/finanse-insights";
+import { validateInsightPatch, insightUpdate, groupByKind, parseProposals, MAX_TEXT } from "../lib/finanse-insights";
 
 const NOW = "2026-11-18T08:00:00.000Z";
 
@@ -49,4 +49,23 @@ it("groupByKind: decisions, rules, facts… newest first; empty groups dropped",
     ["Decyzje", ["b"]],
     ["Zasady", ["c", "a"]],
   ]);
+});
+
+describe("parseProposals — the coach may only propose, with evidence", () => {
+  const ok = { kind: "pattern", text: "Restauracje: 19 transakcji w listopadzie, razem 1 093,34 zł.", evidence: { count: 19, total: 1093.34 } };
+  it("0–2 well-formed entries, also inside a ```json block", () => {
+    expect(parseProposals("[]")).toEqual([]);
+    expect(parseProposals("```json\n" + JSON.stringify([ok]) + "\n```")).toEqual([ok]);
+    expect(parseProposals(JSON.stringify([ok, { ...ok, text: "b" }, { ...ok, text: "c" }]))).toHaveLength(2);
+  });
+  it("drops entries without evidence, with an unknown kind (incl. lessons) or empty text", () => {
+    expect(parseProposals(JSON.stringify([{ ...ok, evidence: {} }, { ...ok, kind: "lesson" }, { ...ok, text: " " }]))).toEqual([]);
+  });
+  it("drops what the coach already knows or Jan rejected (case/punctuation-insensitive)", () => {
+    expect(parseProposals(JSON.stringify([ok]), ["restauracje 19 transakcji w listopadzie razem 1 093 34 zł"])).toEqual([]);
+  });
+  it("garbage → nothing", () => {
+    expect(parseProposals("Nie mam propozycji.")).toEqual([]);
+    expect(parseProposals('{"kind":"fact"}')).toEqual([]);
+  });
 });

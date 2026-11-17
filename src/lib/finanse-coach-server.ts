@@ -1,6 +1,7 @@
 // SERVER-ONLY. Loads everything the coach needs (status, big expenses, plans, last commitment).
 // Shared by /api/finanse/coach/status, /talk and /review so they all see the same numbers.
 import { getSupabaseAdmin } from "@/lib/finanse-db";
+import { findPatterns, ANALYSIS_START, type PatternRow, type PlannedPurchase } from "@/lib/finanse-patterns";
 import {
   monthStatus,
   monthBounds,
@@ -158,4 +159,49 @@ export async function loadCoachState(): Promise<CoachState> {
     discretionaryTop,
     recentDecisions,
   };
+}
+
+// ── Brief 10: knowledge for the coach ────────────────────────────────────────────────────────
+export const MAX_INSIGHTS_IN_PROMPT = 20;
+
+export type CoachKnowledge = { insights: { kind: string; text: string }[]; patterns: string[] };
+
+/** Accepted insights (newest 20) + current patterns from finanse-patterns (data since 1.11.2026). */
+export async function loadKnowledge(state: CoachState): Promise<CoachKnowledge> {
+  const admin = getSupabaseAdmin();
+  const rows: PatternRow[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await admin
+      .from("finance_transactions")
+      .select("id, amount, category_id, subcategory_id, merchant, counterparty, description, date, one_off")
+      .is("deleted_at", null)
+      .gte("date", ANALYSIS_START)
+      .lte("date", state.today)
+      .order("id")
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    rows.push(...((data ?? []) as PatternRow[]));
+    if (!data || data.length < PAGE) break;
+  }
+  const [ins, cats, subs, planned] = await Promise.all([
+    admin.from("finance_coach_insights").select("kind, text").eq("status", "accepted").order("created_at", { ascending: false }).limit(MAX_INSIGHTS_IN_PROMPT),
+    admin.from("finance_categories").select("id, name, type"),
+    admin.from("finance_subcategories").select("id, name, category_id, kind"),
+    admin.from("finance_planned_purchases").select("id, name, amount, category_id, transaction_id, created_at"),
+  ]);
+  const err = ins.error || cats.error || subs.error || planned.error;
+  if (err) throw new Error(err.message);
+  const patterns = findPatterns({
+    rows,
+    categories: cats.data ?? [],
+    subcategories: subs.data ?? [],
+    planned: (planned.data ?? []) as PlannedPurchase[],
+    monthlyLimit: Number(state.goal.monthly_limit),
+    plannedRemaining: state.status.plannedRemaining,
+    today: state.today,
+  })
+    // The month pace is already in the status lines of the prompt.
+    .filter((p) => p.kind !== "month_pace")
+    .map((p) => p.text);
+  return { insights: (ins.data ?? []) as { kind: string; text: string }[], patterns };
 }

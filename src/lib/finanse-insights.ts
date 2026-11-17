@@ -69,3 +69,45 @@ export function groupByKind<T extends { kind: string; created_at: string }>(item
     items: items.filter((i) => i.kind === kind).sort((a, b) => b.created_at.localeCompare(a.created_at)),
   })).filter((g) => g.items.length > 0);
 }
+
+// ── Proposals from the coach after a weekly review (0–2, JSON) ─────────────────────────────────
+// The AI output is untrusted: only well-formed entries with evidence pass; duplicates of what the coach
+// already knows (or what Jan rejected) are dropped. Lessons are not proposed here (brief 10, step 3).
+
+export const PROPOSAL_KINDS = ["fact", "rule", "pattern", "decision"] as const;
+export const MAX_PROPOSALS = 2;
+export type Proposal = { kind: (typeof PROPOSAL_KINDS)[number]; text: string; evidence: Record<string, unknown> };
+
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+export function parseProposals(raw: string, known: string[] = []): Proposal[] {
+  const body = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  let data: unknown;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    const m = body.match(/\[[\s\S]*\]/);
+    if (!m) return [];
+    try {
+      data = JSON.parse(m[0]);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(data)) return [];
+  const seen = new Set(known.map(norm));
+  const out: Proposal[] = [];
+  for (const item of data) {
+    if (out.length >= MAX_PROPOSALS) break;
+    if (!item || typeof item !== "object") continue;
+    const { kind, text, evidence } = item as Record<string, unknown>;
+    if (!PROPOSAL_KINDS.includes(kind as Proposal["kind"])) continue;
+    if (typeof text !== "string" || !text.trim() || text.trim().length > MAX_TEXT) continue;
+    if (!evidence || typeof evidence !== "object" || Array.isArray(evidence) || Object.keys(evidence).length === 0) continue;
+    const key = norm(text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind: kind as Proposal["kind"], text: text.trim(), evidence: evidence as Record<string, unknown> });
+  }
+  return out;
+}

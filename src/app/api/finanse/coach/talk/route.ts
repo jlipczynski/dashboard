@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { loadCoachState } from "@/lib/finanse-coach-server";
+import { loadCoachState, loadKnowledge, type CoachKnowledge } from "@/lib/finanse-coach-server";
+import { getSupabaseAdmin } from "@/lib/finanse-db";
 import { buildCoachPrompt, COACH_SYSTEM, type CoachStep } from "@/lib/finanse-coach";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// POST /api/finanse/coach/talk { step: 2..5, transactionId?, answer? } → { text }
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// POST /api/finanse/coach/talk { step: 2..5, sessionId, transactionId?, answer? } → { text }
+// Brief 10: every exchange is saved to finance_coach_messages (session = one opening of the review);
+// the prompt also gets Jan's accepted knowledge and the current patterns.
 // The context is built on the server from the DB (the client sends only the step and Jan's answer).
 // The AI gets payee, amount, category and date — never account numbers or full descriptions.
 export async function POST(request: Request) {
@@ -22,6 +27,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }
 
+  // Knowledge is a bonus: if it cannot be loaded, the coach still answers (logged, not shown to Jan).
+  let knowledge: CoachKnowledge | undefined;
+  try {
+    knowledge = await loadKnowledge(state);
+  } catch (e) {
+    console.error("[finanse/coach/talk] knowledge:", e instanceof Error ? e.message : "error");
+  }
+  const sessionId = typeof body?.sessionId === "string" && UUID_RE.test(body.sessionId) ? body.sessionId : null;
+  const answer = typeof body?.answer === "string" ? body.answer.trim().slice(0, 500) : "";
+
   const big = step === 2 ? state.big.find((b) => b.id === body?.transactionId) ?? null : null;
   if (step === 2 && !big) return NextResponse.json({ error: "Ten wydatek nie czeka na omówienie" }, { status: 404 });
 
@@ -36,8 +51,9 @@ export async function POST(request: Request) {
       discretionaryTop: state.discretionaryTop,
       lastCommitment: state.lastCommitment?.commitment ?? null,
       recentDecisions: state.recentDecisions,
+      knowledge,
     },
-    typeof body?.answer === "string" ? body.answer : undefined
+    answer || undefined
   );
 
   try {
@@ -49,6 +65,16 @@ export async function POST(request: Request) {
       messages: [{ role: "user", content: prompt }],
     });
     const text = message.content.find((c) => c.type === "text")?.text?.trim() ?? "";
+    if (sessionId) {
+      const rows = [
+        ...(answer ? [{ session_id: sessionId, step: String(step), role: "jan", content: answer }] : []),
+        ...(text ? [{ session_id: sessionId, step: String(step), role: "coach", content: text }] : []),
+      ];
+      if (rows.length) {
+        const { error } = await getSupabaseAdmin().from("finance_coach_messages").insert(rows);
+        if (error) console.error("[finanse/coach/talk] save messages:", error.message);
+      }
+    }
     return NextResponse.json({ text });
   } catch (e) {
     console.error("[finanse/coach/talk] AI error:", e instanceof Error ? e.name : "unknown");

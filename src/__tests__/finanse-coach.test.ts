@@ -195,3 +195,25 @@ describe("buildCoachPrompt", () => {
     expect(p).toContain("Odpowiedź Jana: „tak, dotrzymałem”");
   });
 });
+
+describe("buildCoachPrompt — knowledge (brief 10)", () => {
+  const status = monthStatus([row({ amount: -500 })], cats, subs, 0, goal, "2026-11-17");
+  it("adds Jan's accepted entries and the patterns; masks account numbers", () => {
+    const p = buildCoachPrompt(4, {
+      today: "2026-11-17",
+      status,
+      knowledge: {
+        insights: [{ kind: "rule", text: "Zakupy online powyżej 200 zł: zasada 48 godzin." }],
+        patterns: ["Jedzenie / Restauracje i kawiarnie: 19 transakcji w 2026-11, razem 1 093,34 zł.", "konto 00 0000 0000 0000 0000 0000 1234"],
+      },
+    });
+    expect(p).toContain("Ustalenia Jana (zaakceptowane): [rule] Zakupy online powyżej 200 zł: zasada 48 godzin.");
+    expect(p).toContain("Wzorce w danych (fakty): Jedzenie / Restauracje i kawiarnie: 19 transakcji");
+    expect(p).not.toContain("1234");
+  });
+  it("no knowledge → no extra lines", () => {
+    const p = buildCoachPrompt(4, { today: "2026-11-17", status });
+    expect(p).not.toContain("Ustalenia Jana");
+    expect(p).not.toContain("Wzorce w danych");
+  });
+});

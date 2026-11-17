@@ -465,6 +465,8 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
   const [kept, setKept] = useState<"yes" | "partly" | "no" | null>(null);
   const [commitment, setCommitment] = useState("");
   const [finished, setFinished] = useState(false);
+  // Brief 10: one id per opening of the review — the coach conversation is saved under it.
+  const [sessionId] = useState(() => crypto.randomUUID());
 
   async function reload() {
     try {
@@ -490,7 +492,7 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
       const r = await fetch("/api/finanse/coach/talk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, sessionId }),
       });
       const d = await r.json().catch(() => ({}));
       setTalk((t) => ({ ...t, [key]: { text: r.ok ? d.text : d.error || "Coach chwilowo niedostępny.", loading: false } }));
@@ -797,7 +799,7 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
               <button
                 onClick={async () => {
                   const coachSummary = [talk["step:4"]?.text, talk["step:5"]?.text].filter(Boolean).join("\n\n") || undefined;
-                  const ok = await post("/api/finanse/coach/review", "POST", { commitment, previousKept: kept ?? undefined, coachSummary });
+                  const ok = await post("/api/finanse/coach/review", "POST", { commitment, previousKept: kept ?? undefined, coachSummary, sessionId });
                   if (ok) setFinished(true);
                 }}
                 disabled={busy || !commitment.trim() || (!!data.lastCommitment?.commitment && !kept)}
