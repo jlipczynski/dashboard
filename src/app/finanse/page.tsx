@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSession, signIn, SessionProvider } from "next-auth/react";
 import { BackButton } from "@/components/dashboard/back-button";
+import { FinanseNav, tabFromQuery, navKeyForTab, type FinanseTab } from "@/components/finanse/FinanseNav";
 import { sortTransactions, defaultSortDir, type HistSortCol, type SortDir } from "@/lib/finanse-sort";
 import {
   similarSelection,
@@ -156,7 +157,20 @@ function SummaryTiles({ summary }: { summary: ReturnType<typeof summarizeExpense
 function FinansePageInner() {
   const { data: session } = useSession();
   const gmailConnected = !!session?.googleConnected;
-  const [tab, setTab] = useState<"import" | "historia" | "budzet" | "kategorie">("import");
+  const [tab, setTabState] = useState<FinanseTab>("import");
+  // The tab can be opened from a link (/finanse?tab=historia …, FinanseNav); switching keeps the URL in sync.
+  useEffect(() => {
+    const t = tabFromQuery(new URLSearchParams(window.location.search).get("tab"));
+    if (t) setTabState(t);
+  }, []);
+  function setTab(t: FinanseTab) {
+    setTabState(t);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", t === "kategorie" ? "reguly" : t);
+      window.history.replaceState(null, "", url.toString());
+    } catch {}
+  }
 
   // Categories
   const [categories, setCategories] = useState<Category[]>([]);
@@ -1339,22 +1353,8 @@ function FinansePageInner() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="mt-6 flex gap-1 rounded-xl bg-muted p-1">
-          {(["import", "historia", "budzet", "kategorie"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
-                tab === t
-                  ? "bg-white text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t === "import" ? "Import" : t === "historia" ? "Historia" : t === "budzet" ? "Budżet" : "Kategorie"}
-            </button>
-          ))}
-        </div>
+        {/* Finance navigation: other screens + this page's tabs (Transakcje, Budżet, Import, Reguły i tagi) */}
+        <FinanseNav active={navKeyForTab(tab)} onTab={setTab} />
 
         {/* ── IMPORT TAB ──────────────────────────── */}
         {tab === "import" && (

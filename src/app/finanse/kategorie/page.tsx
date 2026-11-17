@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { CategoryIcon } from "@/components/finanse/CategoryIcon";
+import { FinanseNav } from "@/components/finanse/FinanseNav";
 import { CATEGORY_COLORS, deleteGuard, type CategoryType, type Kind } from "@/lib/finanse-taxonomy";
 
 // /finanse/kategorie — Jan maintains the taxonomy himself: categories, subcategories, kinds,
@@ -168,6 +169,7 @@ export default function FinanseKategoriePage() {
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
         <BackButton />
+        <FinanseNav active="kategorie-strona" />
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Finanse · taksonomia</p>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { CategoryIcon } from "@/components/finanse/CategoryIcon";
+import { FinanseNav } from "@/components/finanse/FinanseNav";
 import { formatZl } from "@/lib/finanse-period";
 
 // Przegląd tygodniowy (sesja WIG) — mobile-first.
@@ -169,6 +170,7 @@ export default function PrzegladPage() {
     <div className="min-h-screen bg-background pb-28">
       <div className="mx-auto max-w-xl px-4 py-5">
         <BackButton />
+        <FinanseNav active="przeglad" />
         <div className="mt-3 flex items-end justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sesja WIG · finanse</p>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { CategoryIcon } from "@/components/finanse/CategoryIcon";
+import { FinanseNav } from "@/components/finanse/FinanseNav";
 import {
   PRESETS,
   presetRange,
@@ -142,6 +143,7 @@ export default function FinanseDashboardPage() {
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
         <BackButton />
+        <FinanseNav active="dashboard" />
 
         {/* Header */}
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
