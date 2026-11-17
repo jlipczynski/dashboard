@@ -9,7 +9,7 @@ import { loadRefreshToken } from "@/lib/finance-google-store";
 import { parseErsteAlert, gmailBodyText, maskAccounts, type ErsteAlert } from "@/lib/erste-alert";
 import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 import { matchRule, sortRules } from "@/lib/finanse-rules";
-import { planEmailMatches, toGrosze, MATCH_WINDOW_DAYS } from "@/lib/finanse-email-match";
+import { classifyAlerts, toGrosze, cardLast4, MATCH_WINDOW_DAYS } from "@/lib/finanse-email-match";
 import { SUGGEST_BATCH_MAX, buildSuggestPrompt, parseSuggestResponse } from "@/lib/finanse-suggest";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +23,9 @@ export const maxDuration = 60;
 // Nothing here logs tokens, e-mail bodies or account numbers.
 
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
+// Safety switch: until Jan approves, the importer only DRY-RUNS (cron and button alike) — it classifies
+// and logs counts, but writes no transactions. Writing starts with FINANCE_EMAIL_IMPORT_MODE=live.
+const isLive = () => process.env.FINANCE_EMAIL_IMPORT_MODE === "live";
 const QUERY = "from:alerty24@erste.pl newer_than:3d";
 const MAX_MESSAGES = 200;
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -50,9 +53,12 @@ type ImportResult = {
   matched_rules: number;
   ai_suggested: number;
   unparsed: number;
-  linked_existing: number;
+  linked_existing: number; // alert = an operation already in the DB (identified) → linked, not inserted
+  uncertain: number; // ambiguous → manual review, nothing written
   errors: { id?: string; reason: string; subject?: string }[];
 };
+
+type DryRunItem = { date: string; amount: number; payee: string | null; status: "w bazie" | "duplikat" | "niepewne" | "nowe"; detail?: string };
 
 async function gmailGet<T>(path: string, accessToken: string): Promise<T> {
   const r = await fetch(`${GMAIL}${path}`, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -60,17 +66,19 @@ async function gmailGet<T>(path: string, accessToken: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-async function runImport(trigger: "cron" | "manual"): Promise<{ status: number; body: unknown }> {
+async function runImport(trigger: "cron" | "manual", dryRun = false): Promise<{ status: number; body: unknown }> {
   const admin = getSupabaseAdmin();
-  const result: ImportResult = { fetched: 0, inserted: 0, matched_rules: 0, ai_suggested: 0, unparsed: 0, linked_existing: 0, errors: [] };
+  const result: ImportResult = { fetched: 0, inserted: 0, matched_rules: 0, ai_suggested: 0, unparsed: 0, linked_existing: 0, uncertain: 0, errors: [] };
   const log = async () => {
+    // A dry run writes no transactions; its counts are logged (trigger "…:dry") so Jan can see the cron works.
     await admin.from("finance_email_imports").insert({
-      trigger,
+      trigger: dryRun ? `${trigger}:dry` : trigger,
       fetched: result.fetched,
       inserted: result.inserted,
       matched_rules: result.matched_rules,
       ai_suggested: result.ai_suggested,
       unparsed: result.unparsed,
+      uncertain: result.uncertain,
       errors: result.errors.length ? result.errors : null,
     });
   };
@@ -144,35 +152,83 @@ async function runImport(trigger: "cron" | "manual"): Promise<{ status: number; 
     }
   }
 
-  // 5. A bank-CSV row for the same payment may already exist (CSV imported first): link instead of inserting.
+  // 5. The same operation may already be in the DB from a bank CSV. Merge only with identifying evidence
+  //    (balance after the operation, or payee + title — see finanse-email-match); ambiguous → manual review.
   let toInsert = parsed;
+  const preview: DryRunItem[] = [];
   if (parsed.length) {
     const dates = parsed.map((p) => p.alert.date).sort();
     const shift = (iso: string, d: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
     const { data: bankRows, error } = await admin
       .from("finance_transactions")
-      .select("id, date, amount, import_hash")
+      .select("id, date, amount, balance, counterparty, description, import_hash")
       .is("email_message_id", null)
       .gte("date", shift(dates[0], -MATCH_WINDOW_DAYS))
       .lte("date", shift(dates[dates.length - 1], MATCH_WINDOW_DAYS));
-    if (!error) {
-      const candidates = (bankRows ?? [])
-        .filter((r) => !String(r.import_hash).startsWith("cash:") && !String(r.import_hash).startsWith("email:"))
-        .map((r) => ({ id: r.id as string, date: r.date as string, amountGrosze: toGrosze(r.amount as string) }));
-      const plan = planEmailMatches(parsed.map((p) => ({ date: p.alert.date, amountGrosze: p.alert.amountGrosze })), candidates);
-      toInsert = [];
-      for (let i = 0; i < parsed.length; i++) {
-        const d = plan[i];
-        if (d.action === "update") {
-          const { error: linkErr } = await admin
-            .from("finance_transactions")
-            .update({ email_message_id: parsed[i].id })
-            .eq("id", d.emailId);
-          if (!linkErr) result.linked_existing++;
-          else toInsert.push(parsed[i]);
-        } else toInsert.push(parsed[i]);
-      }
+    if (error) {
+      result.errors.push({ reason: "db_read_failed" });
+      await log();
+      return { status: 500, body: { error: error.message, ...result } };
     }
+    const existing = (bankRows ?? [])
+      .filter((r) => !String(r.import_hash).startsWith("cash:") && !String(r.import_hash).startsWith("email:"))
+      .map((r) => ({
+        id: r.id as string,
+        date: r.date as string,
+        amountGrosze: toGrosze(r.amount as string),
+        balanceGrosze: r.balance == null ? null : toGrosze(r.balance as string),
+        counterparty: (r.counterparty as string | null) ?? null,
+        title: (r.description as string | null) ?? null,
+        cardLast4: cardLast4(r.description as string | null),
+      }));
+    const cls = classifyAlerts(
+      parsed.map((p) => ({
+        messageId: p.id,
+        date: p.alert.date,
+        amountGrosze: p.alert.amountGrosze,
+        balanceGrosze: p.alert.balanceGrosze,
+        counterparty: p.alert.counterparty,
+        title: p.alert.title,
+        cardLast4: p.alert.cardLast4,
+      })),
+      existing
+    );
+    const byId = new Map(parsed.map((p) => [p.id, p.alert]));
+    const item = (id: string, status: DryRunItem["status"], detail?: string): DryRunItem => {
+      const a = byId.get(id)!;
+      return { date: a.date, amount: a.amountGrosze / 100, payee: a.counterparty, status, detail };
+    };
+
+    for (const d of cls.duplicates) {
+      preview.push(item(d.messageId, "duplikat", `pewne dopasowanie: ${d.basis}`));
+      if (dryRun) continue;
+      const { error: linkErr } = await admin.from("finance_transactions").update({ email_message_id: d.messageId }).eq("id", d.transactionId);
+      if (!linkErr) result.linked_existing++;
+      else result.errors.push({ id: d.messageId, reason: "link_failed" });
+    }
+    for (const u of cls.uncertain) {
+      preview.push(item(u.messageId, "niepewne", `${u.reason} (kandydatów: ${u.candidateIds.length})`));
+      result.uncertain++;
+      result.errors.push({ id: u.messageId, reason: `niepewne: ${u.reason}` });
+    }
+    if (dryRun) result.linked_existing = cls.duplicates.length;
+    const freshSet = new Set(cls.fresh);
+    toInsert = parsed.filter((p) => freshSet.has(p.id));
+    for (const p of toInsert) preview.push(item(p.id, "nowe"));
+  }
+
+  if (dryRun) {
+    await log();
+    return {
+      status: 200,
+      body: {
+        dryRun: true,
+        alreadyInDb: knownIds.size,
+        wouldInsert: toInsert.length,
+        ...result,
+        items: preview.sort((a, b) => a.date.localeCompare(b.date)),
+      },
+    };
   }
 
   // 6. Categorize: Jan's rules first, then an AI suggestion (Haiku) for the rest
@@ -268,7 +324,7 @@ async function runImport(trigger: "cron" | "manual"): Promise<{ status: number; 
 export async function GET(req: NextRequest) {
   if (req.headers.get("authorization")) {
     if (!isCron(req)) return json({ error: "Unauthorized" }, 401);
-    const r = await runImport("cron");
+    const r = await runImport("cron", !isLive());
     return json(r.body, r.status);
   }
   if (!(await hasSession(req))) return json({ error: "Unauthorized" }, 401);
@@ -277,11 +333,13 @@ export async function GET(req: NextRequest) {
     admin.from("finance_email_imports").select("ran_at, trigger, fetched, inserted, unparsed").order("ran_at", { ascending: false }).limit(1),
     admin.from("finance_google_tokens").select("updated_at").limit(1),
   ]);
-  return json({ last: last.data?.[0] ?? null, tokenStored: (token.data?.length ?? 0) > 0 });
+  return json({ last: last.data?.[0] ?? null, tokenStored: (token.data?.length ?? 0) > 0, live: isLive() });
 }
 
+// POST { dryRun?: true } — dry run: reads Gmail and the DB, classifies, writes NOTHING.
 export async function POST(req: NextRequest) {
   if (!(await hasSession(req))) return json({ error: "Unauthorized" }, 401);
-  const r = await runImport("manual");
+  const body = (await req.json().catch(() => ({}))) as { dryRun?: boolean };
+  const r = await runImport("manual", body?.dryRun === true || !isLive());
   return json(r.body, r.status);
 }

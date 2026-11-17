@@ -61,6 +61,7 @@ type WigStatus = {
   status: { spent: number; spentRecurring: number; plannedRemaining: number; forecast: number; limit: number; overBy: number; perDayLeft: number; daysLeft: number };
   big: { id: string }[];
   lastCompletedAt: string | null;
+  goal: { status: "pending" | "approved" };
 };
 
 const STORAGE_KEY = "finanse_dashboard_period";
@@ -207,13 +208,20 @@ export default function FinanseDashboardPage() {
         <section aria-label="WIG wydatków" className="mt-6 grid gap-6 rounded-3xl bg-[#1F3A2C] p-6 text-[#F4F1EC] sm:p-7 md:grid-cols-3">
           <div className="flex flex-col gap-2">
             <p className="text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">
-              WIG · koszty życia ≤ {wig ? formatZl(wig.status.limit) : "20 000 zł"} / mies.
+              Koszty życia · ten miesiąc
+              {wig && (
+                <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] normal-case tracking-normal ${wig.goal.status === "approved" ? "bg-[#8FD1A8] text-[#1F3A2C]" : "bg-[#F0C99A] text-[#1F3A2C]"}`}>
+                  limit {wig.goal.status === "approved" ? "zatwierdzony" : "do zatwierdzenia"}
+                </span>
+              )}
             </p>
             {wig ? (
               <>
                 <p className="font-mono text-3xl font-bold">
                   {formatZl(wig.status.spent)}
-                  <span className="text-base font-normal text-[#C9D8CE]"> / {formatZl(wig.status.limit)}</span>
+                  <span className="text-base font-normal text-[#C9D8CE]">
+                    {" "}/ {formatZl(wig.status.limit)}{wig.goal.status === "approved" ? "" : " (roboczy)"}
+                  </span>
                 </p>
                 <div className="h-2.5 overflow-hidden rounded-full bg-[#3B5A48]" aria-hidden="true">
                   <div
@@ -228,7 +236,16 @@ export default function FinanseDashboardPage() {
                 </p>
                 <p className={`text-sm font-semibold ${wig.status.overBy > 0 ? "text-red-300" : "text-[#8FD1A8]"}`}>
                   Prognoza {formatZl(wig.status.forecast)}
-                  {wig.status.overBy > 0 ? ` · przekroczysz o ${formatZl(wig.status.overBy)}` : ""}
+                  {wig.status.overBy > 0
+                    ? wig.goal.status === "approved"
+                      ? ` · przekroczysz o ${formatZl(wig.status.overBy)}`
+                      : ` · ${formatZl(wig.status.overBy)} powyżej limitu roboczego`
+                    : ""}
+                </p>
+                <p className="text-xs">
+                  <Link href="/finanse/przeglad?step=4" className="text-[#A9C9B5] underline hover:text-[#F4F1EC]">
+                    {wig.goal.status === "approved" ? "Zmień limit" : "Ustal i zatwierdź limit"}
+                  </Link>
                 </p>
                 {wig.big.length > 0 && (
                   <Link
@@ -265,8 +282,10 @@ export default function FinanseDashboardPage() {
               od {data ? shortDate(data.weekStart) : "pn"} ·{" "}
               {wig
                 ? wig.status.overBy > 0
-                  ? "limit miesiąca już przekroczony"
-                  : `zostało ${formatZl(wig.status.perDayLeft)} dziennie do limitu`
+                  ? wig.goal.status === "approved"
+                    ? "limit miesiąca już przekroczony"
+                    : "ponad limit roboczy (do zatwierdzenia)"
+                  : `zostało ${formatZl(wig.status.perDayLeft)} dziennie do limitu${wig.goal.status === "approved" ? "" : " roboczego"}`
                 : "—"}
             </p>
           </div>

@@ -30,6 +30,7 @@ export async function POST(request: Request) {
     {
       today: state.today,
       status: state.status,
+      limitApproved: state.goal.status === "approved",
       big,
       planned: state.planned,
       discretionaryTop: state.discretionaryTop,

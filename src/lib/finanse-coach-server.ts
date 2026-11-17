@@ -9,6 +9,7 @@ import {
   type BigExpense,
   type CoachRow,
   type Goal,
+  type GoalStatus,
   type MonthStatus,
 } from "@/lib/finanse-coach";
 
@@ -40,7 +41,7 @@ export type CoachState = {
   today: string;
   weekStart: string;
   month: { from: string; to: string };
-  goal: Goal & { key: string };
+  goal: Goal & { key: string; status: GoalStatus };
   status: MonthStatus;
   big: BigExpense[];
   planned: Planned[];
@@ -75,7 +76,7 @@ export async function loadCoachState(): Promise<CoachState> {
   const [cats, subs, goals, planned, decisions, reviews] = await Promise.all([
     admin.from("finance_categories").select("id, name, type"),
     admin.from("finance_subcategories").select("id, name, category_id, kind"),
-    admin.from("finance_goals").select("key, monthly_limit, counts, valid_from").eq("key", "cost_of_living").lte("valid_from", today),
+    admin.from("finance_goals").select("key, monthly_limit, counts, valid_from, status").eq("key", "cost_of_living").lte("valid_from", today),
     admin.from("finance_planned_purchases").select("id, month, name, amount, category_id, status").eq("month", from).order("created_at"),
     admin.from("finance_expense_decisions").select("transaction_id, necessary, recurring, horizon_until, plan, created_at").order("created_at", { ascending: false }),
     admin.from("finance_weekly_reviews").select("week_start, month_forecast, commitment, coach_summary, completed_at").order("week_start", { ascending: false }).limit(10),
@@ -85,7 +86,12 @@ export async function loadCoachState(): Promise<CoachState> {
 
   const goalRow = goals.data?.[0];
   if (!goalRow) throw new Error("Brak celu cost_of_living w finance_goals");
-  const goal = { key: goalRow.key as string, monthly_limit: Number(goalRow.monthly_limit), counts: goalRow.counts as Goal["counts"] };
+  const goal = {
+    key: goalRow.key as string,
+    monthly_limit: Number(goalRow.monthly_limit),
+    counts: goalRow.counts as Goal["counts"],
+    status: (goalRow.status === "approved" ? "approved" : "pending") as GoalStatus,
+  };
 
   const plannedList = (planned.data ?? []).map((p) => ({ ...p, amount: Number(p.amount) })) as Planned[];
   const plannedRemaining = plannedList.filter((p) => p.status === "planned").reduce((s, p) => s + Math.round(p.amount * 100), 0) / 100;

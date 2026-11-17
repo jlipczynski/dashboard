@@ -77,8 +77,14 @@ export default function PrzegladPage() {
       const r = await fetch("/api/finanse/email-import", { method: "POST" });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) setImportMsg(d.error || "Import nie powiódł się");
-      else {
-        setImportMsg(`Pobrano maili: ${d.fetched}, nowe: ${d.inserted}, nierozpoznane: ${d.unparsed}`);
+      else if (d.dryRun) {
+        setImportMsg(
+          `Tryb próbny — nic nie zapisano. Maile: ${d.fetched}, zostałoby dodanych: ${d.wouldInsert}, już w bazie: ${d.linked_existing}, niepewne: ${d.uncertain}, nierozpoznane: ${d.unparsed}`
+        );
+      } else {
+        setImportMsg(
+          `Pobrano maili: ${d.fetched}, nowe: ${d.inserted}, już w bazie: ${d.linked_existing}, niepewne (do sprawdzenia): ${d.uncertain}, nierozpoznane: ${d.unparsed}`
+        );
         if (d.inserted > 0) load();
       }
       loadImportStatus();
@@ -361,7 +367,57 @@ type CoachData = {
   thisWeek: { commitment: string | null; completed_at: string | null } | null;
   lastCommitment: { week_start: string; commitment: string | null } | null;
   discretionaryTop: { category: string; subcategory: string; amount: number }[];
+  goal: { monthly_limit: number; status: "pending" | "approved" };
 };
+
+function LimitEditor({ goal, onSaved }: { goal: CoachData["goal"]; onSaved: () => void }) {
+  const [value, setValue] = useState(String(goal.monthly_limit));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  async function save(body: Record<string, unknown>) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await fetch("/api/finanse/coach/goal", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) setMsg(d.error || "Nie zapisano");
+      else onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+  const pending = goal.status !== "approved";
+  return (
+    <div className={`mt-3 rounded-xl border p-3 ${pending ? "border-amber-300 bg-amber-50" : "border-border bg-card"}`}>
+      <p className="text-xs font-semibold text-foreground">
+        Miesięczny limit wydatków · <span className={pending ? "text-amber-800" : "text-emerald-700"}>{pending ? "Do zatwierdzenia" : "Zatwierdzony"}</span>
+      </p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">
+        Wartość robocza — to Twoja decyzja. 20 000 zł z Visionary OS to cel dochodu pasywnego, nie limit wydatków.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" aria-label="Limit miesięczny w zł" className="w-32 rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
+        <button
+          onClick={() => save({ monthlyLimit: value })}
+          disabled={busy || !value.trim() || Number(value.replace(/\s/g, "").replace(",", ".")) === goal.monthly_limit}
+          className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs disabled:opacity-40"
+        >
+          Zapisz kwotę
+        </button>
+        {pending && (
+          <button onClick={() => save({ status: "approved" })} disabled={busy} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">
+            Zatwierdzam {formatZl(goal.monthly_limit)}
+          </button>
+        )}
+      </div>
+      {msg && <p className="mt-1 text-xs text-red-700">{msg}</p>}
+    </div>
+  );
+}
 
 const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
 const pillCls = (on: boolean) =>
@@ -644,7 +700,9 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
       {step === 4 && (
         <section>
           <div className="rounded-2xl bg-[#1F3A2C] p-5 text-[#F4F1EC]">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">WIG · koszty życia ≤ {formatZl(s.limit)} / mies.</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">
+              Koszty życia · limit {data.goal.status === "approved" ? "zatwierdzony" : "roboczy (do zatwierdzenia)"}
+            </p>
             <p className="mt-2 font-mono text-3xl font-bold">
               {formatZl(s.spent)} <span className="text-base font-normal text-[#C9D8CE]">/ {formatZl(s.limit)}</span>
             </p>
@@ -655,13 +713,16 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
               Planowane {formatZl(s.plannedRemaining)} · prognoza <span className="font-mono font-semibold text-[#F4F1EC]">{formatZl(s.forecast)}</span>
             </p>
             {over ? (
-              <p className="mt-2 text-lg font-bold text-red-300">Przekroczysz o {formatZl(s.overBy)}</p>
+              <p className="mt-2 text-lg font-bold text-red-300">
+                {data.goal.status === "approved" ? `Przekroczysz o ${formatZl(s.overBy)}` : `${formatZl(s.overBy)} powyżej limitu roboczego`}
+              </p>
             ) : (
               <p className="mt-2 text-lg font-bold text-[#8FD1A8]">
                 Zostało {formatZl(s.left)} na {s.daysLeft} dni = {formatZl(s.perDayLeft)} dziennie
               </p>
             )}
           </div>
+          <LimitEditor goal={data.goal} onSaved={reload} />
           {data.discretionaryTop.length > 0 && (
             <div className="mt-3 rounded-xl border border-border bg-card p-3">
               <p className="text-xs font-semibold text-foreground">Uznaniowe w tym miesiącu — tu najłatwiej ciąć:</p>

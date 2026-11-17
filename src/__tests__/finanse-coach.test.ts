@@ -7,6 +7,7 @@ import {
   validateDecision,
   buildCoachPrompt,
   payeeOf,
+  validateGoalPatch,
   type CoachRow,
 } from "../lib/finanse-coach";
 
@@ -80,6 +81,19 @@ describe("bigExpensesToDiscuss", () => {
   });
 });
 
+describe("validateGoalPatch", () => {
+  it("amount with Polish formatting; status pending/approved", () => {
+    expect(validateGoalPatch({ monthlyLimit: "18 500,5" })).toEqual({ ok: true, value: { monthly_limit: "18500.50" } });
+    expect(validateGoalPatch({ status: "approved" })).toEqual({ ok: true, value: { status: "approved" } });
+  });
+  it("rejects zero/negative/garbage, unknown status, empty patch", () => {
+    expect(validateGoalPatch({ monthlyLimit: "0" }).ok).toBe(false);
+    expect(validateGoalPatch({ monthlyLimit: "abc" }).ok).toBe(false);
+    expect(validateGoalPatch({ status: "final" }).ok).toBe(false);
+    expect(validateGoalPatch({}).ok).toBe(false);
+  });
+});
+
 describe("payeeOf", () => {
   it("card payment without payee → shop name, no masked card number", () => {
     expect(
@@ -125,15 +139,19 @@ describe("validateDecision", () => {
 
 describe("buildCoachPrompt", () => {
   const status = monthStatus([row({ amount: -26999 })], cats, 0, goal, "2026-11-17");
-  it("step 2: payee, amount, category, date and the overrun", () => {
-    const p = buildCoachPrompt(2, {
-      today: "2026-11-17",
-      status,
-      big: { id: "x", date: "2026-11-12", amount: 2461.95, payee: "modivo.pl Zielona Gora", categoryId: "zak", categoryName: "Zakupy" },
-    });
+  const big = { id: "x", date: "2026-11-12", amount: 2461.95, payee: "modivo.pl Zielona Gora", categoryId: "zak", categoryName: "Zakupy" };
+  it("step 2: payee, amount, category, date; an APPROVED limit is reported as an overrun", () => {
+    const p = buildCoachPrompt(2, { today: "2026-11-17", status, big, limitApproved: true });
     expect(p).toContain("modivo.pl Zielona Gora");
     expect(p).toContain("2461,95 zł");
+    expect(p).toContain("Limit (zatwierdzony)");
     expect(p).toContain("PRZEKROCZENIE o 6999,00 zł");
+  });
+  it("a PENDING limit is a working proposal: no 'PRZEKROCZENIE', marked as not approved", () => {
+    const p = buildCoachPrompt(2, { today: "2026-11-17", status, big });
+    expect(p).toContain("Limit ROBOCZY, niezatwierdzony przez Jana");
+    expect(p).toContain("6999,00 zł powyżej limitu roboczego");
+    expect(p).not.toContain("PRZEKROCZENIE");
   });
   it("masks an account number that slipped into a text; includes Jan's answer", () => {
     const p = buildCoachPrompt(

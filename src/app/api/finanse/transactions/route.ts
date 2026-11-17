@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, ensureFinanceTables } from "@/lib/finanse-db";
 import { normalizeRule, validateRule } from "@/lib/finanse-rules";
-import { planEmailMatches, toGrosze, DUPLICATE_NOTE, MATCH_WINDOW_DAYS } from "@/lib/finanse-email-match";
+import { planEmailMatches, toGrosze, cardLast4, DUPLICATE_NOTE, MATCH_WINDOW_DAYS } from "@/lib/finanse-email-match";
 
 type Admin = ReturnType<typeof getSupabaseAdmin>;
 const shiftDate = (iso: string, days: number) =>
@@ -23,16 +23,32 @@ async function mergeWithEmailRows(
   const dates = fresh.map((r) => r.date as string).sort();
   const { data: emailRows, error } = await admin
     .from("finance_transactions")
-    .select("id, date, amount, notes")
+    .select("id, date, amount, balance, counterparty, description, notes")
     .eq("source", "email")
     .gte("date", shiftDate(dates[0], -MATCH_WINDOW_DAYS))
     .lte("date", shiftDate(dates[dates.length - 1], MATCH_WINDOW_DAYS));
   if (error) return { error: error.message };
   if (!emailRows || emailRows.length === 0) return { insert: payload, updated: 0, flagged: 0 };
 
+  // Identifying evidence: balance after the operation, payee + title, card (see finanse-email-match).
   const plan = planEmailMatches(
-    fresh.map((r) => ({ date: r.date as string, amountGrosze: toGrosze(r.amount as number) })),
-    emailRows.map((e) => ({ id: e.id as string, date: e.date as string, amountGrosze: toGrosze(e.amount as string) }))
+    fresh.map((r) => ({
+      date: r.date as string,
+      amountGrosze: toGrosze(r.amount as number),
+      balanceGrosze: r.balance == null ? null : toGrosze(r.balance as number),
+      counterparty: (r.counterparty as string | null) ?? null,
+      title: (r.description as string | null) ?? null,
+      cardLast4: cardLast4(r.description as string | null),
+    })),
+    emailRows.map((e) => ({
+      id: e.id as string,
+      date: e.date as string,
+      amountGrosze: toGrosze(e.amount as string),
+      balanceGrosze: e.balance == null ? null : toGrosze(e.balance as string),
+      counterparty: (e.counterparty as string | null) ?? null,
+      title: (e.description as string | null) ?? null,
+      cardLast4: cardLast4(e.description as string | null),
+    }))
   );
   const notesById = new Map(emailRows.map((e) => [e.id as string, (e.notes as string | null) ?? null]));
   const withNote = (n: string | null) => (n && n.includes(DUPLICATE_NOTE) ? n : n ? `${n} · ${DUPLICATE_NOTE}` : DUPLICATE_NOTE);
@@ -58,7 +74,9 @@ async function mergeWithEmailRows(
         .eq("id", d.emailId);
       if (upErr) return { error: upErr.message };
       updated++;
-    } else if (d.action === "insert_flag") {
+    } else if (d.action === "review") {
+      // Ambiguous: nothing is merged. The CSV row is saved (the bank statement is the source of truth)
+      // and both sides are flagged for manual review.
       insert.push({ ...row, reviewed_at: null, notes: withNote((row.notes as string | null) ?? null) });
       for (const id of d.emailIds) {
         const { error: flagErr } = await admin

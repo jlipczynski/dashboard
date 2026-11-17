@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { matchRule, sortRules } from "@/lib/finanse-rules";
-import { planEmailMatches, toGrosze, MATCH_WINDOW_DAYS } from "@/lib/finanse-email-match";
+import { planEmailMatches, toGrosze, cardLast4, MATCH_WINDOW_DAYS } from "@/lib/finanse-email-match";
 import { getSupabaseAdmin, ensureFinanceTables, parseSantanderCSV } from "@/lib/finanse-db";
 import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 
@@ -93,14 +93,29 @@ export async function POST(request: Request) {
     const shift = (iso: string, d: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
     const { data: emailRows } = await admin
       .from("finance_transactions")
-      .select("id, date, amount")
+      .select("id, date, amount, balance, counterparty, description")
       .eq("source", "email")
       .gte("date", shift(dates[0], -MATCH_WINDOW_DAYS))
       .lte("date", shift(dates[dates.length - 1], MATCH_WINDOW_DAYS));
     if (emailRows && emailRows.length > 0) {
       const plan = planEmailMatches(
-        freshTx.map((t) => ({ date: t.date, amountGrosze: toGrosze(t.amount) })),
-        emailRows.map((e) => ({ id: e.id as string, date: e.date as string, amountGrosze: toGrosze(e.amount as string) }))
+        freshTx.map((t) => ({
+          date: t.date,
+          amountGrosze: toGrosze(t.amount),
+          balanceGrosze: t.balance == null ? null : toGrosze(t.balance),
+          counterparty: t.counterparty,
+          title: t.description,
+          cardLast4: cardLast4(t.description),
+        })),
+        emailRows.map((e) => ({
+          id: e.id as string,
+          date: e.date as string,
+          amountGrosze: toGrosze(e.amount as string),
+          balanceGrosze: e.balance == null ? null : toGrosze(e.balance as string),
+          counterparty: (e.counterparty as string | null) ?? null,
+          title: (e.description as string | null) ?? null,
+          cardLast4: cardLast4(e.description as string | null),
+        }))
       );
       plan.forEach((d, i) => d.action === "update" && emailMatched.add(freshTx[i].importHash));
     }

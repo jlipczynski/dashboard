@@ -1,5 +1,6 @@
 // "Coach wydatków" (brief Finanse 09) — pure logic, no DB, no AI.
-// WIG: cost of living ≤ limit per month. "Spent" uses the ONE definition of expenses
+// Monthly spending limit: an editable value with a status. Until Jan approves it, it is a working
+// proposal ("Do zatwierdzenia") — NOT a target (20 000 zł in Visionary OS is the passive-income goal). "Spent" uses the ONE definition of expenses
 // (summarizeExpenses), so the coach, the dashboard and the home card show the same number.
 // All sums in grosze (integers).
 
@@ -9,7 +10,26 @@ import { extractMerchant } from "./finanse-merchant";
 
 export const BIG_EXPENSE_ZL = 1000;
 
-export type Goal = { monthly_limit: number | string; counts: "all" | "recurring" };
+export type GoalStatus = "pending" | "approved";
+export type Goal = { monthly_limit: number | string; counts: "all" | "recurring"; status?: GoalStatus };
+
+/** Validates an edit of the limit: a positive amount and/or a status. */
+export function validateGoalPatch(input: Record<string, unknown>):
+  | { ok: true; value: { monthly_limit?: string; status?: GoalStatus } }
+  | { ok: false; error: string } {
+  const out: { monthly_limit?: string; status?: GoalStatus } = {};
+  if (input.monthlyLimit !== undefined) {
+    const v = Number(String(input.monthlyLimit).replace(/\s/g, "").replace(",", "."));
+    if (!Number.isFinite(v) || v <= 0 || v > 1_000_000) return { ok: false, error: "Podaj limit większy od zera" };
+    out.monthly_limit = (Math.round(v * 100) / 100).toFixed(2);
+  }
+  if (input.status !== undefined) {
+    if (input.status !== "pending" && input.status !== "approved") return { ok: false, error: "Nieznany status" };
+    out.status = input.status;
+  }
+  if (Object.keys(out).length === 0) return { ok: false, error: "Nic do zmiany" };
+  return { ok: true, value: out };
+}
 
 export type CoachRow = DashRow & { id: string };
 
@@ -179,6 +199,7 @@ export type CoachStep = 2 | 3 | 4 | 5;
 export type CoachContext = {
   today: string;
   status: MonthStatus;
+  limitApproved?: boolean; // false/undefined → the limit is a working proposal, not Jan's decision
   big?: BigExpense | null; // step 2: the expense being discussed
   planned?: { name: string; amount: number; status: string }[];
   discretionaryTop?: { category: string; subcategory: string; amount: number }[];
@@ -186,9 +207,11 @@ export type CoachContext = {
   recentDecisions?: { payee: string; amount: number; necessary: string; recurring: boolean; plan: string | null }[];
 };
 
-export const COACH_SYSTEM = `Jesteś coachem wydatków Jana. Cel (WIG): koszty życia ≤ limit miesięczny.
+export const COACH_SYSTEM = `Jesteś coachem wydatków Jana. Pomagasz mu kontrolować koszty życia.
 Ton: konkretny i wymagający, bez komplementów i bez ogólników. Operuj liczbami z danych.
-Jeśli miesiąc idzie ponad limit, powiedz to wprost i zapytaj, co Jan obetnie.
+Limit miesięczny może być ROBOCZY (niezatwierdzony). Wtedy nie traktuj go jako celu Jana: mów o nim jako o propozycji
+i zachęć do decyzji, jaki limit ma obowiązywać. Gdy limit jest zatwierdzony i miesiąc idzie ponad niego,
+powiedz to wprost i zapytaj, co Jan obetnie.
 Odpowiadasz po polsku, maksymalnie ~120 słów: 1–3 krótkie, konkretne pytania albo jeden challenge.
 Nie wymyślaj danych, których nie dostałeś.
 Pisz zwykłym tekstem: bez markdown (żadnych **, #, list z myślnikami), pytania numeruj „1.”, „2.”.`;
@@ -198,12 +221,17 @@ const cleanText = (s: string) => s.replace(/\d{2}(?:[  ]?\d{4}){6}/g, "…").sl
 
 export function buildCoachPrompt(step: CoachStep, ctx: CoachContext, answer?: string): string {
   const s = ctx.status;
+  const limitLabel = ctx.limitApproved ? `Limit (zatwierdzony): ${zlText(s.limit)}.` : `Limit ROBOCZY, niezatwierdzony przez Jana: ${zlText(s.limit)}.`;
+  const vsLimit = ctx.limitApproved
+    ? s.overBy > 0
+      ? `PRZEKROCZENIE o ${zlText(s.overBy)}.`
+      : `Zostało ${zlText(s.left)} na ${s.daysLeft} dni (${zlText(s.perDayLeft)} dziennie).`
+    : s.overBy > 0
+      ? `Prognoza jest o ${zlText(s.overBy)} powyżej limitu roboczego.`
+      : `Do limitu roboczego brakuje ${zlText(s.left)}.`;
   const lines = [
-    `Dziś: ${ctx.today}. Limit: ${zlText(s.limit)}. Wydane w miesiącu: ${zlText(s.spent)} (bez jednorazowych ${zlText(s.spentRecurring)}).`,
-    `Planowane zakupy do końca miesiąca: ${zlText(s.plannedRemaining)}. Prognoza: ${zlText(s.forecast)}. ` +
-      (s.overBy > 0
-        ? `PRZEKROCZENIE o ${zlText(s.overBy)}.`
-        : `Zostało ${zlText(s.left)} na ${s.daysLeft} dni (${zlText(s.perDayLeft)} dziennie).`),
+    `Dziś: ${ctx.today}. ${limitLabel} Wydane w miesiącu: ${zlText(s.spent)} (bez jednorazowych ${zlText(s.spentRecurring)}).`,
+    `Planowane zakupy do końca miesiąca: ${zlText(s.plannedRemaining)}. Prognoza: ${zlText(s.forecast)}. ${vsLimit}`,
   ];
   if (step === 2 && ctx.big) {
     lines.push(
