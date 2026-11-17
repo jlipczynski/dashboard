@@ -334,6 +334,8 @@ export default function FinanseDashboardPage() {
             label="Liczba wolności"
             value={freedom !== null ? formatZl(freedom) : "—"}
             note={freedom !== null ? "koszty bez jednorazowych × 12 ÷ 4% · −1 000 zł/mies. = −300 tys. zł" : "wybierz pełny miesiąc"}
+            href="/finanse/wolnosc"
+            cta="Otwórz symulator →"
           />
         </div>
 
@@ -572,13 +574,21 @@ export default function FinanseDashboardPage() {
   );
 }
 
-function Tile({ label, value, note, valueClass = "text-foreground" }: { label: string; value: string; note: string; valueClass?: string }) {
-  return (
-    <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 sm:p-5">
+function Tile({ label, value, note, valueClass = "text-foreground", href, cta }: { label: string; value: string; note: string; valueClass?: string; href?: string; cta?: string }) {
+  const body = (
+    <>
       <p className="text-sm font-medium text-muted-foreground">{label}</p>
       <p className={`font-mono text-2xl font-bold tabular-nums ${valueClass}`}>{value}</p>
       <p className="text-xs text-muted-foreground">{note}</p>
-    </div>
+      {cta && <p className="mt-1 text-xs font-semibold text-emerald-700">{cta}</p>}
+    </>
+  );
+  return href ? (
+    <Link href={href} className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-emerald-600 sm:p-5">
+      {body}
+    </Link>
+  ) : (
+    <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 sm:p-5">{body}</div>
   );
 }
 
