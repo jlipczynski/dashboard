@@ -34,3 +34,12 @@ export function reviewRule(tx: ReviewRuleTx, categoryId: string | null, subcateg
   if (error) return { kind: "invalid", message: error };
   return { ...rule, kind: "ok", target: rule.counterparty_pattern ?? rule.pattern };
 }
+
+/**
+ * State of the "Zapamiętaj" checkbox: an explicit click wins; otherwise ON, except for one-off
+ * transactions (a one-off purchase should not become a rule). Toggling "Jednorazowy" clears the
+ * explicit choice, so checking it unticks "Zapamiętaj" and Jan can tick it back by hand.
+ */
+export function rememberChecked(explicit: boolean | undefined, oneOff: boolean): boolean {
+  return explicit ?? !oneOff;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reviewRule, NO_RULE_MESSAGE, type ReviewRuleTx } from "../lib/finanse-review-rule";
+import { reviewRule, rememberChecked, NO_RULE_MESSAGE, type ReviewRuleTx } from "../lib/finanse-review-rule";
 import { TOO_GENERAL_MESSAGE } from "../lib/finanse-rules";
 
 const tx = (over: Partial<ReviewRuleTx>): ReviewRuleTx => ({
@@ -63,5 +63,22 @@ describe("reviewRule — 'Zapamiętaj dla …' on /finanse/przeglad", () => {
       kind: "invalid",
       message: NO_RULE_MESSAGE,
     });
+  });
+});
+
+describe("rememberChecked — the 'Zapamiętaj' checkbox", () => {
+  it("category changed, not one-off → checked by default", () => {
+    expect(reviewRule(tx({}), "cat-zdrowie", null).kind).toBe("ok");
+    expect(rememberChecked(undefined, false)).toBe(true);
+  });
+  it("'Jednorazowy' ticked → unchecked automatically", () => {
+    expect(rememberChecked(undefined, true)).toBe(false);
+  });
+  it("Jan can tick it back by hand for a one-off (and untick it for a regular one)", () => {
+    expect(rememberChecked(true, true)).toBe(true);
+    expect(rememberChecked(false, false)).toBe(false);
+  });
+  it("no category change → no rule, whatever the checkbox says", () => {
+    expect(reviewRule(tx({}), "cat-inne", null)).toEqual({ kind: "none" });
   });
 });

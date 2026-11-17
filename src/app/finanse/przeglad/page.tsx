@@ -6,7 +6,7 @@ import { BackButton } from "@/components/dashboard/back-button";
 import { CategoryIcon } from "@/components/finanse/CategoryIcon";
 import { FinanseNav } from "@/components/finanse/FinanseNav";
 import { formatZl } from "@/lib/finanse-period";
-import { reviewRule } from "@/lib/finanse-review-rule";
+import { reviewRule, rememberChecked } from "@/lib/finanse-review-rule";
 
 // Przegląd tygodniowy (sesja WIG) — mobile-first.
 // Każda karta: sprawdź kategorię / jednorazowe → ✓ (zmiana kategorii → „Zapamiętaj dla …” tworzy regułę). Potwierdzone znikają (reviewed_at).
@@ -134,7 +134,8 @@ export default function PrzegladPage() {
     setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...e } }));
   }
 
-  async function confirm(ids: string[]) {
+  // withRules: a single card's ✓ saves rules; the bulk "Wszystko się zgadza" never does.
+  async function confirm(ids: string[], withRules = true) {
     if (ids.length === 0 || saving) return;
     setSaving(true);
     setError(null);
@@ -145,8 +146,9 @@ export default function PrzegladPage() {
     // Rules to remember (category/subcategory changed + checkbox on) — decided before the cards disappear.
     const toRemember = ids.flatMap((id) => {
       const t = txs.find((x) => x.id === id);
-      if (!t || edits[id]?.remember === false) return [];
+      if (!withRules || !t) return [];
       const c = current(t);
+      if (!rememberChecked(edits[id]?.remember, c.oneOff)) return [];
       const r = reviewRule(t, c.categoryId, c.subcategoryId);
       return r.kind === "ok" ? [{ id, rule: r, categoryId: c.categoryId!, subcategoryId: c.subcategoryId ?? null }] : [];
     });
@@ -326,7 +328,7 @@ export default function PrzegladPage() {
                     ))}
                   </select>
                   <label className="col-span-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-2 text-sm">
-                    <input type="checkbox" checked={c.oneOff} onChange={(e) => patch(t.id, { oneOff: e.target.checked })} className="h-4 w-4" />
+                    <input type="checkbox" checked={c.oneOff} onChange={(e) => patch(t.id, { oneOff: e.target.checked, remember: undefined })} className="h-4 w-4" />
                     Jednorazowy
                   </label>
                 </div>
@@ -335,7 +337,7 @@ export default function PrzegladPage() {
                   <label className="mt-2 flex items-center gap-2 text-sm text-foreground">
                     <input
                       type="checkbox"
-                      checked={edits[t.id]?.remember ?? true}
+                      checked={rememberChecked(edits[t.id]?.remember, c.oneOff)}
                       onChange={(e) => patch(t.id, { remember: e.target.checked })}
                       className="h-4 w-4"
                     />
@@ -371,7 +373,7 @@ export default function PrzegladPage() {
               Na ekranie {visible.length} z {total}
             </p>
             <button
-              onClick={() => confirm(visible.map((t) => t.id))}
+              onClick={() => confirm(visible.map((t) => t.id), false)}
               disabled={saving}
               className="rounded-xl bg-[#1F3A2C] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
