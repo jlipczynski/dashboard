@@ -15,10 +15,11 @@ describe("FinanseNav — one click to every Finanse screen (existing pages only)
     expect(href("Dashboard")).toBe("/finanse/dashboard");
     expect(href("Budżet")).toBe("/finanse?tab=budzet");
     expect(href("Reguły i tagi")).toBe("/finanse?tab=reguly");
+    expect(href("Wiedza coacha")).toBe("/finanse/wiedza");
   });
 
   it("every target is an existing page (no new screens)", () => {
-    const pages = new Set(["/finanse", "/finanse/dashboard", "/finanse/przeglad", "/finanse/kategorie"]);
+    const pages = new Set(["/finanse", "/finanse/dashboard", "/finanse/przeglad", "/finanse/kategorie", "/finanse/wiedza"]);
     for (const item of FINANSE_NAV) expect(pages.has(item.href.split("?")[0])).toBe(true);
   });
 

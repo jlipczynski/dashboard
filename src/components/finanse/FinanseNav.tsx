@@ -9,7 +9,7 @@ import Link from "next/link";
 /** Internal tab keys of /finanse (src/app/finanse/page.tsx). */
 export type FinanseTab = "import" | "historia" | "budzet" | "kategorie";
 
-export type NavKey = "dashboard" | "przeglad" | "historia" | "budzet" | "kategorie-strona" | "import" | "reguly";
+export type NavKey = "dashboard" | "przeglad" | "historia" | "budzet" | "kategorie-strona" | "import" | "reguly" | "wiedza";
 
 type Item = { key: NavKey; label: string; href: string; tab?: FinanseTab };
 
@@ -22,6 +22,7 @@ export const FINANSE_NAV: Item[] = [
   { key: "budzet", label: "Budżet", href: "/finanse?tab=budzet", tab: "budzet" },
   // The old "Kategorie" tab of /finanse holds rules and tags — renamed so it is not confused with /finanse/kategorie.
   { key: "reguly", label: "Reguły i tagi", href: "/finanse?tab=reguly", tab: "kategorie" },
+  { key: "wiedza", label: "Wiedza coacha", href: "/finanse/wiedza" },
 ];
 
 /** ?tab= value → internal tab of /finanse (null = keep the default). "kategorie" kept for old links. */
