@@ -7,6 +7,7 @@ import { CategoryIcon } from "@/components/finanse/CategoryIcon";
 import { FinanseNav } from "@/components/finanse/FinanseNav";
 import { formatZl } from "@/lib/finanse-period";
 import { reviewRule, rememberChecked } from "@/lib/finanse-review-rule";
+import { KIND_LABEL, type InsightKind } from "@/lib/finanse-insights";
 
 // Przegląd tygodniowy (sesja WIG) — mobile-first.
 // Każda karta: sprawdź kategorię / jednorazowe → ✓ (zmiana kategorii → „Zapamiętaj dla …” tworzy regułę). Potwierdzone znikają (reviewed_at).
@@ -43,13 +44,24 @@ export default function PrzegladPage() {
   const [ruleMsg, setRuleMsg] = useState<string | null>(null);
   const [done, setDone] = useState(0);
   // Weekly review wizard (Finanse 09): 1 transactions · 2 big expenses · 3 planned · 4 forecast · 5 commitment
+  // Step 0 "Co wiem o Tobie" (Finanse 10): the coach's proposals waiting for Jan — skipped when there are none.
   const [step, setStep] = useState(1);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   useEffect(() => {
-    const s = Number(new URLSearchParams(window.location.search).get("step"));
-    if (s >= 1 && s <= STEPS.length) setStep(s);
+    const raw = new URLSearchParams(window.location.search).get("step");
+    const s = Number(raw);
+    if (raw !== null && s >= 1 && s <= STEPS.length) setStep(s);
+    fetch("/api/finanse/coach/insights?status=proposed", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list: Proposal[] = d?.insights ?? [];
+        setProposals(list);
+        if (list.length > 0 && (raw === null || raw === "0")) setStep(0);
+      })
+      .catch(() => {});
   }, []);
   function goTo(n: number) {
-    const s = Math.min(STEPS.length, Math.max(1, n));
+    const s = Math.min(STEPS.length, Math.max(n === 0 && proposals.length > 0 ? 0 : 1, n));
     setStep(s);
     const url = new URL(window.location.href);
     url.searchParams.set("step", String(s));
@@ -220,9 +232,9 @@ export default function PrzegladPage() {
         <div className="mt-3">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">
-              Krok {step}/{STEPS.length} · {STEPS[step - 1]}
+              {step === 0 ? "Krok 0 · Co wiem o Tobie" : `Krok ${step}/${STEPS.length} · ${STEPS[step - 1]}`}
             </span>
-            {step > 1 && (
+            {(step > 1 || (step === 1 && proposals.length > 0)) && (
               <button onClick={() => goTo(step - 1)} className="hover:text-foreground">
                 ← Wstecz
               </button>
@@ -237,6 +249,8 @@ export default function PrzegladPage() {
 
         {step > 1 ? (
           <CoachSteps step={step} goTo={goTo} />
+        ) : step === 0 ? (
+          <KnowledgeStep items={proposals} onDecided={(id) => setProposals((p) => p.filter((x) => x.id !== id))} onNext={() => goTo(1)} />
         ) : (
         <>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -382,6 +396,121 @@ export default function PrzegladPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Step 0: "Co wiem o Tobie" — the coach only proposes, Jan decides (Finanse 10) ─────────────── */
+
+type Proposal = { id: string; kind: string; text: string; evidence: Record<string, unknown> | null; created_at: string };
+
+function evidenceLine(e: Record<string, unknown> | null): string {
+  if (!e) return "";
+  return Object.entries(e)
+    .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
+    .map(([k, v]) => `${k}: ${typeof v === "number" ? String(v).replace(".", ",") : String(v)}`)
+    .join(" · ")
+    .slice(0, 240);
+}
+
+function KnowledgeStep({ items, onDecided, onNext }: { items: Proposal[]; onDecided: (id: string) => void; onNext: () => void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function decide(id: string, action: "accept" | "reject", text?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/finanse/coach/insights", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action, ...(text ? { text } : {}) }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) setError(d.error || "Nie zapisano");
+      else {
+        setEditing(null);
+        onDecided(id);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-muted-foreground">
+        Coach proponuje, co zapamiętać. Trafi do wiedzy tylko to, co zaakceptujesz — zobaczysz to w „Wiedza coacha”.
+      </p>
+      {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      <ul className="mt-3 flex flex-col gap-3">
+        {items.map((p) => (
+          <li key={p.id} className="rounded-2xl border border-border bg-card p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{KIND_LABEL[p.kind as InsightKind] ?? p.kind}</p>
+            {editing === p.id ? (
+              <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} aria-label="Treść wpisu" className={`${inputCls} mt-1`} />
+            ) : (
+              <p className="mt-1 text-sm text-foreground">{p.text}</p>
+            )}
+            {evidenceLine(p.evidence) && <p className="mt-1 text-xs text-muted-foreground">Dowód: {evidenceLine(p.evidence)}</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {editing === p.id ? (
+                <>
+                  <button onClick={() => decide(p.id, "accept", draft.trim())} disabled={busy || !draft.trim()} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">
+                    Akceptuj poprawiony
+                  </button>
+                  <button onClick={() => setEditing(null)} className="rounded-lg border border-border px-3 py-1.5 text-xs">
+                    Anuluj
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => decide(p.id, "accept")} disabled={busy} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">
+                    Akceptuj
+                  </button>
+                  <button onClick={() => decide(p.id, "reject")} disabled={busy} className="rounded-lg border border-border px-3 py-1.5 text-xs disabled:opacity-40">
+                    Odrzuć
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditing(p.id);
+                      setDraft(p.text);
+                    }}
+                    disabled={busy}
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs disabled:opacity-40"
+                  >
+                    Popraw
+                  </button>
+                </>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {items.length === 0 && <p className="mt-3 rounded-xl bg-muted p-3 text-sm text-muted-foreground">Wszystkie propozycje rozpatrzone ✓</p>}
+      <button onClick={onNext} className="mt-5 w-full rounded-xl bg-[#1F3A2C] py-3 text-sm font-semibold text-white">
+        {items.length === 0 ? "Dalej: transakcje →" : "Pomiń na razie → transakcje"}
+      </button>
+    </div>
+  );
+}
+
+/* ── After step 5: "Lekcja tygodnia" (Finanse 10) — one principle on Jan's own numbers ────────── */
+
+function LessonCard() {
+  const [lesson, setLesson] = useState<{ title: string; text: string } | null | undefined>(undefined);
+  useEffect(() => {
+    fetch("/api/finanse/coach/lesson", { method: "POST" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setLesson(d?.lesson ?? null))
+      .catch(() => setLesson(null));
+  }, []);
+  if (lesson === undefined) return <p className="mt-4 text-xs text-muted-foreground">Lekcja tygodnia…</p>;
+  if (!lesson) return null;
+  return (
+    <div className="mt-5 rounded-xl border border-[#3B5A48]/20 bg-[#1F3A2C]/5 p-4 text-left">
+      <p className="text-xs font-bold uppercase tracking-widest text-[#3B5A48]">Lekcja tygodnia · {lesson.title}</p>
+      <p className="mt-1 text-sm text-foreground">{lesson.text}</p>
     </div>
   );
 }
@@ -762,6 +891,7 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
             <div className="rounded-2xl border border-border bg-card p-6 text-center">
               <p className="text-lg font-semibold text-foreground">Przegląd zakończony ✓</p>
               <p className="mt-1 text-sm text-muted-foreground">Zobowiązanie: „{commitment}”. Wrócimy do niego za tydzień.</p>
+              <LessonCard />
               <Link href="/finanse/dashboard" className="mt-4 inline-block rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">
                 Zobacz dashboard
               </Link>

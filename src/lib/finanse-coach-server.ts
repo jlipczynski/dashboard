@@ -184,7 +184,13 @@ export async function loadKnowledge(state: CoachState): Promise<CoachKnowledge> 
     if (!data || data.length < PAGE) break;
   }
   const [ins, cats, subs, planned] = await Promise.all([
-    admin.from("finance_coach_insights").select("kind, text").eq("status", "accepted").order("created_at", { ascending: false }).limit(MAX_INSIGHTS_IN_PROMPT),
+    admin
+      .from("finance_coach_insights")
+      .select("kind, text")
+      .eq("status", "accepted")
+      .neq("kind", "lesson") // lessons are teaching material, not knowledge about Jan
+      .order("created_at", { ascending: false })
+      .limit(MAX_INSIGHTS_IN_PROMPT),
     admin.from("finance_categories").select("id, name, type"),
     admin.from("finance_subcategories").select("id, name, category_id, kind"),
     admin.from("finance_planned_purchases").select("id, name, amount, category_id, transaction_id, created_at"),
