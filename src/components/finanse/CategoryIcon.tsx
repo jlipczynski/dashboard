@@ -40,6 +40,9 @@ const ICONS: Record<string, LucideIcon> = {
   piggy: PiggyBank,
 };
 
+/** Icon names available in the picker (/finanse/kategorie) and accepted by the taxonomy API. */
+export const CATEGORY_ICON_NAMES: readonly string[] = Object.keys(ICONS);
+
 /** Soft tinted square with the category's icon; colour from finance_categories.color. */
 export function CategoryIcon({ icon, color, size = 40 }: { icon: string | null; color: string | null; size?: number }) {
   const Icon = (icon && ICONS[icon]) || Ellipsis;

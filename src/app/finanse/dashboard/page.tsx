@@ -142,6 +142,9 @@ export default function FinanseDashboardPage() {
                 ·{" "}
                 <Link href="/finanse" className="hover:underline">
                   Import i historia
+                </Link> ·{" "}
+                <Link href="/finanse/kategorie" className="hover:underline">
+                  Kategorie →
                 </Link>
               </p>
             )}
