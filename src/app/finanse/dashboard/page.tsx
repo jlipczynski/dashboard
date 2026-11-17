@@ -57,6 +57,12 @@ type Dash = {
   lastTransactionDate: string | null;
 };
 
+type WigStatus = {
+  status: { spent: number; spentRecurring: number; plannedRemaining: number; forecast: number; limit: number; overBy: number; perDayLeft: number; daysLeft: number };
+  big: { id: string }[];
+  lastCompletedAt: string | null;
+};
+
 const STORAGE_KEY = "finanse_dashboard_period";
 const YIELD = 0.04; // założenie modelowe z Wizji 2029 (kalkulator kapitału), nie gwarantowana stopa
 const DOW = ["nd", "pn", "wt", "śr", "czw", "pt", "sob"];
@@ -76,6 +82,14 @@ export default function FinanseDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  // WIG bar: always the current month (independent of the chosen period) — /api/finanse/coach/status
+  const [wig, setWig] = useState<WigStatus | null>(null);
+  useEffect(() => {
+    fetch("/api/finanse/coach/status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setWig(d))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setPeriod(loadPeriod(STORAGE_KEY));
@@ -192,18 +206,53 @@ export default function FinanseDashboardPage() {
         {/* WIG scoreboard */}
         <section aria-label="WIG wydatków" className="mt-6 grid gap-6 rounded-3xl bg-[#1F3A2C] p-6 text-[#F4F1EC] sm:p-7 md:grid-cols-3">
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">WIG · koszty życia</p>
-            <p className="text-xl font-semibold leading-snug">
-              Z <span className="font-mono">[BAZA]</span> do <span className="font-mono">[CEL]</span> zł/mies. do 31.12.2027
+            <p className="text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">
+              WIG · koszty życia ≤ {wig ? formatZl(wig.status.limit) : "20 000 zł"} / mies.
             </p>
-            <p className="text-sm text-[#C9D8CE]">Bez wydatków jednorazowych. Bazę ustalimy po 6–8 tygodniach pomiaru.</p>
+            {wig ? (
+              <>
+                <p className="font-mono text-3xl font-bold">
+                  {formatZl(wig.status.spent)}
+                  <span className="text-base font-normal text-[#C9D8CE]"> / {formatZl(wig.status.limit)}</span>
+                </p>
+                <div className="h-2.5 overflow-hidden rounded-full bg-[#3B5A48]" aria-hidden="true">
+                  <div
+                    className={`h-full ${
+                      wig.status.spent > wig.status.limit ? "bg-red-500" : wig.status.spent >= 0.8 * wig.status.limit ? "bg-amber-400" : "bg-[#8FD1A8]"
+                    }`}
+                    style={{ width: `${Math.min(100, (wig.status.spent / wig.status.limit) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-sm text-[#C9D8CE]">
+                  ten miesiąc · bez jednorazowych {formatZl(wig.status.spentRecurring)} · planowane {formatZl(wig.status.plannedRemaining)}
+                </p>
+                <p className={`text-sm font-semibold ${wig.status.overBy > 0 ? "text-red-300" : "text-[#8FD1A8]"}`}>
+                  Prognoza {formatZl(wig.status.forecast)}
+                  {wig.status.overBy > 0 ? ` · przekroczysz o ${formatZl(wig.status.overBy)}` : ""}
+                </p>
+                {wig.big.length > 0 && (
+                  <Link
+                    href="/finanse/przeglad?step=2"
+                    className="mt-1 w-fit rounded-xl bg-[#F0C99A] px-4 py-2 text-sm font-semibold text-[#1F3A2C] hover:bg-[#f5d6ae]"
+                  >
+                    Omów {wig.big.length} {wig.big.length === 1 ? "duży wydatek" : "dużych wydatków"}
+                  </Link>
+                )}
+              </>
+            ) : (
+              <p className="font-mono text-3xl font-bold">—</p>
+            )}
           </div>
           <div className="flex flex-col gap-2 md:border-l md:border-[#3B5A48] md:pl-6">
             <p className="text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">Lead 1 · przegląd tygodniowy</p>
             <p className="font-mono text-3xl font-bold">{data ? data.unreviewedTotal : "—"}</p>
             <p className="text-sm text-[#C9D8CE]">
               transakcji czeka na przegląd
-              {data?.lastReviewedAt ? ` · ostatni ${shortDate(data.lastReviewedAt.slice(0, 10))}` : ""}
+              {(() => {
+                // Last review = the later of: last confirmed transaction, last completed weekly review.
+                const last = [data?.lastReviewedAt, wig?.lastCompletedAt].filter(Boolean).sort().pop();
+                return last ? ` · ostatni ${shortDate(last.slice(0, 10))}` : "";
+              })()}
             </p>
             <Link href="/finanse/przeglad" className="mt-1 w-fit rounded-xl bg-[#8FD1A8] px-4 py-2 text-sm font-semibold text-[#1F3A2C] hover:bg-[#a6dcbb]">
               Zrób przegląd
@@ -213,7 +262,12 @@ export default function FinanseDashboardPage() {
             <p className="text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">Lead 2 · uznaniowe w tym tygodniu</p>
             <p className="font-mono text-3xl font-bold">{data ? formatZl(data.weekDiscretionary) : "—"}</p>
             <p className="text-sm text-[#C9D8CE]">
-              od {data ? shortDate(data.weekStart) : "pn"} · limit ustalimy z bazy (restauracje, zakupy, czas wolny)
+              od {data ? shortDate(data.weekStart) : "pn"} ·{" "}
+              {wig
+                ? wig.status.overBy > 0
+                  ? "limit miesiąca już przekroczony"
+                  : `zostało ${formatZl(wig.status.perDayLeft)} dziennie do limitu`
+                : "—"}
             </p>
           </div>
         </section>

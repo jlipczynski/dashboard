@@ -1,0 +1,147 @@
+import { describe, it, expect } from "vitest";
+import {
+  monthStatus,
+  bigExpensesToDiscuss,
+  monthBounds,
+  weekStartOf,
+  validateDecision,
+  buildCoachPrompt,
+  payeeOf,
+  type CoachRow,
+} from "../lib/finanse-coach";
+
+const cats = [
+  { id: "dom", name: "Dom", type: "expense" },
+  { id: "zak", name: "Zakupy", type: "expense" },
+  { id: "osz", name: "Oszczędności (przelewy własne)", type: "transfer" },
+  { id: "pla", name: "Plantacja", type: "income" },
+];
+let n = 0;
+const row = (p: Partial<CoachRow>): CoachRow => ({
+  id: `t${++n}`,
+  amount: -100,
+  category_id: "dom",
+  merchant: null,
+  counterparty: null,
+  description: "X",
+  date: "2026-11-10",
+  one_off: false,
+  ...p,
+});
+const goal = { monthly_limit: 20000, counts: "all" as const };
+
+describe("monthStatus", () => {
+  it("over the limit: spent = net expenses (refunds net out, transfers/income ignored), forecast adds planned", () => {
+    const rows = [
+      row({ amount: -25000 }),
+      row({ amount: -2500, category_id: "zak", one_off: true }),
+      row({ amount: 500, category_id: "zak" }),
+      row({ amount: -9000, category_id: "osz" }),
+      row({ amount: 12000, category_id: "pla" }),
+    ];
+    const s = monthStatus(rows, cats, 1500, goal, "2026-11-17");
+    expect(s.spent).toBe(27000);
+    expect(s.spentRecurring).toBe(24500);
+    expect(s.forecast).toBe(28500);
+    expect(s.left).toBe(-8500);
+    expect(s.overBy).toBe(8500);
+    expect(s.daysLeft).toBe(14);
+    expect(s.perDayLeft).toBe(0);
+  });
+
+  it("under the limit: per-day budget for the rest of the month", () => {
+    const s = monthStatus([row({ amount: -10000 })], cats, 0, goal, "2026-11-21");
+    expect(s.left).toBe(10000);
+    expect(s.overBy).toBe(0);
+    expect(s.daysLeft).toBe(10);
+    expect(s.perDayLeft).toBe(1000);
+  });
+
+  it("goal counting only recurring spend ignores one-offs", () => {
+    const s = monthStatus([row({ amount: -15000 }), row({ amount: -8000, one_off: true })], cats, 0, { monthly_limit: 20000, counts: "recurring" }, "2026-11-30");
+    expect(s.spent).toBe(23000);
+    expect(s.forecast).toBe(15000);
+    expect(s.left).toBe(5000);
+    expect(s.daysLeft).toBe(1);
+  });
+});
+
+describe("bigExpensesToDiscuss", () => {
+  it("≥ 1000 zł single expenses without a decision, biggest first; transfers and income skipped", () => {
+    const a = row({ amount: -2461.95, category_id: "zak", merchant: "modivo.pl Zielona Gora" });
+    const b = row({ amount: -1000, counterparty: "kurs tenisa" });
+    const decided = row({ amount: -2000 });
+    const rows = [b, row({ amount: -999.99 }), a, decided, row({ amount: -5000, category_id: "osz" }), row({ amount: 3000, category_id: "pla" })];
+    const list = bigExpensesToDiscuss(rows, cats, new Set([decided.id]));
+    expect(list.map((x) => [x.amount, x.payee, x.categoryName])).toEqual([
+      [2461.95, "modivo.pl Zielona Gora", "Zakupy"],
+      [1000, "kurs tenisa", "Dom"],
+    ]);
+  });
+});
+
+describe("payeeOf", () => {
+  it("card payment without payee → shop name, no masked card number", () => {
+    expect(
+      payeeOf({ counterparty: null, merchant: null, description: "DOP. MC 000000******0000 PŁATNOŚĆ KARTĄ 1200.06 PLN GOOGLE WORKSPACE WARSAW" })
+    ).toBe("GOOGLE WORKSPACE WARSAW");
+    expect(payeeOf({ counterparty: null, merchant: null, description: "DOP. MC 000000******0000 PŁATNOŚĆ KARTĄ 264.00 EUR SHOP X" })).toBe("SHOP X");
+  });
+  it("counterparty first; masked numbers removed from any fallback", () => {
+    expect(payeeOf({ counterparty: "kurs tenisa", merchant: "x", description: "y" })).toBe("kurs tenisa");
+    expect(payeeOf({ counterparty: null, merchant: null, description: "Opłata 000000******0000 za kartę" })).toBe("Opłata za kartę");
+  });
+});
+
+describe("dates", () => {
+  it("monthBounds handles month length", () => {
+    expect(monthBounds("2026-11-17")).toEqual({ from: "2026-11-01", to: "2026-11-30", days: 30 });
+    expect(monthBounds("2028-02-10").to).toBe("2028-02-29");
+  });
+  it("weekStartOf returns Monday", () => {
+    expect(weekStartOf("2026-11-17")).toBe("2026-11-16");
+    expect(weekStartOf("2026-11-22")).toBe("2026-11-16");
+    expect(weekStartOf("2026-11-16")).toBe("2026-11-16");
+  });
+});
+
+describe("validateDecision", () => {
+  it("recurring expense needs a date and a plan", () => {
+    expect(validateDecision({ transactionId: "t", necessary: "partly", recurring: true }).ok).toBe(false);
+    expect(validateDecision({ transactionId: "t", necessary: "partly", recurring: true, horizonUntil: "2027-06-30" }).ok).toBe(false);
+    expect(
+      validateDecision({ transactionId: "t", necessary: "partly", recurring: true, horizonUntil: "2027-06-30", plan: " tańszy trener " })
+    ).toEqual({ ok: true, value: { transaction_id: "t", necessary: "partly", recurring: true, horizon_until: "2027-06-30", plan: "tańszy trener" } });
+  });
+  it("one-time expense: no date needed; bad answers rejected", () => {
+    expect(validateDecision({ transactionId: "t", necessary: "no", recurring: false })).toEqual({
+      ok: true,
+      value: { transaction_id: "t", necessary: "no", recurring: false, horizon_until: null, plan: null },
+    });
+    expect(validateDecision({ transactionId: "t", necessary: "maybe", recurring: false }).ok).toBe(false);
+    expect(validateDecision({ necessary: "no", recurring: false }).ok).toBe(false);
+  });
+});
+
+describe("buildCoachPrompt", () => {
+  const status = monthStatus([row({ amount: -26999 })], cats, 0, goal, "2026-11-17");
+  it("step 2: payee, amount, category, date and the overrun", () => {
+    const p = buildCoachPrompt(2, {
+      today: "2026-11-17",
+      status,
+      big: { id: "x", date: "2026-11-12", amount: 2461.95, payee: "modivo.pl Zielona Gora", categoryId: "zak", categoryName: "Zakupy" },
+    });
+    expect(p).toContain("modivo.pl Zielona Gora");
+    expect(p).toContain("2461,95 zł");
+    expect(p).toContain("PRZEKROCZENIE o 6999,00 zł");
+  });
+  it("masks an account number that slipped into a text; includes Jan's answer", () => {
+    const p = buildCoachPrompt(
+      5,
+      { today: "2026-11-17", status, lastCommitment: "przelew na 00 0000 0000 0000 0000 0000 1234" },
+      "tak, dotrzymałem"
+    );
+    expect(p).not.toMatch(/0000 0000/);
+    expect(p).toContain("Odpowiedź Jana: „tak, dotrzymałem”");
+  });
+});
