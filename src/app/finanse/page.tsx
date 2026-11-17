@@ -259,6 +259,18 @@ function FinansePageInner() {
   const [histFilter, setHistFilter] = useState<"all" | "uncategorized" | "trash">("all");
   const [transactions, setTransactions] = useState<SavedTransaction[]>([]);
   const [trashCount, setTrashCount] = useState(0);
+  // /finanse?tab=historia&month=YYYY-MM&highlight=<id> (from the dashboard drill-down): open that month,
+  // scroll to the transaction and highlight it. Nothing else in Historia changes.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const id = q.get("highlight");
+    if (!id) return;
+    const m = q.get("month");
+    if (m && /^\d{4}-\d{2}$/.test(m)) setHistMonth(m);
+    setTabState("historia");
+    setHighlightId(id);
+  }, []);
   // Historia / Kosz sorting — own state (not shared with Budżet); survives month and filter changes.
   const [histSortCol, setHistSortCol] = useState<HistSortCol>("date");
   const [histSortDir, setHistSortDir] = useState<SortDir>("desc");
@@ -366,6 +378,12 @@ function FinansePageInner() {
         .finally(() => setLoadingTx(false));
     }
   }, [tab, loadTransactions, histMonth]);
+
+  useEffect(() => {
+    if (!highlightId || tab !== "historia" || loadingTx) return;
+    const el = document.getElementById(`tx-${highlightId}`);
+    if (el) el.scrollIntoView({ block: "center" });
+  }, [highlightId, tab, loadingTx, transactions]);
 
   useEffect(() => {
     if (tab === "historia") loadTrashCount();
@@ -1930,7 +1948,10 @@ function FinansePageInner() {
                       </tr>
                     )) : sortedHistTransactions.map((tx) => (
                       <React.Fragment key={tx.id}>
-                      <tr className="hover:bg-muted/30">
+                      <tr
+                        id={`tx-${tx.id}`}
+                        className={tx.id === highlightId ? "bg-amber-50 outline outline-2 -outline-offset-2 outline-amber-400" : "hover:bg-muted/30"}
+                      >
                         <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                           {formatDate(tx.date)}
                         </td>

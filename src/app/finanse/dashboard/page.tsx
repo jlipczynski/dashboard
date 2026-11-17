@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { CategoryIcon } from "@/components/finanse/CategoryIcon";
 import { FinanseNav } from "@/components/finanse/FinanseNav";
@@ -84,6 +84,9 @@ export default function FinanseDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  // Drill-down under a row of the open category: "s:<subId>" / "p:<payee>" / "n:<catId>" (net-negative category)
+  const [drill, setDrill] = useState<string | null>(null);
+  useEffect(() => setDrill(null), [open, data]);
   // WIG bar: always the current month (independent of the chosen period) — /api/finanse/coach/status
   const [wig, setWig] = useState<WigStatus | null>(null);
   useEffect(() => {
@@ -358,32 +361,58 @@ export default function FinanseDashboardPage() {
                 <div>
                   <h3 className="text-sm font-bold text-foreground">{openCat.name} · podkategorie</h3>
                   <ul className="mt-2 divide-y divide-border">
-                    {openCat.subcategories.map((s) => (
-                      <li key={s.id ?? "__none__"} className="flex items-center justify-between gap-3 py-2 text-sm">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold ${KIND_META[s.kind ?? "unassigned"].chip}`} title={KIND_META[s.kind ?? "unassigned"].label}>
-                            {KIND_META[s.kind ?? "unassigned"].short}
-                          </span>
-                          <span className="truncate">{s.name}</span>
-                        </span>
-                        <span className="whitespace-nowrap font-mono tabular-nums">
-                          {formatZl(s.amount)} <span className="text-muted-foreground">· {s.count}×</span>
-                        </span>
-                      </li>
-                    ))}
+                    {openCat.subcategories.map((s) => {
+                      const k = `s:${s.id ?? "__none__"}`;
+                      const isDrill = drill === k;
+                      return (
+                        <li key={s.id ?? "__none__"} className="py-1">
+                          <button
+                            type="button"
+                            onClick={() => setDrill(isDrill ? null : k)}
+                            aria-expanded={isDrill}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1 text-left text-sm hover:bg-muted/50"
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold ${KIND_META[s.kind ?? "unassigned"].chip}`} title={KIND_META[s.kind ?? "unassigned"].label}>
+                                {KIND_META[s.kind ?? "unassigned"].short}
+                              </span>
+                              <span className="truncate">{s.name}</span>
+                            </span>
+                            <span className="whitespace-nowrap font-mono tabular-nums">
+                              {formatZl(s.amount)} <span className="text-muted-foreground">· {s.count}× {isDrill ? "▴" : "▾"}</span>
+                            </span>
+                          </button>
+                          {isDrill && data && (
+                            <DrillList from={data.from} to={data.to} categoryId={openCat.id ?? "__none__"} subcategoryId={s.id ?? "__none__"} />
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-foreground">Najwięcej u</h3>
                   <ul className="mt-2 divide-y divide-border">
-                    {openCat.topMerchants.map((m) => (
-                      <li key={m.name} className="flex items-center justify-between gap-3 py-2 text-sm">
-                        <span className="min-w-0 truncate text-muted-foreground">{m.name}</span>
-                        <span className="whitespace-nowrap font-mono tabular-nums">
-                          {formatZl(m.amount)} <span className="text-muted-foreground">· {m.count}×</span>
-                        </span>
-                      </li>
-                    ))}
+                    {openCat.topMerchants.map((m) => {
+                      const k = `p:${m.name}`;
+                      const isDrill = drill === k;
+                      return (
+                        <li key={m.name} className="py-1">
+                          <button
+                            type="button"
+                            onClick={() => setDrill(isDrill ? null : k)}
+                            aria-expanded={isDrill}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1 text-left text-sm hover:bg-muted/50"
+                          >
+                            <span className="min-w-0 truncate text-muted-foreground">{m.name}</span>
+                            <span className="whitespace-nowrap font-mono tabular-nums">
+                              {formatZl(m.amount)} <span className="text-muted-foreground">· {m.count}× {isDrill ? "▴" : "▾"}</span>
+                            </span>
+                          </button>
+                          {isDrill && data && <DrillList from={data.from} to={data.to} categoryId={openCat.id ?? "__none__"} payee={m.name} />}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               </div>
@@ -417,10 +446,32 @@ export default function FinanseDashboardPage() {
             {data && (data.netNegativeCategories.length > 0 || gapNote) && (
               <div className="mt-3 space-y-1 text-xs text-muted-foreground">
                 {data.netNegativeCategories.length > 0 && (
-                  <p>
-                    Zwroty przewyższające wydatki:{" "}
-                    {data.netNegativeCategories.map((c) => `${c.name} +${formatZl(c.amount)}`).join(", ")}
-                  </p>
+                  <div>
+                    <p>
+                      Zwroty przewyższające wydatki:{" "}
+                      {data.netNegativeCategories.map((c, i) => {
+                        const k = `n:${c.id ?? "__none__"}`;
+                        return (
+                          <React.Fragment key={k}>
+                            {i > 0 && ", "}
+                            <button
+                              type="button"
+                              onClick={() => setDrill(drill === k ? null : k)}
+                              aria-expanded={drill === k}
+                              className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+                            >
+                              {c.name} +{formatZl(c.amount)}
+                            </button>
+                          </React.Fragment>
+                        );
+                      })}
+                    </p>
+                    {data.netNegativeCategories.map((c) =>
+                      drill === `n:${c.id ?? "__none__"}` ? (
+                        <DrillList key={c.id ?? "__none__"} from={data.from} to={data.to} categoryId={c.id ?? "__none__"} />
+                      ) : null
+                    )}
+                  </div>
                 )}
                 {gapNote && <p>{gapNote}</p>}
               </div>
@@ -502,5 +553,64 @@ function Decision({ href, n, text, warn }: { href: string; n: number; text: stri
       <span className={`min-w-[2.5rem] font-mono text-lg font-bold tabular-nums ${warn ? "text-amber-800" : "text-muted-foreground"}`}>{n}</span>
       <span className="leading-snug text-foreground">{text}</span>
     </Link>
+  );
+}
+
+// Transactions behind one dashboard row (GET /api/finanse/dashboard/transactions). The total comes from the
+// same function as the row's amount, so "Razem" always equals it. A row opens the transaction in Historia.
+type DrillTx = { id: string; date: string; amount: number; payee: string; title: string; one_off: boolean };
+/** "1 234,56 zł" — with grosze (formatZl rounds to whole złoty; the list must add up to the grosz). */
+const zlGr = (v: number) => {
+  const gr = Math.round(Math.abs(v) * 100);
+  return `${v < 0 ? "−" : ""}${String(Math.floor(gr / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")},${String(gr % 100).padStart(2, "0")} zł`;
+};
+
+function DrillList({ from, to, categoryId, subcategoryId, payee }: { from: string; to: string; categoryId: string; subcategoryId?: string; payee?: string }) {
+  const [res, setRes] = useState<{ total: number; transactions: DrillTx[] } | null>(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    const q = new URLSearchParams({ from, to, categoryId });
+    if (subcategoryId) q.set("subcategoryId", subcategoryId);
+    if (payee) q.set("payee", payee);
+    let alive = true;
+    fetch(`/api/finanse/dashboard/transactions?${q}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => alive && setRes(d))
+      .catch(() => alive && setErr(true));
+    return () => {
+      alive = false;
+    };
+  }, [from, to, categoryId, subcategoryId, payee]);
+
+  if (err) return <p className="mt-1 rounded-lg bg-red-50 px-2 py-1.5 text-xs text-red-700">Nie udało się pobrać transakcji.</p>;
+  if (!res) return <p className="mt-1 px-2 py-1.5 text-xs text-muted-foreground">Ładowanie…</p>;
+  return (
+    <div className="mt-1 w-full rounded-xl border border-border bg-card">
+      <ul className="divide-y divide-border">
+        {res.transactions.map((t) => (
+          <li key={t.id}>
+            <Link
+              href={`/finanse?tab=historia&month=${t.date.slice(0, 7)}&highlight=${t.id}`}
+              className="flex items-start justify-between gap-3 px-3 py-2 text-xs hover:bg-muted/40"
+            >
+              <span className="min-w-0">
+                <span className="text-muted-foreground">{shortDate(t.date)}</span> · <span className="font-medium text-foreground">{t.payee}</span>
+                {t.one_off && <span className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] font-semibold text-slate-700">jednorazowy</span>}
+                {t.amount > 0 && <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[10px] font-semibold text-emerald-800">zwrot</span>}
+                {t.title && t.title !== t.payee && <span className="block truncate text-muted-foreground">{t.title}</span>}
+              </span>
+              <span className={`whitespace-nowrap font-mono tabular-nums ${t.amount > 0 ? "text-emerald-700" : "text-foreground"}`}>
+                {t.amount > 0 ? "+" : ""}
+                {zlGr(t.amount)}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <p className="flex justify-between border-t border-border px-3 py-2 text-xs font-semibold text-foreground">
+        <span>Razem ({res.transactions.length})</span>
+        <span className="font-mono tabular-nums">{zlGr(res.total)}</span>
+      </p>
+    </div>
   );
 }

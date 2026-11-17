@@ -4,7 +4,7 @@
 // (stałe / niezbędne / uznaniowe), one-off share, last 7 days and this week's discretionary spend.
 // All sums in grosze (integers).
 
-import { summarizeExpenses, type SummaryRow, type ExpenseSummary, type SummaryCategory } from "./finanse-summary";
+import { summarizeExpenses, payeeName, type SummaryRow, type ExpenseSummary, type SummaryCategory } from "./finanse-summary";
 
 export type SubKind = "fixed" | "essential" | "discretionary";
 
@@ -158,4 +158,40 @@ export function buildDashboard(
     bigCount,
     unreviewedInPeriod: unreviewed,
   };
+}
+
+// ── Drill-down: the transactions behind a category / subcategory / "Najwięcej u" row ──────────
+// Same membership rules as summarizeExpenses / buildDashboard (trash skipped; an unknown or missing category
+// is "Bez kategorii" and only outflows count there; an unknown or missing subcategory is "Bez podkategorii"),
+// and the total is computed by summarizeExpenses itself — so the list always adds up to the row's amount.
+
+export const NONE = "__none__"; // "Bez kategorii" / "Bez podkategorii"
+
+export type DrillFilter = { categoryId: string; subcategoryId?: string | null; payee?: string | null };
+
+export function drilldown<R extends DashRow>(
+  rows: R[],
+  categories: DashCategoryDef[],
+  subcategories: DashSubDef[],
+  f: DrillFilter
+): { rows: R[]; total: number } {
+  const catById = new Map(categories.map((c) => [c.id, c]));
+  const subById = new Map(subcategories.map((s) => [s.id, s]));
+  const picked = rows.filter((r) => {
+    if (r.deleted_at) return false;
+    const cat = r.category_id ? catById.get(r.category_id) : undefined;
+    if (f.categoryId === NONE) {
+      if (cat || toGr(r.amount) >= 0) return false;
+    } else if (!cat || cat.id !== f.categoryId || cat.type !== "expense") {
+      return false;
+    }
+    if (f.subcategoryId) {
+      const sub = r.subcategory_id ? subById.get(r.subcategory_id) : undefined;
+      if ((sub?.id ?? NONE) !== f.subcategoryId) return false;
+    }
+    if (f.payee && payeeName(r) !== f.payee) return false;
+    return true;
+  });
+  picked.sort((a, b) => b.date.localeCompare(a.date) || toGr(a.amount) - toGr(b.amount));
+  return { rows: picked, total: summarizeExpenses(picked, categories).total };
 }

@@ -55,8 +55,16 @@ export type ExpenseSummary = {
 const toGr = (v: number | string) => Math.round(Number(v) * 100);
 const toZl = (gr: number) => gr / 100;
 
-/** Payee shown in "top merchants": merchant → counterparty → parsed from description, intermediary prefix stripped. */
+const PHONE_TRANSFER = /^przelew na telefon$/i;
+
+/**
+ * Payee shown in "top merchants": merchant → counterparty → parsed from description, intermediary prefix stripped.
+ * BLIK phone transfers ("Przelew na telefon") carry no shop name — the recipient (counterparty) is the payee,
+ * otherwise different people would be merged into one "Przelew na telefon" row.
+ */
 export function payeeName(r: SummaryRow): string {
+  const cp = r.counterparty?.trim();
+  if (cp && (PHONE_TRANSFER.test(r.merchant?.trim() ?? "") || PHONE_TRANSFER.test(r.description?.trim() ?? ""))) return cp;
   const raw = (r.merchant && r.merchant.trim()) || (r.counterparty && r.counterparty.trim()) || extractMerchant(r.description);
   return classifyIntermediary(r.description, r.counterparty, raw).cleanMerchant.trim() || raw;
 }
