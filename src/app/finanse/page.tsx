@@ -160,7 +160,14 @@ function FinansePageInner() {
   const [tab, setTabState] = useState<FinanseTab>("import");
   // The tab can be opened from a link (/finanse?tab=historia …, FinanseNav); switching keeps the URL in sync.
   useEffect(() => {
-    const t = tabFromQuery(new URLSearchParams(window.location.search).get("tab"));
+    const q = new URLSearchParams(window.location.search);
+    const raw = q.get("tab");
+    // Brief 13: /finanse without a tab opens the Dashboard; the removed "Budżet" tab (?tab=budzet) too.
+    if ((raw === null && !q.get("highlight")) || raw?.toLowerCase() === "budzet") {
+      window.location.replace("/finanse/dashboard");
+      return;
+    }
+    const t = tabFromQuery(raw);
     if (t) setTabState(t);
   }, []);
   function setTab(t: FinanseTab) {

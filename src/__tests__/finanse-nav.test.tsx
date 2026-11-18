@@ -5,7 +5,13 @@ import { FinanseNav, FINANSE_NAV, tabFromQuery, navKeyForTab } from "../componen
 afterEach(cleanup);
 
 describe("FinanseNav — one click to every Finanse screen (existing pages only)", () => {
-  it("links: Przegląd, Transakcje, Kategorie, Import (+ Dashboard, Budżet, Reguły i tagi)", () => {
+  it("order: Dashboard first; no 'Budżet' (brief 13)", () => {
+    expect(FINANSE_NAV.map((i) => i.label)).toEqual(["Dashboard", "Przegląd", "Transakcje", "Kategorie", "Import", "Reguły i tagi", "Wiedza coacha"]);
+    render(<FinanseNav active="dashboard" />);
+    expect(screen.queryByRole("link", { name: "Budżet" })).toBeNull();
+  });
+
+  it("links to the existing screens", () => {
     render(<FinanseNav active="dashboard" />);
     const href = (name: string) => screen.getByRole("link", { name }).getAttribute("href");
     expect(href("Przegląd")).toBe("/finanse/przeglad");
@@ -13,7 +19,6 @@ describe("FinanseNav — one click to every Finanse screen (existing pages only)
     expect(href("Kategorie")).toBe("/finanse/kategorie");
     expect(href("Import")).toBe("/finanse?tab=import");
     expect(href("Dashboard")).toBe("/finanse/dashboard");
-    expect(href("Budżet")).toBe("/finanse?tab=budzet");
     expect(href("Reguły i tagi")).toBe("/finanse?tab=reguly");
     expect(href("Wiedza coacha")).toBe("/finanse/wiedza");
   });
@@ -45,7 +50,7 @@ describe("tab helpers", () => {
   it("tabFromQuery maps URL values (incl. old 'kategorie') and ignores the rest", () => {
     expect(tabFromQuery("historia")).toBe("historia");
     expect(tabFromQuery("Transakcje")).toBe("historia");
-    expect(tabFromQuery("budzet")).toBe("budzet");
+    expect(tabFromQuery("budzet")).toBeNull(); // removed tab: /finanse redirects to the dashboard
     expect(tabFromQuery("import")).toBe("import");
     expect(tabFromQuery("reguly")).toBe("kategorie");
     expect(tabFromQuery("kategorie")).toBe("kategorie");
