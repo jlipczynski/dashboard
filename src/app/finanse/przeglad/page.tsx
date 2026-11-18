@@ -8,6 +8,7 @@ import { FinanseNav } from "@/components/finanse/FinanseNav";
 import { formatZl } from "@/lib/finanse-period";
 import { reviewRule, rememberChecked } from "@/lib/finanse-review-rule";
 import { KIND_LABEL, type InsightKind } from "@/lib/finanse-insights";
+import { buttonClass } from "@/components/finanse/ui";
 
 // Przegląd tygodniowy (sesja WIG) — mobile-first.
 // Każda karta: sprawdź kategorię / jednorazowe → ✓ (zmiana kategorii → „Zapamiętaj dla …” tworzy regułę). Potwierdzone znikają (reviewed_at).
@@ -269,7 +270,7 @@ export default function PrzegladPage() {
           <button
             onClick={importNow}
             disabled={importing}
-            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+            className={buttonClass("secondary", "sm")}
           >
             {importing ? "Pobieram…" : "Pobierz alerty teraz"}
           </button>
@@ -283,7 +284,7 @@ export default function PrzegladPage() {
           <div className="mt-8 rounded-2xl border border-border bg-card p-6 text-center">
             <p className="text-lg font-semibold text-foreground">Wszystko przejrzane ✓</p>
             <p className="mt-1 text-sm text-muted-foreground">Transakcje potwierdzone. Teraz duże wydatki i plan na resztę miesiąca.</p>
-            <button onClick={() => goTo(2)} className="mt-4 inline-block rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">
+            <button onClick={() => goTo(2)} className={`mt-4 ${buttonClass("primary", "lg", true)}`}>
               Dalej: duże wydatki →
             </button>
           </div>
@@ -318,7 +319,7 @@ export default function PrzegladPage() {
                     aria-label="Kategoria"
                     value={c.categoryId ?? ""}
                     onChange={(e) => patch(t.id, { categoryId: e.target.value || null, subcategoryId: null })}
-                    className="min-w-0 rounded-lg border border-border bg-background px-2 py-2 text-sm"
+                    className="h-10 min-w-0 rounded-lg border border-border bg-background px-2 text-sm"
                   >
                     <option value="">— bez kategorii —</option>
                     {cats.map((k) => (
@@ -332,7 +333,7 @@ export default function PrzegladPage() {
                     value={c.subcategoryId ?? ""}
                     onChange={(e) => patch(t.id, { subcategoryId: e.target.value || null })}
                     disabled={catSubs.length === 0}
-                    className="min-w-0 rounded-lg border border-border bg-background px-2 py-2 text-sm disabled:opacity-50"
+                    className="h-10 min-w-0 rounded-lg border border-border bg-background px-2 text-sm disabled:opacity-50"
                   >
                     <option value="">— podkategoria —</option>
                     {catSubs.map((s) => (
@@ -341,7 +342,7 @@ export default function PrzegladPage() {
                       </option>
                     ))}
                   </select>
-                  <label className="col-span-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-2 text-sm">
+                  <label className="col-span-2 flex h-10 items-center gap-2 rounded-lg border border-border bg-background px-2 text-sm">
                     <input type="checkbox" checked={c.oneOff} onChange={(e) => patch(t.id, { oneOff: e.target.checked, remember: undefined })} className="h-4 w-4" />
                     Jednorazowy
                   </label>
@@ -363,7 +364,7 @@ export default function PrzegladPage() {
                 <button
                   onClick={() => confirm([t.id])}
                   disabled={saving}
-                  className="mt-3 w-full rounded-xl bg-emerald-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                  className={`mt-3 ${buttonClass("primary", "md", true)}`}
                 >
                   ✓ Zgadza się
                 </button>
@@ -372,7 +373,7 @@ export default function PrzegladPage() {
           })}
         </ul>
         {!loading && total > 0 && (
-          <button onClick={() => goTo(2)} className="mt-4 w-full rounded-xl border border-border bg-card py-2.5 text-sm text-muted-foreground hover:text-foreground">
+          <button onClick={() => goTo(2)} className={`mt-4 ${buttonClass("secondary", "lg", true)}`}>
             Pomiń na razie → krok 2
           </button>
         )}
@@ -389,7 +390,7 @@ export default function PrzegladPage() {
             <button
               onClick={() => confirm(visible.map((t) => t.id), false)}
               disabled={saving}
-              className="rounded-xl bg-[#1F3A2C] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              className={buttonClass("primary", "md")}
             >
               {saving ? "Zapisuję…" : `Wszystko się zgadza (${visible.length})`}
             </button>
@@ -456,19 +457,19 @@ function KnowledgeStep({ items, onDecided, onNext }: { items: Proposal[]; onDeci
             <div className="mt-3 flex flex-wrap gap-2">
               {editing === p.id ? (
                 <>
-                  <button onClick={() => decide(p.id, "accept", draft.trim())} disabled={busy || !draft.trim()} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">
+                  <button onClick={() => decide(p.id, "accept", draft.trim())} disabled={busy || !draft.trim()} className={buttonClass("primary", "sm")}>
                     Akceptuj poprawiony
                   </button>
-                  <button onClick={() => setEditing(null)} className="rounded-lg border border-border px-3 py-1.5 text-xs">
+                  <button onClick={() => setEditing(null)} className={buttonClass("secondary", "sm")}>
                     Anuluj
                   </button>
                 </>
               ) : (
                 <>
-                  <button onClick={() => decide(p.id, "accept")} disabled={busy} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">
+                  <button onClick={() => decide(p.id, "accept")} disabled={busy} className={buttonClass("primary", "sm")}>
                     Akceptuj
                   </button>
-                  <button onClick={() => decide(p.id, "reject")} disabled={busy} className="rounded-lg border border-border px-3 py-1.5 text-xs disabled:opacity-40">
+                  <button onClick={() => decide(p.id, "reject")} disabled={busy} className={buttonClass("secondary", "sm")}>
                     Odrzuć
                   </button>
                   <button
@@ -477,7 +478,7 @@ function KnowledgeStep({ items, onDecided, onNext }: { items: Proposal[]; onDeci
                       setDraft(p.text);
                     }}
                     disabled={busy}
-                    className="rounded-lg border border-border px-3 py-1.5 text-xs disabled:opacity-40"
+                    className={buttonClass("secondary", "sm")}
                   >
                     Popraw
                   </button>
@@ -488,7 +489,7 @@ function KnowledgeStep({ items, onDecided, onNext }: { items: Proposal[]; onDeci
         ))}
       </ul>
       {items.length === 0 && <p className="mt-3 rounded-xl bg-muted p-3 text-sm text-muted-foreground">Wszystkie propozycje rozpatrzone ✓</p>}
-      <button onClick={onNext} className="mt-5 w-full rounded-xl bg-[#1F3A2C] py-3 text-sm font-semibold text-white">
+      <button onClick={onNext} className={`mt-5 ${buttonClass("primary", "lg", true)}`}>
         {items.length === 0 ? "Dalej: transakcje →" : "Pomiń na razie → transakcje"}
       </button>
     </div>
@@ -545,7 +546,7 @@ type CoachData = {
 
 const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
 const pillCls = (on: boolean) =>
-  `flex-1 rounded-lg border px-2 py-2 text-sm ${on ? "border-emerald-700 bg-emerald-700 font-semibold text-white" : "border-border bg-background text-foreground"}`;
+  `h-10 flex-1 rounded-lg border px-2 text-sm ${on ? "border-emerald-700 bg-emerald-700 font-semibold text-white" : "border-border bg-background text-foreground"}`;
 
 function CoachBubble({ text, loading, onAsk }: { text: string | null; loading: boolean; onAsk: (answer?: string) => void }) {
   const [answer, setAnswer] = useState("");
@@ -566,7 +567,7 @@ function CoachBubble({ text, loading, onAsk }: { text: string | null; loading: b
             setAnswer("");
           }}
           disabled={loading || !answer.trim()}
-          className="rounded-lg bg-[#1F3A2C] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+          className={buttonClass("primary", "sm")}
         >
           Wyślij
         </button>
@@ -594,6 +595,7 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
   const [kept, setKept] = useState<"yes" | "partly" | "no" | null>(null);
   const [commitment, setCommitment] = useState("");
   const [finished, setFinished] = useState(false);
+  const [editCommitment, setEditCommitment] = useState(false);
   // Brief 10: one id per opening of the review — the coach conversation is saved under it.
   const [sessionId] = useState(() => crypto.randomUUID());
 
@@ -653,7 +655,7 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
 
   const current = step === 2 ? data?.big[0] ?? null : null;
   // Ask the coach automatically once per screen (step 2: per expense)
-  const autoKey = step === 2 ? (current ? `big:${current.id}` : null) : step === 4 || step === 5 ? `step:${step}` : null;
+  const autoKey = step === 2 ? (current ? `big:${current.id}` : null) : step >= 3 ? `step:${step}` : null;
   useEffect(() => {
     if (!data || !autoKey || talk[autoKey]) return;
     ask(autoKey, { step, transactionId: current?.id });
@@ -673,7 +675,7 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
   const pct = Math.min(100, (s.spent / s.limit) * 100);
   const barColor = s.spent > s.limit ? "bg-red-600" : s.spent >= 0.8 * s.limit ? "bg-amber-500" : "bg-emerald-600";
   const nextBtn = (label: string, to: number) => (
-    <button onClick={() => goTo(to)} className="mt-5 w-full rounded-xl bg-[#1F3A2C] py-3 text-sm font-semibold text-white">
+    <button onClick={() => goTo(to)} className={`mt-5 ${buttonClass("primary", "lg", true)}`}>
       {label}
     </button>
   );
@@ -743,7 +745,7 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
                   if (ok) setError(null);
                 }}
                 disabled={busy || !necessary || recurring === null}
-                className="mt-4 w-full rounded-xl bg-emerald-700 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+                className={`mt-4 ${buttonClass("primary", "md", true)}`}
               >
                 Zapisz decyzję
               </button>
@@ -771,11 +773,11 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
                 </div>
                 <span className="font-mono text-sm tabular-nums">{formatZl(p.amount)}</span>
                 {p.status === "planned" && (
-                  <button onClick={() => post("/api/finanse/coach/planned", "PATCH", { id: p.id, status: "bought" })} disabled={busy} className="rounded-lg border border-border px-2 py-1 text-xs">
+                  <button onClick={() => post("/api/finanse/coach/planned", "PATCH", { id: p.id, status: "bought" })} disabled={busy} className={buttonClass("secondary", "sm")}>
                     Kupione
                   </button>
                 )}
-                <button onClick={() => post(`/api/finanse/coach/planned?id=${p.id}`, "DELETE")} disabled={busy} className="rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground" aria-label={`Usuń ${p.name}`}>
+                <button onClick={() => post(`/api/finanse/coach/planned?id=${p.id}`, "DELETE")} disabled={busy} className={buttonClass("ghost", "sm")} aria-label={`Usuń ${p.name}`}>
                   ✕
                 </button>
               </li>
@@ -800,7 +802,7 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
                 }
               }}
               disabled={busy || !pName.trim() || !pAmount.trim()}
-              className="col-span-2 rounded-lg bg-emerald-700 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className={`col-span-2 ${buttonClass("primary", "md")}`}
             >
               Dodaj
             </button>
@@ -814,11 +816,6 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
             loading={!!talk["step:3"]?.loading}
             onAsk={(answer) => ask("step:3", { step: 3, answer })}
           />
-          {!talk["step:3"] && (
-            <button onClick={() => ask("step:3", { step: 3 })} className="mt-2 text-xs font-medium text-emerald-700 hover:underline">
-              Zapytaj coacha o te zakupy
-            </button>
-          )}
           {nextBtn("Dalej: prognoza →", 4)}
         </section>
       )}
@@ -892,9 +889,28 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
               <p className="text-lg font-semibold text-foreground">Przegląd zakończony ✓</p>
               <p className="mt-1 text-sm text-muted-foreground">Zobowiązanie: „{commitment}”. Wrócimy do niego za tydzień.</p>
               <LessonCard />
-              <Link href="/finanse/dashboard" className="mt-4 inline-block rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">
+              <Link href="/finanse/dashboard" className={`mt-4 ${buttonClass("primary", "md")}`}>
                 Zobacz dashboard
               </Link>
+            </div>
+          ) : data.thisWeek?.completed_at && data.thisWeek.commitment && !editCommitment ? (
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Twoje zobowiązanie na ten tydzień</p>
+              <p className="mt-1 text-lg font-semibold text-foreground">„{data.thisWeek.commitment}”</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setCommitment(data.thisWeek?.commitment ?? "");
+                    setEditCommitment(true);
+                  }}
+                  className={buttonClass("secondary", "md")}
+                >
+                  Zmień
+                </button>
+                <Link href="/finanse/dashboard" className={buttonClass("ghost", "md")}>
+                  Zobacz dashboard
+                </Link>
+              </div>
             </div>
           ) : (
             <>
@@ -933,15 +949,10 @@ function CoachSteps({ step, goTo }: { step: number; goTo: (n: number) => void })
                   if (ok) setFinished(true);
                 }}
                 disabled={busy || !commitment.trim() || (!!data.lastCommitment?.commitment && !kept)}
-                className="mt-4 w-full rounded-xl bg-[#1F3A2C] py-3 text-sm font-semibold text-white disabled:opacity-40"
+                className={`mt-4 ${buttonClass("primary", "lg", true)}`}
               >
-                Zakończ przegląd
+                {editCommitment ? "Zapisz zmienione zobowiązanie" : "Zakończ przegląd"}
               </button>
-              {data.thisWeek?.completed_at && (
-                <p className="mt-2 text-center text-xs text-muted-foreground">
-                  Przegląd tego tygodnia już zapisany („{data.thisWeek.commitment}”) — zapis go nadpisze.
-                </p>
-              )}
             </>
           )}
         </section>

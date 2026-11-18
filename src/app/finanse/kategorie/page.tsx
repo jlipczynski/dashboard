@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { CategoryIcon } from "@/components/finanse/CategoryIcon";
 import { FinanseNav } from "@/components/finanse/FinanseNav";
+import { buttonClass } from "@/components/finanse/ui";
 import { CATEGORY_COLORS, deleteGuard, type CategoryType, type Kind } from "@/lib/finanse-taxonomy";
 
 // /finanse/kategorie — Jan maintains the taxonomy himself: categories, subcategories, kinds,
@@ -51,8 +52,10 @@ const TYPE_LABEL: Record<CategoryType, string> = { expense: "Wydatek", income: "
 const zl = (v: number) => `${String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} zł`;
 const inputCls =
   "rounded-lg border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500";
-const btnCls = "rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40";
-const primaryCls = "rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800 disabled:opacity-50";
+// Brief 13: FinButton styles; row actions share one width, so an inactive "Usuń" is exactly as big as an active one.
+const btnCls = `${buttonClass("secondary", "sm")} min-w-[4.5rem]`;
+const arrowCls = `${buttonClass("secondary", "sm")} w-8 px-0`;
+const primaryCls = buttonClass("primary", "sm");
 
 type Merge = { entity: "category" | "subcategory"; fromId: string; toId: string; summary: string | null };
 
@@ -219,15 +222,15 @@ export default function FinanseKategoriePage() {
                         </div>
                         {!onlyNoKind && (
                           <div className="flex flex-wrap items-center gap-1">
-                            <button onClick={() => call("PATCH", { entity: "category", id: c.id, move: "up" })} disabled={busy || idx === 0} className={btnCls} aria-label="W górę">↑</button>
-                            <button onClick={() => call("PATCH", { entity: "category", id: c.id, move: "down" })} disabled={busy || idx === groupCats.length - 1} className={btnCls} aria-label="W dół">↓</button>
+                            <button onClick={() => call("PATCH", { entity: "category", id: c.id, move: "up" })} disabled={busy || idx === 0} className={arrowCls} aria-label="W górę">↑</button>
+                            <button onClick={() => call("PATCH", { entity: "category", id: c.id, move: "down" })} disabled={busy || idx === groupCats.length - 1} className={arrowCls} aria-label="W dół">↓</button>
                             <button
                               onClick={() => setEditCat(editing ? null : { id: c.id, name: c.name, type: c.type, icon: c.icon ?? "dots", color: c.color ?? "#8A847E" })}
                               className={btnCls}
                             >
                               Edytuj
                             </button>
-                            <button onClick={() => setMerge({ entity: "category", fromId: c.id, toId: "", summary: null })} className={btnCls}>Scal…</button>
+                            <button onClick={() => setMerge({ entity: "category", fromId: c.id, toId: "", summary: null })} className={btnCls}>Scal</button>
                             <button
                               onClick={() => confirm(`Usunąć kategorię „${c.name}”?`) && call("DELETE", undefined, `?entity=category&id=${c.id}`)}
                               disabled={busy || !guard.ok}
@@ -322,7 +325,7 @@ export default function FinanseKategoriePage() {
                                   ) : (
                                     <div className="flex gap-1">
                                       <button onClick={() => setEditSub(sEditing ? null : { id: s.id, name: s.name, kind: s.kind, category_id: s.category_id })} className={btnCls}>Edytuj</button>
-                                      <button onClick={() => setMerge({ entity: "subcategory", fromId: s.id, toId: "", summary: null })} className={btnCls}>Scal…</button>
+                                      <button onClick={() => setMerge({ entity: "subcategory", fromId: s.id, toId: "", summary: null })} className={btnCls}>Scal</button>
                                       <button
                                         onClick={() => confirm(`Usunąć podkategorię „${s.name}”?`) && call("DELETE", undefined, `?entity=subcategory&id=${s.id}`)}
                                         disabled={busy || !sGuard.ok}
