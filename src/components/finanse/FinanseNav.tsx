@@ -8,7 +8,7 @@ import { FinPill } from "@/components/finanse/ui";
 // with the active item scrolled into view. Items point at the existing pages and at the tabs of /finanse (?tab=…).
 
 /** Internal tab keys of /finanse (src/app/finanse/page.tsx). */
-export type FinanseTab = "import" | "historia" | "budzet" | "kategorie";
+export type FinanseTab = "import" | "historia" | "kategorie";
 
 export type NavKey = "dashboard" | "przeglad" | "historia" | "kategorie-strona" | "import" | "reguly" | "wiedza";
 
@@ -43,7 +43,7 @@ export function tabFromQuery(value: string | null | undefined): FinanseTab | nul
 
 /** Nav key highlighted for an internal tab of /finanse. */
 export function navKeyForTab(tab: FinanseTab): NavKey {
-  return tab === "kategorie" ? "reguly" : tab === "budzet" ? "dashboard" : tab;
+  return tab === "kategorie" ? "reguly" : tab;
 }
 
 /**

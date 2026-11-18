@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useSession, signIn, SessionProvider } from "next-auth/react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { FinanseNav, tabFromQuery, navKeyForTab, type FinanseTab } from "@/components/finanse/FinanseNav";
+import { FinPageHeader } from "@/components/finanse/ui";
 import { sortTransactions, defaultSortDir, type HistSortCol, type SortDir } from "@/lib/finanse-sort";
 import {
   similarSelection,
@@ -17,7 +18,6 @@ import { classifyIntermediary } from "@/lib/finanse-intermediaries";
 import { extractMerchant } from "@/lib/finanse-merchant";
 import { similarityKey } from "@/lib/finanse-key";
 import { ruleFromTx, validateRule, ruleLabel } from "@/lib/finanse-rules";
-import { summarizeExpenses } from "@/lib/finanse-summary";
 
 /* ── Types ──────────────────────────────────────── */
 type Category = {
@@ -125,34 +125,6 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/* ── Summary tiles (Historia + Budżet) ───────────── */
-// One definition of the numbers: summarizeExpenses (also used by the home page card).
-function SummaryTiles({ summary }: { summary: ReturnType<typeof summarizeExpenses> }) {
-  const balance = summary.income - summary.total - summary.savingsNet;
-  return (
-    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div className="rounded-xl border border-border bg-card p-4 text-center">
-        <p className="text-2xl font-bold text-red-600">−{formatAmount(summary.total)}</p>
-        <p className="text-xs text-muted-foreground mt-1">Wydatki</p>
-      </div>
-      <div className="rounded-xl border border-border bg-card p-4 text-center">
-        <p className="text-2xl font-bold text-emerald-600">+{formatAmount(summary.income)}</p>
-        <p className="text-xs text-muted-foreground mt-1">Przychody</p>
-      </div>
-      <div className="rounded-xl border border-border bg-card p-4 text-center">
-        <p className="text-2xl font-bold text-blue-600">{formatAmount(summary.savingsNet)}</p>
-        <p className="text-xs text-muted-foreground mt-1">Na cele (netto)</p>
-      </div>
-      <div className="rounded-xl border border-border bg-card p-4 text-center">
-        <p className={`text-2xl font-bold ${balance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-          {formatAmount(balance)}
-        </p>
-        <p className="text-xs text-muted-foreground mt-1">Bilans</p>
-      </div>
-    </div>
-  );
-}
-
 /* ── Main Component ──────────────────────────────── */
 function FinansePageInner() {
   const { data: session } = useSession();
@@ -248,12 +220,6 @@ function FinansePageInner() {
     categoryAssignmentsRef.current = categoryAssignments;
     userOverridesRef.current = userOverrides;
   }, [categoryAssignments, userOverrides]);
-  const [budgetExpandedCat, setBudgetExpandedCat] = useState<string | null>(null);
-  const [budgetExpandedMerchants, setBudgetExpandedMerchants] = useState<Set<string>>(new Set());
-  const [budgetSortCol, setBudgetSortCol] = useState<"date" | "amount" | "description">("date");
-  const [budgetSortDir, setBudgetSortDir] = useState<"asc" | "desc">("desc");
-  const [budgetMerchantPage, setBudgetMerchantPage] = useState<Record<string, number>>({});
-  const BUDGET_TX_PAGE_SIZE = 15;
   const [histNotes, setHistNotes] = useState<Record<string, string>>({});
   const [histTagValues, setHistTagValues] = useState<Record<string, string>>({});
   const [histUserNotes, setHistUserNotes] = useState<Record<string, string>>({});
@@ -376,15 +342,7 @@ function FinansePageInner() {
 
   useEffect(() => {
     if (tab === "historia") loadTransactions();
-    if (tab === "budzet") {
-      setLoadingTx(true);
-      fetch(`/api/finanse/transactions?month=${histMonth}`)
-        .then((r) => r.json())
-        .then((d) => setTransactions(d.transactions || []))
-        .catch(() => {})
-        .finally(() => setLoadingTx(false));
-    }
-  }, [tab, loadTransactions, histMonth]);
+  }, [tab, loadTransactions]);
 
   useEffect(() => {
     if (!highlightId || tab !== "historia" || loadingTx) return;
@@ -1251,9 +1209,6 @@ function FinansePageInner() {
   }
   const histSortIcon = (col: HistSortCol) => (histSortCol === col ? (histSortDir === "asc" ? " ▲" : " ▼") : "");
 
-  function handleExport() {
-    window.location.href = `/api/finanse/export?month=${histMonth}`;
-  }
 
   /* ── Kategorie actions ────────────────────────── */
   async function addCategory() {
@@ -1362,24 +1317,25 @@ function FinansePageInner() {
     [transactions, histSortCol, histSortDir]
   );
 
-  // Historia + Budżet: the same definition as the home page card (summarizeExpenses) — one source of truth.
-  const budgetSummary = useMemo(() => summarizeExpenses(transactions, categories), [transactions, categories]);
 
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
         <BackButton />
-        <div className="mt-4 flex items-center gap-3">
-          <span className="text-3xl">💰</span>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Finanse</h1>
-            <p className="text-sm text-muted-foreground">Import z Santandera · Kategoryzacja · Eksport do Budget</p>
-          </div>
-        </div>
-
-        {/* Finance navigation: other screens + this page's tabs (Transakcje, Budżet, Import, Reguły i tagi) */}
+        {/* Finance navigation: other screens + this page's tabs (Transakcje, Import, Reguły i tagi) */}
         <FinanseNav active={navKeyForTab(tab)} onTab={setTab} />
+        <FinPageHeader
+          eyebrow={tab === "historia" ? "Finanse · Transakcje" : tab === "import" ? "Finanse · Import" : "Finanse · Reguły i tagi"}
+          title={tab === "historia" ? "Transakcje" : tab === "import" ? "Import wyciągu" : "Reguły i tagi"}
+          subtitle={
+            tab === "historia"
+              ? "Lista operacji z wybranego miesiąca. Liczby i podsumowania są na Dashboardzie."
+              : tab === "import"
+                ? "Wyciąg CSV z Erste: import, kategoryzacja, przegląd."
+                : "Reguły automatycznej kategoryzacji i tagi."
+          }
+        />
 
         {/* ── IMPORT TAB ──────────────────────────── */}
         {tab === "import" && (
@@ -1390,7 +1346,7 @@ function FinansePageInner() {
               onClick={() => fileInputRef.current?.click()}
             >
               <span className="text-4xl">📂</span>
-              <p className="mt-3 text-sm font-medium text-foreground">Kliknij aby wybrać plik CSV z Santandera</p>
+              <p className="mt-3 text-sm font-medium text-foreground">Kliknij, aby wybrać plik CSV z Erste</p>
               <p className="mt-1 text-xs text-muted-foreground">historia_*.csv (konto 93 1090 1476...)</p>
               <input
                 ref={fileInputRef}
@@ -1855,14 +1811,6 @@ function FinansePageInner() {
                   className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               )}
-              {histFilter === "all" && (
-                <button
-                  onClick={handleExport}
-                  className="ml-auto flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
-                >
-                  ↓ Eksportuj do Budget.csv
-                </button>
-              )}
             </div>
 
             {/* Bulk dismiss in Do kategoryzacji */}
@@ -1886,10 +1834,6 @@ function FinansePageInner() {
               </div>
             )}
 
-            {/* Summary */}
-            {!loadingTx && histFilter !== "trash" && transactions.length > 0 && (
-              <SummaryTiles summary={budgetSummary} />
-            )}
 
             {/* Transactions table */}
             {loadingTx ? (
@@ -2159,260 +2103,6 @@ function FinansePageInner() {
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* ── BUDŻET TAB ──────────────────────────────── */}
-        {tab === "budzet" && (
-          <div className="mt-6">
-            {/* Month picker + export */}
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                type="month"
-                value={histMonth}
-                onChange={(e) => setHistMonth(e.target.value)}
-                className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-              <button
-                onClick={handleExport}
-                className="ml-auto flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
-              >
-                ↓ Eksportuj do Budget.csv
-              </button>
-            </div>
-
-            {loadingTx ? (
-              <p className="mt-6 text-center text-sm text-muted-foreground">Ładowanie...</p>
-            ) : transactions.length === 0 ? (
-              <div className="mt-6 rounded-xl border border-border bg-card p-8 text-center">
-                <p className="text-sm text-muted-foreground">Brak transakcji w tym miesiącu.</p>
-              </div>
-            ) : (
-              <>
-                {/* Summary cards — summarizeExpenses (same as the home page card) */}
-                <SummaryTiles summary={budgetSummary} />
-                {budgetSummary.netNegativeCategories.length > 0 && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Zwroty przewyższające wydatki:{" "}
-                    {budgetSummary.netNegativeCategories.map((c) => `${c.name} +${formatAmount(c.amount)}`).join(", ")}
-                  </p>
-                )}
-                {budgetSummary.expensesInIncomeCats.amount > 0 && (
-                  <p className="mt-2 text-xs text-amber-700">
-                    ⚠ Wydatki w kategoriach przychodowych: {formatAmount(budgetSummary.expensesInIncomeCats.amount)} ({budgetSummary.expensesInIncomeCats.count})
-                  </p>
-                )}
-
-                {/* Category breakdown */}
-                <div className="mt-4 rounded-xl border border-border bg-card overflow-hidden">
-                  <div className="border-b border-border bg-muted/50 px-4 py-2">
-                    <p className="text-sm font-semibold text-foreground">Wydatki wg kategorii</p>
-                  </div>
-                  <div className="divide-y divide-border">
-                    {budgetSummary.categories.map((row) => {
-                      const pct = row.share;
-                      const catKey = row.id || "__none__";
-                      const isExpanded = budgetExpandedCat === catKey;
-                      // Same rows summarizeExpenses counted: the whole expense category (refunds net out);
-                      // "Bez kategorii" = negative amounts only.
-                      const catTxs = transactions.filter((t) =>
-                        row.id ? t.category_id === row.id : !t.category_id && (t.amount || 0) < 0
-                      );
-                      return (
-                        <div key={catKey}>
-                          <button
-                            onClick={() => setBudgetExpandedCat(isExpanded ? null : catKey)}
-                            className="w-full px-4 py-3 text-left hover:bg-muted/30 transition-colors"
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">{isExpanded ? "▾" : "▸"}</span>
-                                <span className="text-sm font-medium text-foreground">{row.name}</span>
-                                <span className="text-xs text-muted-foreground">({row.count} trans.)</span>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="text-xs text-muted-foreground">{pct.toFixed(1)}%</span>
-                                <span className="text-sm font-bold text-red-600">−{formatAmount(row.amount)}</span>
-                              </div>
-                            </div>
-                            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                              <div className="h-full rounded-full bg-red-400" style={{ width: `${pct}%` }} />
-                            </div>
-                          </button>
-
-                          {isExpanded && (() => {
-                            // Group by merchant
-                            const merchantMap = new Map<string, { label: string; txs: typeof catTxs; total: number }>();
-                            for (const tx of catTxs) {
-                              const label = tx.merchant || extractMerchant(tx.description);
-                              const key = label.trim().toUpperCase().split(/[\s/\-_]+/)[0];
-                              const existing = merchantMap.get(key) || { label, txs: [], total: 0 };
-                              existing.txs.push(tx);
-                              existing.total -= Number(tx.amount); // net: refunds reduce the merchant
-                              merchantMap.set(key, existing);
-                            }
-                            const merchants = Array.from(merchantMap.entries()).sort((a, b) => b[1].total - a[1].total);
-
-                            return (
-                              <div className="border-t border-border divide-y divide-border bg-muted/10">
-                                {merchants.map(([mKey, { label, txs, total }]) => {
-                                  const expandKey = `${catKey}::${mKey}`;
-                                  const isMerchantExpanded = budgetExpandedMerchants.has(expandKey);
-                                  return (
-                                    <div key={mKey}>
-                                      <button
-                                        onClick={() => setBudgetExpandedMerchants((prev) => {
-                                          const next = new Set(prev);
-                                          next.has(expandKey) ? next.delete(expandKey) : next.add(expandKey);
-                                          return next;
-                                        })}
-                                        className="w-full flex items-center justify-between px-6 py-2 hover:bg-muted/40 transition-colors"
-                                      >
-                                        <div className="flex items-center gap-2 text-sm">
-                                          <span className="text-muted-foreground">{isMerchantExpanded ? "▾" : "▸"}</span>
-                                          <span className="font-medium text-foreground">{label.split(/\s+/).slice(0, 4).join(" ")}</span>
-                                          <span className="text-xs text-muted-foreground">({txs.length} trans.)</span>
-                                        </div>
-                                        <span className={`text-sm font-semibold ${total >= 0 ? "text-red-600" : "text-emerald-600"}`}>
-                                          {total >= 0 ? "−" : "+"}{formatAmount(Math.abs(total))}
-                                        </span>
-                                      </button>
-
-                                      {isMerchantExpanded && (() => {
-                                        const sorted = [...txs].sort((a, b) => {
-                                          let cmp = 0;
-                                          if (budgetSortCol === "date") cmp = a.date.localeCompare(b.date);
-                                          else if (budgetSortCol === "amount") cmp = Math.abs(a.amount) - Math.abs(b.amount);
-                                          else cmp = a.description.localeCompare(b.description);
-                                          return budgetSortDir === "asc" ? cmp : -cmp;
-                                        });
-                                        const page = budgetMerchantPage[expandKey] || 0;
-                                        const totalPg = Math.ceil(sorted.length / BUDGET_TX_PAGE_SIZE);
-                                        const pageTxs = sorted.slice(page * BUDGET_TX_PAGE_SIZE, (page + 1) * BUDGET_TX_PAGE_SIZE);
-                                        const toggleSort = (col: typeof budgetSortCol) => {
-                                          if (budgetSortCol === col) setBudgetSortDir((d) => d === "asc" ? "desc" : "asc");
-                                          else { setBudgetSortCol(col); setBudgetSortDir("desc"); }
-                                        };
-                                        const sortIcon = (col: typeof budgetSortCol) =>
-                                          budgetSortCol === col ? (budgetSortDir === "asc" ? " ↑" : " ↓") : " ↕";
-                                        return (
-                                          <div className="overflow-x-auto bg-white">
-                                            <table className="w-full text-sm">
-                                              <thead>
-                                                <tr className="border-b border-border bg-muted/30">
-                                                  <th onClick={() => toggleSort("date")} className="cursor-pointer px-4 py-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground">Data{sortIcon("date")}</th>
-                                                  <th onClick={() => toggleSort("description")} className="cursor-pointer px-4 py-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground">Opis{sortIcon("description")}</th>
-                                                  <th className="px-4 py-1.5 text-left text-xs font-medium text-muted-foreground">Kategoria</th>
-                                                  <th className="px-4 py-1.5 text-left text-xs font-medium text-muted-foreground">Tag</th>
-                                                  <th onClick={() => toggleSort("amount")} className="cursor-pointer px-4 py-1.5 text-right text-xs font-medium text-muted-foreground hover:text-foreground">Kwota{sortIcon("amount")}</th>
-                                                  <th className="px-2 py-1.5" />
-                                                </tr>
-                                              </thead>
-                                              <tbody className="divide-y divide-border">
-                                                {pageTxs.map((tx) => (
-                                                  <tr key={tx.id} className="hover:bg-muted/20">
-                                                    <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{formatDate(tx.date)}</td>
-                                                    <td className="px-4 py-2 max-w-[200px]">
-                                                      <p className="break-words text-xs text-foreground">{tx.description}</p>
-                                                      {histNotes[tx.id] && (
-                                                        <p className="mt-0.5 text-xs text-blue-700">🕵️ {histNotes[tx.id]}</p>
-                                                      )}
-                                                      <input
-                                                        type="text"
-                                                        placeholder="Notatka..."
-                                                        value={histUserNotes[tx.id] ?? (tx.notes || "")}
-                                                        onChange={(e) => setHistUserNotes((prev) => ({ ...prev, [tx.id]: e.target.value }))}
-                                                        onBlur={(e) => { if (e.target.value !== (tx.notes || "")) updateNotes(tx.id, e.target.value); }}
-                                                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                                                        className="mt-1 w-full rounded border border-border bg-background px-1.5 py-0.5 text-xs text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                                      />
-                                                    </td>
-                                                    <td className="px-4 py-2">
-                                                      <select
-                                                        value={tx.category_id || ""}
-                                                        onChange={(e) => updateCategoryAndSubcategory(tx.id, e.target.value, null)}
-                                                        className="rounded-lg border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                                      >
-                                                        <option value="">— bez kategorii —</option>
-                                                        <optgroup label="Wydatki">
-                                                          {expenseCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                                        </optgroup>
-                                                        <optgroup label="Przychody">
-                                                          {incomeCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                                        </optgroup>
-                                                        <optgroup label="Przelewy własne">
-                                                          {transferCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                                        </optgroup>
-                                                        <optgroup label="Przelewy własne">
-                                                          {transferCategories.map((c) => (
-                                                            <option key={c.id} value={c.id}>{c.name}</option>
-                                                          ))}
-                                                        </optgroup>
-                                                      </select>
-                                                    </td>
-                                                    <td className="px-4 py-2">
-                                                      <input
-                                                        type="text"
-                                                        list={`bud-tags-${tx.id}`}
-                                                        value={histTagValues[tx.id] ?? (tx.tag || "")}
-                                                        onChange={(e) => setHistTagValues((prev) => ({ ...prev, [tx.id]: e.target.value }))}
-                                                        onBlur={(e) => { if (e.target.value !== (tx.tag || "")) updateTag(tx.id, e.target.value); }}
-                                                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                                                        placeholder="Tag..."
-                                                        className="w-24 rounded-lg border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                                      />
-                                                      <datalist id={`bud-tags-${tx.id}`}>
-                                                        {tags.map((t) => <option key={t.id} value={t.name} />)}
-                                                      </datalist>
-                                                    </td>
-                                                    <td className="whitespace-nowrap px-4 py-2 text-right text-xs font-medium text-red-600">
-                                                      {formatAmount(tx.amount)}
-                                                    </td>
-                                                    <td className="px-2 py-2">
-                                                      <button
-                                                        onClick={() => handleSmartAnalyzeHistory(tx)}
-                                                        disabled={smartAnalyzing[tx.id]}
-                                                        title="Zbadaj: Gmail + web search"
-                                                        className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700 hover:bg-blue-100 disabled:opacity-40"
-                                                      >
-                                                        {smartAnalyzing[tx.id] ? "⏳" : "🕵️"}
-                                                      </button>
-                                                    </td>
-                                                  </tr>
-                                                ))}
-                                              </tbody>
-                                            </table>
-                                            {totalPg > 1 && (
-                                              <div className="flex items-center justify-center gap-2 border-t border-border px-4 py-2">
-                                                <button
-                                                  onClick={() => setBudgetMerchantPage((p) => ({ ...p, [expandKey]: Math.max(0, (p[expandKey] || 0) - 1) }))}
-                                                  disabled={page === 0}
-                                                  className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-40"
-                                                >← Poprzednia</button>
-                                                <span className="text-xs text-muted-foreground">{page + 1} / {totalPg}</span>
-                                                <button
-                                                  onClick={() => setBudgetMerchantPage((p) => ({ ...p, [expandKey]: Math.min(totalPg - 1, (p[expandKey] || 0) + 1) }))}
-                                                  disabled={page >= totalPg - 1}
-                                                  className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-40"
-                                                >Następna →</button>
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })()}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
             )}
           </div>
         )}
