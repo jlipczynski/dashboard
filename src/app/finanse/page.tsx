@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useSession, signIn, SessionProvider } from "next-auth/react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { FinanseNav, tabFromQuery, navKeyForTab, type FinanseTab } from "@/components/finanse/FinanseNav";
-import { FinPageHeader } from "@/components/finanse/ui";
+import { FinBadge, FinButton, FinPageHeader, FinPill } from "@/components/finanse/ui";
+import { PiggyBank } from "lucide-react";
 import { sortTransactions, defaultSortDir, type HistSortCol, type SortDir } from "@/lib/finanse-sort";
 import {
   similarSelection,
@@ -24,6 +25,7 @@ type Category = {
   id: string;
   name: string;
   type: "expense" | "income" | "transfer";
+  color?: string | null;
 };
 
 type Subcategory = {
@@ -235,6 +237,9 @@ function FinansePageInner() {
   // /finanse?tab=historia&month=YYYY-MM&highlight=<id> (from the dashboard drill-down): open that month,
   // scroll to the transaction and highlight it. Nothing else in Historia changes.
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  // Brief 13: Transakcje — read-only rows, ONE row opened for editing at a time; own transfers hidden by default.
+  const [histExpanded, setHistExpanded] = useState<string | null>(null);
+  const [hideTransfers, setHideTransfers] = useState(true);
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const id = q.get("highlight");
@@ -346,6 +351,9 @@ function FinansePageInner() {
 
   useEffect(() => {
     if (!highlightId || tab !== "historia" || loadingTx) return;
+    const tx = transactions.find((t) => t.id === highlightId);
+    if (tx?.finance_categories?.type === "transfer") setHideTransfers(false);
+    if (tx) setHistExpanded(highlightId);
     const el = document.getElementById(`tx-${highlightId}`);
     if (el) el.scrollIntoView({ block: "center" });
   }, [highlightId, tab, loadingTx, transactions]);
@@ -1316,6 +1324,10 @@ function FinansePageInner() {
     () => sortTransactions(transactions, histSortCol, histSortDir),
     [transactions, histSortCol, histSortDir]
   );
+  const isOwnTransfer = (t: SavedTransaction) => t.finance_categories?.type === "transfer";
+  const hiddenTransfers = histFilter !== "trash" && hideTransfers ? sortedHistTransactions.filter(isOwnTransfer).length : 0;
+  const visibleHistTransactions = hiddenTransfers > 0 ? sortedHistTransactions.filter((t) => !isOwnTransfer(t)) : sortedHistTransactions;
+  const catColor = useMemo(() => new Map(categories.map((c) => [c.id, c.color ?? null])), [categories]);
 
 
   return (
@@ -1776,40 +1788,34 @@ function FinansePageInner() {
         {/* ── HISTORIA TAB ──────────────────────────── */}
         {tab === "historia" && (
           <div className="mt-6">
-            {/* Controls */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex rounded-lg border border-border overflow-hidden text-sm">
-                <button
-                  onClick={() => setHistFilter("all")}
-                  className={`px-3 py-2 transition-colors ${histFilter === "all" ? "bg-emerald-600 text-white font-medium" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                >
-                  Wszystkie
-                </button>
-                <button
-                  onClick={() => setHistFilter("uncategorized")}
-                  className={`px-3 py-2 border-l border-border transition-colors ${histFilter === "uncategorized" ? "bg-amber-500 text-white font-medium" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                >
-                  Do kategoryzacji
-                  {histFilter === "all" && transactions.filter(t => !t.category_id).length > 0 && (
-                    <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
-                      {transactions.filter(t => !t.category_id).length}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setHistFilter("trash")}
-                  className={`px-3 py-2 border-l border-border transition-colors ${histFilter === "trash" ? "bg-slate-600 text-white font-medium" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                >
-                  🗑 Kosz ({trashCount})
-                </button>
-              </div>
+            {/* Controls: filter, month, own transfers — one row */}
+            <div className="flex flex-wrap items-center gap-2">
+              <FinPill active={histFilter === "all"} onClick={() => setHistFilter("all")}>
+                Wszystkie
+              </FinPill>
+              <FinPill active={histFilter === "uncategorized"} onClick={() => setHistFilter("uncategorized")}>
+                Do kategoryzacji
+                {histFilter === "all" && transactions.filter((t) => !t.category_id).length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-xs font-medium text-amber-700">{transactions.filter((t) => !t.category_id).length}</span>
+                )}
+              </FinPill>
+              <FinPill active={histFilter === "trash"} onClick={() => setHistFilter("trash")}>
+                Kosz ({trashCount})
+              </FinPill>
               {histFilter === "all" && (
                 <input
                   type="month"
                   value={histMonth}
                   onChange={(e) => setHistMonth(e.target.value)}
-                  className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  aria-label="Miesiąc"
+                  className="h-9 rounded-full border border-border bg-card px-3 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
+              )}
+              {histFilter !== "trash" && (
+                <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-card px-3 text-sm text-muted-foreground">
+                  <input type="checkbox" checked={hideTransfers} onChange={(e) => setHideTransfers(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
+                  Ukryj przelewy własne{hiddenTransfers > 0 ? ` (${hiddenTransfers})` : ""}
+                </label>
               )}
             </div>
 
@@ -1848,9 +1854,11 @@ function FinansePageInner() {
                   <thead>
                     <tr className="border-b border-border bg-muted/50">
                       <th onClick={() => toggleHistSort("date")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Data{histSortIcon("date")}</th>
-                      <th onClick={() => toggleHistSort("name")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Opis{histSortIcon("name")}</th>
+                      <th onClick={() => toggleHistSort("name")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">{histFilter === "trash" ? "Opis" : "Odbiorca"}{histSortIcon("name")}</th>
                       <th onClick={() => toggleHistSort("category")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Kategoria{histSortIcon("category")}</th>
-                      <th onClick={() => toggleHistSort("tag")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Tag{histSortIcon("tag")}</th>
+                      {histFilter === "trash" && (
+                        <th onClick={() => toggleHistSort("tag")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Tag{histSortIcon("tag")}</th>
+                      )}
                       <th onClick={() => toggleHistSort("amount")} className="cursor-pointer px-3 py-2 text-right font-medium text-muted-foreground hover:text-foreground">Kwota{histSortIcon("amount")}</th>
                       {histFilter === "trash" && (
                         <th onClick={() => toggleHistSort("deleted")} className="cursor-pointer px-3 py-2 text-left font-medium text-muted-foreground hover:text-foreground">Usunięto{histSortIcon("deleted")}</th>
@@ -1897,38 +1905,80 @@ function FinansePageInner() {
                           </button>
                         </td>
                       </tr>
-                    )) : sortedHistTransactions.map((tx) => (
+                    )) : visibleHistTransactions.map((tx) => {
+                      const isOpen = histExpanded === tx.id;
+                      const isTransfer = isOwnTransfer(tx);
+                      const payee = tx.merchant || tx.counterparty || tx.description;
+                      const color = tx.category_id ? catColor.get(tx.category_id) ?? null : null;
+                      const toggle = () => setHistExpanded(isOpen ? null : tx.id);
+                      return (
                       <React.Fragment key={tx.id}>
                       <tr
                         id={`tx-${tx.id}`}
-                        className={tx.id === highlightId ? "bg-amber-50 outline outline-2 -outline-offset-2 outline-amber-400" : "hover:bg-muted/30"}
+                        tabIndex={0}
+                        aria-expanded={isOpen}
+                        onClick={toggle}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggle();
+                          }
+                        }}
+                        className={`cursor-pointer ${
+                          tx.id === highlightId ? "bg-amber-50 outline outline-2 -outline-offset-2 outline-amber-400" : isOpen ? "bg-emerald-50/40" : "hover:bg-muted/30"
+                        }`}
                       >
-                        <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                          {formatDate(tx.date)}
-                        </td>
-                        <td className="px-3 py-2 max-w-[320px]">
-                          <p className="break-words text-foreground">
-                            {tx.description}
+                        <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">{formatDate(tx.date)}</td>
+                        <td className="w-full max-w-0 px-3 py-2">
+                          <p className="truncate text-foreground" title={payee}>
+                            {payee}
                           </p>
-                          {tx.counterparty && (
-                            <p className="text-xs text-muted-foreground break-words">{tx.counterparty}</p>
-                          )}
-                          {histNotes[tx.id] && (
-                            <p className="mt-0.5 text-xs text-blue-700 break-words" title={histNotes[tx.id]}>
-                              🕵️ {histNotes[tx.id]}
-                            </p>
-                          )}
-                          <input
-                            type="text"
-                            placeholder="Dodaj notatkę..."
-                            value={histUserNotes[tx.id] ?? (tx.notes || "")}
-                            onChange={(e) => setHistUserNotes((prev) => ({ ...prev, [tx.id]: e.target.value }))}
-                            onBlur={(e) => { if (e.target.value !== (tx.notes || "")) updateNotes(tx.id, e.target.value); }}
-                            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                            className="mt-1 w-full rounded border border-border bg-background px-1.5 py-0.5 text-xs text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          />
                         </td>
                         <td className="px-3 py-2">
+                          {tx.finance_categories ? (
+                            <FinBadge
+                              className="max-w-[12rem] overflow-hidden text-ellipsis text-foreground sm:max-w-[16rem]"
+                              style={{ backgroundColor: color ? `${color}26` : "#F1EFEC" }}
+                              title={`${tx.finance_categories.name}${tx.finance_subcategories?.name ? ` / ${tx.finance_subcategories.name}` : ""}`}
+                            >
+                              {tx.finance_categories.name}
+                              {tx.finance_subcategories?.name ? ` / ${tx.finance_subcategories.name}` : ""}
+                            </FinBadge>
+                          ) : (
+                            <FinBadge className="bg-amber-50 text-amber-800">bez kategorii</FinBadge>
+                          )}
+                        </td>
+                        <td
+                          className={`whitespace-nowrap px-3 py-2 text-right font-mono tabular-nums ${
+                            isTransfer ? "text-slate-500" : tx.amount > 0 ? "text-emerald-700" : "text-foreground"
+                          }`}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            {isTransfer && <PiggyBank className="h-3.5 w-3.5" aria-label="przelew własny / na cel" />}
+                            {tx.amount > 0 ? "+" : ""}
+                            {formatAmount(tx.amount)}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-xs text-muted-foreground" aria-hidden="true">
+                          {isOpen ? "▴" : "▾"}
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr className="bg-muted/20">
+                          <td colSpan={5} className="px-3 py-3">
+                            <div className="flex flex-col gap-3">
+                              <div>
+                                <p className="break-words text-sm text-foreground">{tx.description}</p>
+                                {tx.counterparty && <p className="break-words text-xs text-muted-foreground">{tx.counterparty}</p>}
+                                {histNotes[tx.id] && (
+                                  <p className="mt-0.5 break-words text-xs text-blue-700" title={histNotes[tx.id]}>
+                                    🕵️ {histNotes[tx.id]}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                  <p className="mb-1 text-xs font-semibold text-muted-foreground">Kategoria</p>
                           {(() => {
                             const effectiveCategoryId = pendingCategories[tx.id] ?? tx.category_id ?? "";
                             const effectiveSubcategoryId = pendingSubcategories[tx.id] ?? tx.subcategory_id ?? "";
@@ -2022,8 +2072,22 @@ function FinansePageInner() {
                               </>
                             );
                           })()}
-                        </td>
-                        <td className="px-3 py-2">
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                  <label className="text-xs font-semibold text-muted-foreground">
+                                    Notatka
+                                    <input
+                                      type="text"
+                                      placeholder="Dodaj notatkę..."
+                                      value={histUserNotes[tx.id] ?? (tx.notes || "")}
+                                      onChange={(e) => setHistUserNotes((prev) => ({ ...prev, [tx.id]: e.target.value }))}
+                                      onBlur={(e) => { if (e.target.value !== (tx.notes || "")) updateNotes(tx.id, e.target.value); }}
+                                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                      className="mt-1 h-9 w-full rounded-lg border border-border bg-background px-2 text-sm font-normal text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                    />
+                                  </label>
+                                  <label className="text-xs font-semibold text-muted-foreground">
+                                    Tag
                           <input
                             type="text"
                             list={`hist-tags-${tx.id}`}
@@ -2042,43 +2106,35 @@ function FinansePageInner() {
                               <option key={t.id} value={t.name} />
                             ))}
                           </datalist>
-                        </td>
-                        <td className={`whitespace-nowrap px-3 py-2 text-right font-medium ${
-                          tx.amount < 0 ? "text-red-600" : "text-emerald-600"
-                        }`}>
-                          {formatAmount(tx.amount)}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center gap-1.5">
-                            {histFilter === "uncategorized" && tx.category_id && (
-                              <button
-                                onClick={() => setTransactions((prev) => prev.filter((t) => t.id !== tx.id))}
-                                title="Gotowe — usuń z listy"
-                                className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
-                              >
-                                ✓
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleSmartAnalyzeHistory(tx)}
-                              disabled={smartAnalyzing[tx.id]}
-                              title="Zbadaj szczegółowo: szuka w Gmail po kwocie + web search"
-                              className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-40"
-                            >
-                              {smartAnalyzing[tx.id] ? "⏳" : "🕵️"}
-                            </button>
-                            <button
-                              onClick={() => deleteTransaction(tx.id)}
-                              className="text-xs text-muted-foreground hover:text-red-600"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                                  </label>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {histFilter === "uncategorized" && tx.category_id && (
+                                  <FinButton size="sm" variant="secondary" onClick={() => setTransactions((prev) => prev.filter((t) => t.id !== tx.id))}>
+                                    ✓ Gotowe
+                                  </FinButton>
+                                )}
+                                <FinButton
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleSmartAnalyzeHistory(tx)}
+                                  disabled={smartAnalyzing[tx.id]}
+                                  title="Zbadaj szczegółowo: szuka w Gmail po kwocie + web search"
+                                >
+                                  {smartAnalyzing[tx.id] ? "⏳ Szukam…" : "🕵️ Zbadaj"}
+                                </FinButton>
+                                <FinButton size="sm" variant="danger" onClick={() => deleteTransaction(tx.id)}>
+                                  Do kosza
+                                </FinButton>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                       {histSimilar?.sourceKey === tx.id && (
                         <tr className="bg-blue-50/50">
-                          <td colSpan={6} className="px-4 py-2">
+                          <td colSpan={5} className="px-4 py-2">
                             {renderSimilarPanel(
                               histSimilar,
                               setHistSimilar,
@@ -2099,7 +2155,8 @@ function FinansePageInner() {
                         </tr>
                       )}
                       </React.Fragment>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
