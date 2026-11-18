@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
 import { CategoryIcon } from "@/components/finanse/CategoryIcon";
 import { FinanseNav } from "@/components/finanse/FinanseNav";
+import { FinBadge, FinCategoryTile, FinPill, FinStatTile } from "@/components/finanse/ui";
 import {
   PRESETS,
   presetRange,
@@ -89,6 +90,27 @@ const KIND_META = {
 const shortDate = (s: string) => `${Number(s.slice(8, 10))}.${s.slice(5, 7)}`;
 const pct = (v: number) => `${v.toFixed(1).replace(".", ",")}%`;
 
+/** Columns of the category grid: grid-cols-1 · sm:grid-cols-2 (≥ 640 px) · xl:grid-cols-3 (≥ 1280 px). */
+function useGridColumns(): number {
+  const [cols, setCols] = useState(1);
+  useEffect(() => {
+    const sm = window.matchMedia("(min-width: 640px)");
+    const xl = window.matchMedia("(min-width: 1280px)");
+    const update = () => setCols(xl.matches ? 3 : sm.matches ? 2 : 1);
+    update();
+    sm.addEventListener("change", update);
+    xl.addEventListener("change", update);
+    return () => {
+      sm.removeEventListener("change", update);
+      xl.removeEventListener("change", update);
+    };
+  }, []);
+  return cols;
+}
+
+/** Amount above a day bar: no "zł"; ≥ 1 000 as "1,2k". */
+const dayLabel = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace(".", ",")}k` : String(Math.round(v)));
+
 export default function FinanseDashboardPage() {
   const [period, setPeriod] = useState<Period | null>(null);
   const [data, setData] = useState<Dash | null>(null);
@@ -143,6 +165,13 @@ export default function FinanseDashboardPage() {
   const cats = data?.categories ?? [];
   const max = cats[0]?.amount ?? 0;
   const openCat = cats.find((c) => (c.id ?? "__none__") === open) ?? null;
+  const cols = useGridColumns();
+  const openIndex = cats.findIndex((c) => (c.id ?? "__none__") === open);
+  const openRowEnd = openIndex < 0 ? -1 : Math.min(cats.length - 1, Math.floor(openIndex / cols) * cols + cols - 1);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) panelRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [open]);
   const kindTotal = data ? data.kinds.fixed + data.kinds.essential + data.kinds.discretionary + data.kinds.unassigned : 0;
   const maxDay = Math.max(1, ...(data?.last7 ?? []).map((d) => d.amount));
 
@@ -189,17 +218,9 @@ export default function FinanseDashboardPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {PRESETS.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => choose(p.id)}
-                className={`rounded-full border px-4 py-2 text-sm transition-colors ${
-                  period?.preset === p.id
-                    ? "border-emerald-700 bg-emerald-700 font-semibold text-white"
-                    : "border-border bg-card text-muted-foreground hover:text-foreground"
-                }`}
-              >
+              <FinPill key={p.id} active={period?.preset === p.id} onClick={() => choose(p.id)}>
                 {p.label}
-              </button>
+              </FinPill>
             ))}
           </div>
         </div>
@@ -230,12 +251,12 @@ export default function FinanseDashboardPage() {
         {/* WIG scoreboard */}
         <section aria-label="WIG wydatków" className="mt-6 grid gap-6 rounded-3xl bg-[#1F3A2C] p-6 text-[#F4F1EC] sm:p-7 md:grid-cols-3">
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">
-              Koszty życia · ten miesiąc
+            <p className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#A9C9B5]">
+              <span>Koszty życia · ten miesiąc</span>
               {wig && (
-                <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] normal-case tracking-normal ${wig.goal.status === "approved" ? "bg-[#8FD1A8] text-[#1F3A2C]" : "bg-[#F0C99A] text-[#1F3A2C]"}`}>
+                <FinBadge className={`normal-case tracking-normal ${wig.goal.status === "approved" ? "bg-[#8FD1A8] text-[#1F3A2C]" : "bg-[#F0C99A] text-[#1F3A2C]"}`}>
                   limit {wig.goal.status === "approved" ? "zatwierdzony" : "do zatwierdzenia"}
-                </span>
+                </FinBadge>
               )}
             </p>
             {wig ? (
@@ -326,14 +347,24 @@ export default function FinanseDashboardPage() {
         </section>
 
         {/* KPI tiles */}
-        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Tile label="Koszty życia" value={data ? formatZl(data.total) : "—"} note={data ? `netto po zwrotach · w tym jednorazowe ${formatZl(data.oneOff)}` : ""} />
-          <Tile label="Odłożone na cele" value={data ? formatZl(data.savingsNet) : "—"} note="przelewy własne netto" valueClass="text-blue-700" />
-          <Tile label="Przychody na konto" value={data ? formatZl(data.income) : "—"} note="plantacja, najem, spółka" valueClass="text-emerald-700" />
-          <Tile
+        <div className="mt-4 grid auto-rows-fr grid-cols-2 gap-3 lg:grid-cols-4">
+          <FinStatTile label="Koszty życia" value={data ? formatZl(data.total) : "—"} note={data ? `netto po zwrotach, w tym jednorazowe ${formatZl(data.oneOff)}` : ""} />
+          <FinStatTile label="Odłożone na cele" value={data ? formatZl(data.savingsNet) : "—"} note="przelewy własne netto" valueClass="text-blue-700" />
+          <FinStatTile label="Przychody na konto" value={data ? formatZl(data.income) : "—"} note="plantacja, najem, spółka" valueClass="text-emerald-700" />
+          <FinStatTile
             label="Liczba wolności"
             value={freedom !== null ? formatZl(freedom) : "—"}
-            note={freedom !== null ? "koszty bez jednorazowych × 12 ÷ 4% · −1 000 zł/mies. = −300 tys. zł" : "wybierz pełny miesiąc"}
+            note={
+              freedom !== null ? (
+                <>
+                  koszty bez jednorazowych × 12 ÷ 4%
+                  <br />
+                  −1 000 zł/mies. = −300 tys. zł
+                </>
+              ) : (
+                "wybierz pełny miesiąc"
+              )
+            }
             href="/finanse/wolnosc"
             cta="Otwórz symulator →"
           />
@@ -357,38 +388,24 @@ export default function FinanseDashboardPage() {
               <p className="mt-4 text-sm text-muted-foreground">Brak wydatków w tym okresie.</p>
             ) : (
               <div className={`mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 ${loading ? "opacity-60" : ""}`}>
-                {cats.map((c) => {
+                {cats.map((c, idx) => {
                   const key = c.id ?? "__none__";
                   const isOpen = open === key;
                   return (
-                    <button
-                      key={key}
-                      onClick={() => setOpen(isOpen ? null : key)}
-                      aria-expanded={isOpen}
-                      className={`flex flex-col gap-2.5 rounded-2xl border p-4 text-left transition-colors ${
-                        isOpen ? "border-emerald-600 bg-emerald-50/40" : "border-border hover:border-stone-300"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <CategoryIcon icon={c.icon} color={c.id ? c.color : "#9CA3AF"} />
-                        <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{c.name}</span>
-                        <span className="text-xs text-muted-foreground">{pct(c.share)}</span>
-                      </div>
-                      <span className="font-mono text-xl font-bold tabular-nums text-foreground">{formatZl(c.amount)}</span>
-                      <span className="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <span
-                          className="block h-full rounded-full"
-                          style={{ width: `${max > 0 ? Math.max(1, (c.amount / max) * 100) : 0}%`, backgroundColor: c.color || "#9CA3AF" }}
-                        />
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {openCat && (
-              <div className="mt-4 grid gap-6 rounded-2xl border border-border bg-background p-4 sm:grid-cols-2">
+                    <React.Fragment key={key}>
+                      <FinCategoryTile
+                        name={c.name}
+                        icon={<CategoryIcon icon={c.icon} color={c.id ? c.color : "#9CA3AF"} />}
+                        share={pct(c.share)}
+                        amount={formatZl(c.amount)}
+                        barPct={max > 0 ? Math.max(1, (c.amount / max) * 100) : 0}
+                        color={c.color || "#9CA3AF"}
+                        active={isOpen}
+                        onClick={() => setOpen(isOpen ? null : key)}
+                      />
+                      {/* The open category's panel: a full-width row right after the row of the clicked tile */}
+                      {openCat && idx === openRowEnd && (
+              <div ref={panelRef} className="col-span-full grid scroll-mt-4 gap-6 rounded-2xl border border-border bg-background p-4 sm:grid-cols-2">
                 <div>
                   <h3 className="text-sm font-bold text-foreground">{openCat.name} · podkategorie</h3>
                   <ul className="mt-2 divide-y divide-border">
@@ -446,6 +463,11 @@ export default function FinanseDashboardPage() {
                     })}
                   </ul>
                 </div>
+              </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             )}
 
@@ -519,12 +541,13 @@ export default function FinanseDashboardPage() {
               {data && (
                 <>
                   <div
-                    className="mt-4 grid h-36 grid-cols-7 items-end gap-2"
+                    className="mt-4 grid h-40 grid-cols-7 items-end gap-2"
                     role="img"
                     aria-label={`Wydatki dzienne: ${data.last7.map((d) => `${shortDate(d.date)} ${Math.round(d.amount)} zł`).join(", ")}`}
                   >
                     {data.last7.map((d, i) => (
                       <div key={d.date} className="flex h-full flex-col justify-end" title={`${shortDate(d.date)}: ${formatZl(d.amount)}`}>
+                        {d.amount > 0 && <span className="mb-0.5 text-center font-mono text-[10px] tabular-nums text-muted-foreground">{dayLabel(d.amount)}</span>}
                         <div
                           className="rounded-t-md"
                           style={{
@@ -559,10 +582,13 @@ export default function FinanseDashboardPage() {
                     (wig.big.length > 0 ? (
                       <Decision href="/finanse/przeglad?step=2" n={wig.big.length} text="dużych wydatków do omówienia" warn />
                     ) : (
-                      <p className="flex items-center gap-3 rounded-xl bg-muted p-3 text-sm text-muted-foreground">Duże wydatki omówione ✓</p>
+                      <p className="flex min-h-[52px] items-center gap-3 rounded-xl bg-muted px-3 text-sm text-muted-foreground">
+                        <span className="w-10 shrink-0 text-right font-mono text-lg font-bold">✓</span>
+                        <span className="leading-snug">Duże wydatki omówione</span>
+                      </p>
                     ))}
                   {data.expensesInIncomeCats.amount > 0 && (
-                    <Decision href="/finanse" n={Math.round(data.expensesInIncomeCats.amount)} text={`zł wydatków w kategoriach przychodowych (${data.expensesInIncomeCats.count})`} warn />
+                    <Decision href="/finanse?tab=historia" n={Math.round(data.expensesInIncomeCats.amount)} text={`zł wydatków w kategoriach przychodowych (${data.expensesInIncomeCats.count})`} warn />
                   )}
                 </div>
               )}
@@ -571,24 +597,6 @@ export default function FinanseDashboardPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function Tile({ label, value, note, valueClass = "text-foreground", href, cta }: { label: string; value: string; note: string; valueClass?: string; href?: string; cta?: string }) {
-  const body = (
-    <>
-      <p className="text-sm font-medium text-muted-foreground">{label}</p>
-      <p className={`font-mono text-2xl font-bold tabular-nums ${valueClass}`}>{value}</p>
-      <p className="text-xs text-muted-foreground">{note}</p>
-      {cta && <p className="mt-1 text-xs font-semibold text-emerald-700">{cta}</p>}
-    </>
-  );
-  return href ? (
-    <Link href={href} className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-emerald-600 sm:p-5">
-      {body}
-    </Link>
-  ) : (
-    <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 sm:p-5">{body}</div>
   );
 }
 
@@ -664,8 +672,8 @@ function LimitForm({ goal, onDone }: { goal: WigStatus["goal"]; onDone: () => vo
 
 function Decision({ href, n, text, warn }: { href: string; n: number; text: string; warn: boolean }) {
   return (
-    <Link href={href} className={`flex items-center gap-3 rounded-xl p-3 text-sm hover:opacity-90 ${warn ? "bg-amber-50" : "bg-muted"}`}>
-      <span className={`min-w-[2.5rem] font-mono text-lg font-bold tabular-nums ${warn ? "text-amber-800" : "text-muted-foreground"}`}>{n}</span>
+    <Link href={href} className={`flex min-h-[52px] items-center gap-3 rounded-xl px-3 text-sm hover:opacity-90 ${warn ? "bg-amber-50" : "bg-muted"}`}>
+      <span className={`w-10 shrink-0 text-right font-mono text-lg font-bold tabular-nums ${warn ? "text-amber-800" : "text-muted-foreground"}`}>{n}</span>
       <span className="leading-snug text-foreground">{text}</span>
     </Link>
   );
