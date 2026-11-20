@@ -137,7 +137,8 @@ export function freedom(p: FreedomParams): FreedomResult {
 
   const preserve = preserveWithdrawal(p.capital, r) + inc;
   const consume = consumeWithdrawal(p.capital, r, n, p.bequest) + inc;
-  const reqP = requiredCapitalPreserve(need, r);
+  // Preserve: the capital stays intact, so it must also be at least the amount to leave at the end.
+  const reqP = Math.max(requiredCapitalPreserve(need, r), Math.max(0, p.bequest));
   const reqC = requiredCapitalConsume(need, r, n, p.bequest);
   const reqChosen = p.strategy === "preserve" ? reqP : reqC;
 

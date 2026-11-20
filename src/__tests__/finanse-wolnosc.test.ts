@@ -201,3 +201,17 @@ describe("parameters and saved scenarios", () => {
     expect(validateScenario({ name: "x", params: { ...base, capital: "dużo" } }).ok).toBe(false);
   });
 });
+
+describe("preserve: required capital covers the amount to leave", () => {
+  it("is the larger of expenses ÷ rate and the bequest", () => {
+    const r = monthlyRate(0.03);
+    const small = { ...base, expenses: 3000, bequest: 2_000_000 }; // 3000 / r ≈ 1.22 mln < 2 mln
+    expect(freedom(small).requiredCapital.preserve).toBe(2_000_000);
+    expect(freedom(small).capitalGap).toBe(1_000_000);
+    const big = { ...base, expenses: 10_000, bequest: 2_000_000 }; // 10000 / r ≈ 4.05 mln > 2 mln
+    expect(freedom(big).requiredCapital.preserve).toBeCloseTo(10_000 / r, 6);
+    expect(freedom({ ...base, income: 20_000, bequest: 500_000 }).requiredCapital.preserve).toBe(500_000); // income covers expenses
+    expect(freedom({ ...base, realReturn: 0, bequest: 500_000 }).requiredCapital.preserve).toBe(Infinity);
+    expect(freedom({ ...base, bequest: 0 }).requiredCapital.preserve).toBeCloseTo(10_000 / r, 6); // unchanged without a bequest
+  });
+});

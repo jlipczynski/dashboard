@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/finanse/email-import",
-      "schedule": "0 2 * * *"
+      "schedule": "10 * * * *"
     }
   ]
 }
