@@ -132,9 +132,11 @@ export function LeadPlanRow({ lead, approved, reason, onSaved, onError, disabled
 /** Execution of one LEAD: value / confirmed zero / excused, with the source suggestion. */
 export function ResultRow({ lead, suggestion, closed, onSaved, onError }: { lead: LeadT; suggestion?: { value: number | null; evidence: string; complete: boolean } | null; closed: boolean; onSaved: () => void; onError: (m: string) => void }) {
   const cur = lead.result;
-  // Until Jan types, the field shows the saved value or else the (asynchronously loaded) source suggestion.
+  // Until Jan types, the field shows the saved value, or else the source value ONLY when the source is complete and
+  // verified. Incomplete / unverified sources (Garmin, partial calorie logging…) are shown as a hint, never pre-filled.
   const [typed, setActual] = useState<string | null>(null);
-  const actual = typed ?? (cur?.actual !== null && cur?.actual !== undefined ? String(cur.actual) : suggestion?.value !== null && suggestion?.value !== undefined ? String(suggestion.value) : "");
+  const trusted = !!suggestion && suggestion.complete && suggestion.value !== null;
+  const actual = typed ?? (cur?.actual !== null && cur?.actual !== undefined ? String(cur.actual) : trusted ? String(suggestion!.value) : "");
   const [evidence, setEvidence] = useState(cur?.evidence ?? "");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -147,7 +149,7 @@ export function ResultRow({ lead, suggestion, closed, onSaved, onError }: { lead
     if (closed && !reason.trim()) { onError(`„${lead.name}”: tydzień jest zamknięty — wpisz powód korekty.`); return; }
     setBusy(true);
     try {
-      await wigPost({ action: "save_result", leadId: lead.id, actual: status === "excused" ? null : a, status, evidence: status === "measured" && suggestion ? suggestion.evidence : evidence, sourceValue: suggestion?.value ?? null, reason: reason.trim() });
+      await wigPost({ action: "save_result", leadId: lead.id, actual: status === "excused" ? null : a, status, evidence: status === "measured" && suggestion ? suggestion.evidence : evidence || (suggestion && !suggestion.complete ? `źródło niepełne/niezweryfikowane: ${suggestion.evidence}` : ""), sourceValue: suggestion?.value ?? null, reason: reason.trim() });
       setReason("");
       onSaved();
     } catch (e) {
@@ -155,7 +157,7 @@ export function ResultRow({ lead, suggestion, closed, onSaved, onError }: { lead
     }
     setBusy(false);
   };
-  const fromSource = suggestion && suggestion.value !== null && a === suggestion.value && lead.source !== "manual";
+  const fromSource = trusted && a === suggestion!.value && lead.source !== "manual";
 
   return (
     <div className="rounded-xl border border-border bg-background p-3" data-testid="result-row">
@@ -169,7 +171,7 @@ export function ResultRow({ lead, suggestion, closed, onSaved, onError }: { lead
       </div>
       {suggestion && (
         <p className="mt-1 break-words text-xs text-muted-foreground">
-          Źródło: {suggestion.evidence}{suggestion.complete ? "" : " · niepełne — sprawdź"}
+          Źródło: {suggestion.evidence}{suggestion.complete ? "" : " · do sprawdzenia — nie wpisano automatycznie"}
         </p>
       )}
       {lead.tasks.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Zadanie: {lead.tasks.map((t) => `${t.task} — ${t.status === "done" ? "zrobione" : "niezrobione"}`).join(", ")}</p>}

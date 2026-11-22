@@ -18,9 +18,9 @@ export const SOURCE_LABEL: Record<LeadSource, string> = {
   calories_week: "Kalorie — suma tygodnia",
   reading_minutes: "Bookly — minuty czytania",
   audiobook_minutes: "Słuchanie — minuty",
-  garmin_strength: "Garmin — siłownia (treningi)",
-  garmin_cycling: "Garmin — rower (treningi)",
-  garmin_running: "Garmin — bieganie (treningi)",
+  garmin_strength: "Garmin — siłownia (do sprawdzenia)",
+  garmin_cycling: "Garmin — rower (do sprawdzenia)",
+  garmin_running: "Garmin — bieganie (do sprawdzenia)",
   task: "Zadanie w Weekly Plannerze",
 };
 export const DIRECTION_LABEL: Record<Direction, string> = { at_least: "co najmniej", at_most: "najwyżej (limit)", range: "w zakresie" };
@@ -152,3 +152,34 @@ export function weightProblems(leads: { area: string; weight: number }[], skippe
 }
 
 export const quarterOf = (iso: string) => `${iso.slice(0, 4)}-Q${Math.floor((Number(iso.slice(5, 7)) - 1) / 3) + 1}`;
+
+export type GarminState = { status: "loading" } | { status: "error"; message: string } | { status: "ok"; activities: { type: string; date: string }[] };
+const GARMIN_TYPES: Record<string, string[]> = {
+  garmin_running: ["running", "trail_running", "treadmill_running", "track_running", "ultra_running", "indoor_running"],
+  garmin_cycling: ["cycling", "road_cycling", "indoor_cycling", "mountain_biking", "virtual_ride", "gravel_cycling"],
+  garmin_strength: ["strength_training", "fitness_equipment", "indoor_cardio", "gym_and_fitness_equipment", "strength"],
+};
+/** /api/garmin returns at most this many recent activities. */
+export const GARMIN_LIST_LIMIT = 20;
+
+/**
+ * Garmin suggestion for one LEAD. The Garmin source is NOT verified, so it is never "complete": the number is only shown
+ * as a hint and never pre-filled or saved as "measured". When the data can't be trusted (error, empty list, list that
+ * doesn't reach back to the week start) the value is null — never a fake 0.
+ */
+export function garminSuggestion(state: GarminState, source: string, week: string): { value: number | null; evidence: string; complete: false } {
+  const types = GARMIN_TYPES[source];
+  if (!types) return { value: null, evidence: "nieznane źródło Garmin", complete: false };
+  if (state.status === "loading") return { value: null, evidence: "Garmin: wczytuję…", complete: false };
+  if (state.status === "error") return { value: null, evidence: `Garmin niedostępny (${state.message.slice(0, 60)}) — brak danych, wpisz ręcznie`, complete: false };
+  const list = state.activities.filter((a) => typeof a?.date === "string" && a.date.length >= 10);
+  if (list.length === 0) return { value: null, evidence: "Garmin nie zwrócił żadnych aktywności — nie da się potwierdzić, wpisz ręcznie", complete: false };
+  const oldest = list.reduce((m, a) => (a.date.slice(0, 10) < m ? a.date.slice(0, 10) : m), "9999-12-31");
+  if (list.length >= GARMIN_LIST_LIMIT && oldest > week) return { value: null, evidence: `Garmin: lista ${list.length} ostatnich aktywności nie obejmuje całego tygodnia (najstarsza ${oldest}) — wpisz ręcznie`, complete: false };
+  const end = addDaysIso(week, 6);
+  const n = list.filter((a) => {
+    const d = a.date.slice(0, 10), t = (a.type || "").toLowerCase();
+    return d >= week && d <= end && types.some((x) => t === x || t.includes(x));
+  }).length;
+  return { value: n, evidence: `Garmin podaje ${n} — źródło niezweryfikowane, sprawdź i wpisz sam`, complete: false };
+}

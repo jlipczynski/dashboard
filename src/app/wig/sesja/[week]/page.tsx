@@ -6,8 +6,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { TopNav } from "@/components/dashboard/top-nav";
 import { addDaysIso, formatDayMonthPl } from "@/lib/dates";
 import { AREAS, RELATION_SUBS, formatScore, weekAreaResult, weekRelationResult, type AreaKey } from "@/lib/wig-score";
-import { isMonday, leadKeyFrom, weekEnd, weightProblems } from "@/lib/wig-model";
-import { garminCount, wigGet, wigPost, ratingColor, type LeadT, type SourcesT, type WeekData } from "@/components/wig/client";
+import { garminSuggestion, isMonday, leadKeyFrom, weekEnd, weightProblems, type GarminState } from "@/lib/wig-model";
+import { wigGet, wigPost, ratingColor, type LeadT, type SourcesT, type WeekData } from "@/components/wig/client";
 import { LeadPlanRow, PROPOSALS, RelationReview, ResultRow, type Proposal } from "@/components/wig/LeadEditors";
 import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY, CHIP, Card, ErrorBanner, INPUT, LABEL, StatusPill, TEXTAREA, weekStatusLabel } from "@/components/wig/ui";
 
@@ -40,7 +40,7 @@ function WigSession() {
   const [plan, setPlan] = useState<WeekData | null>(null);
   const [review, setReview] = useState<WeekData | null>(null);
   const [sources, setSources] = useState<SourcesT>({});
-  const [garmin, setGarmin] = useState<{ type: string; date: string }[] | null>(null);
+  const [garmin, setGarmin] = useState<GarminState>({ status: "loading" });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -52,7 +52,13 @@ function WigSession() {
       if (r.row?.planStatus === "zatwierdzony") {
         wigGet<{ sources: SourcesT }>({ view: "sources", week: reviewWeek }).then((s) => setSources(s.sources)).catch(() => {});
         if (r.leads.some((l) => l.source.startsWith("garmin_"))) {
-          fetch("/api/garmin").then((x) => x.json()).then((d) => setGarmin(d.activities ?? [])).catch(() => setGarmin([]));
+          fetch("/api/garmin")
+            .then(async (x) => {
+              const d = await x.json().catch(() => ({}));
+              if (!x.ok || !Array.isArray(d.activities)) setGarmin({ status: "error", message: d.error || `HTTP ${x.status}` });
+              else setGarmin({ status: "ok", activities: d.activities });
+            })
+            .catch((e) => setGarmin({ status: "error", message: e.message || "brak połączenia" }));
         }
       }
     } catch (e) {
@@ -136,7 +142,7 @@ function NoPlan({ data }: { data: WeekData }) {
   );
 }
 
-function ReviewStep({ data, sources, garmin, onSaved, onError }: { data: WeekData; sources: SourcesT; garmin: { type: string; date: string }[] | null; onSaved: () => void; onError: (m: string) => void }) {
+function ReviewStep({ data, sources, garmin, onSaved, onError }: { data: WeekData; sources: SourcesT; garmin: GarminState; onSaved: () => void; onError: (m: string) => void }) {
   if (data.row?.planStatus !== "zatwierdzony") return <NoPlan data={data} />;
   const closed = !!data.row.closeStatus;
   const suggestion = (l: LeadT) => {
@@ -145,8 +151,7 @@ function ReviewStep({ data, sources, garmin, onSaved, onError }: { data: WeekDat
       return { value: done === null ? null : done ? 1 : 0, evidence: done === null ? "zadanie usunięte z Weekly Plannera" : `Weekly Planner: ${done ? "zrobione" : "niezrobione"}`, complete: done !== null };
     }
     if (l.source.startsWith("garmin_")) {
-      if (garmin === null) return { value: null, evidence: "Garmin: wczytuję…", complete: false };
-      return { value: garminCount(garmin, l.source, l.weekStart, weekEnd(l.weekStart)), evidence: "Garmin (ostatnie 20 aktywności, na żywo — sprawdź)", complete: false };
+      return garminSuggestion(garmin, l.source, l.weekStart);
     }
     return sources[l.source] ?? null;
   };

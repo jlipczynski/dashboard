@@ -42,19 +42,3 @@ export const wigPost = <T = { status: string },>(body: Record<string, unknown>) 
 
 export const ratingColor = (v: number | null) =>
   v === null ? "#9ca3af" : v >= 4.5 ? "#16a34a" : v >= 3.5 ? "#65a30d" : v >= 2.5 ? "#d97706" : "#dc2626";
-
-const garminTypes: Record<string, string[]> = {
-  garmin_running: ["running", "trail_running", "treadmill_running", "track_running", "ultra_running", "indoor_running"],
-  garmin_cycling: ["cycling", "road_cycling", "indoor_cycling", "mountain_biking", "virtual_ride", "gravel_cycling"],
-  garmin_strength: ["strength_training", "fitness_equipment", "indoor_cardio", "gym_and_fitness_equipment", "strength"],
-};
-/** Count Garmin activities of one kind in a week (suggestion only; the API returns the last 20). */
-export function garminCount(activities: { type: string; date: string }[], source: string, week: string, weekEndIso: string): number | null {
-  const types = garminTypes[source];
-  if (!types) return null;
-  return activities.filter((a) => {
-    const d = (a.date || "").slice(0, 10);
-    const t = (a.type || "").toLowerCase();
-    return d >= week && d <= weekEndIso && types.some((x) => t === x || t.includes(x));
-  }).length;
-}
