@@ -12,6 +12,7 @@ import { HealthWigCard } from "@/components/zdrowie/health-wig-card";
 import { Collapsible } from "@/components/zdrowie/collapsible";
 import { CALORIE_DAILY_LIMIT, type CalorieEntry } from "@/lib/calories";
 import type { RehabEntry } from "@/lib/rehab";
+import { addDaysIso, todayWarsaw } from "@/lib/dates";
 
 type GarminActivity = {
   id: number;
@@ -823,13 +824,11 @@ function MfpWidget({
   };
 
   // Build 7 days for the current offset (0 = this week, 1 = prev week, etc.)
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayWarsaw();
   const baseOffset = weekOffset * 7;
   const last7Days: { date: string; entry: NutritionEntry | null }[] = [];
   for (let i = 6 + baseOffset; i >= baseOffset; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split("T")[0];
+    const dateStr = addDaysIso(today, -i);
     last7Days.push({ date: dateStr, entry: entries.find((e) => e.date === dateStr) || null });
   }
   const periodStart = last7Days[0]?.date ?? "";

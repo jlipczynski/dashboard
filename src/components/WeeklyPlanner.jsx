@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer, CartesianGrid } from "recharts";
+import { addDaysIso, formatDayMonthPl, isoWeekNumber, todayWarsaw, weekStartIso } from "@/lib/dates";
 
 const PILLARS = {
   "Ovoc Malinovi": { color: "#DC2626", icon: "🫐", type: "praca" },
@@ -28,30 +29,13 @@ const SAMPLE_WIGS = [
   { id: "wig4", name: "Product X", project: "Ovoc Malinovi" },
 ];
 
-const getWeekDates = (date) => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(d.setDate(diff));
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  return { start: new Date(monday), end: sunday };
-};
+// Week = Monday "YYYY-MM-DD" in Europe/Warsaw (lib/dates — one source for the whole app).
+const currentWeekStart = () => weekStartIso(todayWarsaw());
 
-const formatDate = (d) => d.toLocaleDateString("pl-PL", { day: "numeric", month: "long" });
-const getWeekNumber = (d) => {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
-};
-
-const toDateStr = (d) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
+/** Error text from a failed API response (JSON { error } or the HTTP status). */
+const apiError = async (res) => {
+  const json = await res.json().catch(() => ({}));
+  return json.error || `HTTP ${res.status}`;
 };
 
 const mapFromDb = (rows) =>
@@ -70,7 +54,9 @@ const mapFromDb = (rows) =>
   }));
 
 export default function WeeklyPlanner() {
-  const [currentDate, setCurrentDate] = useState(new Date());
+  // null until mounted: the week depends on "today", so it is set in the browser only
+  // (rendering it on the server too caused the hydration mismatch).
+  const [weekStart, setWeekStart] = useState(null);
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -81,9 +67,11 @@ export default function WeeklyPlanner() {
   const [newGoal, setNewGoal] = useState({ goal: "", project: "Ovoc Malinovi", priority: "A" });
   const [error, setError] = useState(null);
 
-  const week = getWeekDates(currentDate);
-  const weekNum = getWeekNumber(week.start);
-  const weekStart = toDateStr(week.start);
+  useEffect(() => {
+    setWeekStart(currentWeekStart());
+  }, []);
+  const weekEnd = weekStart ? addDaysIso(weekStart, 6) : null;
+  const weekNum = weekStart ? isoWeekNumber(weekStart) : null;
 
   const fetchGoals = useCallback(async (ws) => {
     setLoading(true);
@@ -109,7 +97,7 @@ export default function WeeklyPlanner() {
   }, []);
 
   useEffect(() => {
-    fetchGoals(weekStart);
+    if (weekStart) fetchGoals(weekStart);
   }, [weekStart, fetchGoals]);
 
   const addGoal = async () => {
@@ -146,38 +134,53 @@ export default function WeeklyPlanner() {
     setShowAddGoal(false);
   };
 
+  // Optimistic change; when the save fails the change is undone and the reason is shown.
   const toggleGoal = async (id) => {
     const goal = goals.find((g) => g.id === id);
     if (!goal) return;
     const newStatus = goal.status === "done" ? "todo" : "done";
+    setError(null);
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, status: newStatus } : g)));
+    let message = null;
     try {
-      await fetch("/api/weekly/tasks", {
+      const res = await fetch("/api/weekly/tasks", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status: newStatus }),
       });
-    } catch { /* jak wczesniej: blad zapisu nie jest pokazywany */ }
+      if (!res.ok) message = await apiError(res);
+    } catch (e) {
+      message = e.message || "brak połączenia";
+    }
+    if (message) {
+      setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, status: goal.status } : g)));
+      setError(`Nie zapisano zmiany statusu „${goal.task}”: ${message}`);
+    }
   };
 
   const deleteGoal = async (id) => {
+    const goal = goals.find((g) => g.id === id);
+    if (!goal) return;
+    setError(null);
     setGoals((prev) => prev.filter((g) => g.id !== id));
+    let message = null;
     try {
-      await fetch(`/api/weekly/tasks?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-    } catch { /* jak wczesniej: blad usuniecia nie jest pokazywany */ }
+      const res = await fetch(`/api/weekly/tasks?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) message = await apiError(res);
+    } catch (e) {
+      message = e.message || "brak połączenia";
+    }
+    if (message) {
+      setGoals((prev) => (prev.some((g) => g.id === id) ? prev : [...prev, goal]));
+      setError(`Nie usunięto „${goal.task}”: ${message}`);
+    }
   };
 
   const navigateWeek = (dir) => {
-    const d = new Date(currentDate);
-    d.setDate(d.getDate() + dir * 7);
-    setCurrentDate(d);
+    if (weekStart) setWeekStart(addDaysIso(weekStart, dir * 7));
   };
 
-  const isCurrentWeek = () => {
-    const now = new Date();
-    const thisWeek = getWeekDates(now);
-    return week.start.getTime() === thisWeek.start.getTime();
-  };
+  const isCurrentWeek = () => weekStart === currentWeekStart();
 
   const filteredGoals = useMemo(() => {
     let t = [...goals];
@@ -212,10 +215,24 @@ export default function WeeklyPlanner() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #D4D4D4; border-radius: 2px; }
         input, select, textarea { font-family: inherit; }
+        @media (max-width: 640px) {
+          .wp-header { flex-direction: column; align-items: flex-start !important; gap: 14px; padding: 16px 16px 12px !important; }
+          .wp-stats { flex-wrap: wrap; gap: 8px !important; }
+          .wp-nav { flex-direction: column; align-items: stretch !important; gap: 12px; padding: 0 16px 12px !important; }
+          .wp-weeknav { justify-content: space-between; flex-wrap: wrap; }
+          .wp-weeklabel { min-width: 0 !important; flex: 1; }
+          .wp-chips { flex-wrap: nowrap !important; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+          .wp-progress { padding: 0 16px !important; }
+          .wp-main { flex-direction: column; padding: 0 16px 32px !important; gap: 20px !important; }
+          .wp-sidebar { width: 100% !important; }
+          .wp-row { flex-wrap: wrap; row-gap: 6px; gap: 10px !important; }
+          .wp-row-title { flex-basis: calc(100% - 64px) !important; }
+          .wp-row-actions { margin-left: 0 !important; flex-wrap: wrap; }
+        }
       `}</style>
 
       {/* HEADER */}
-      <div style={{ padding: "24px 36px 20px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+      <div className="wp-header" style={{ padding: "24px 36px 20px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <a href="/" style={{ width: 34, height: 34, borderRadius: 8, border: "1px solid #E5E5E5", background: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", cursor: "pointer" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#737373" strokeWidth="2.5" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -225,7 +242,7 @@ export default function WeeklyPlanner() {
             <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.8, color: "#171717" }}>Weekly Planner</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div className="wp-stats" style={{ display: "flex", gap: 12 }}>
           <StatPill label="Punkty" value={`${stats.done}/${stats.total}`} accent="#16A34A" />
           <StatPill label="WIG" value={`${stats.wigTasks}/${stats.taskCount}`} accent="#D97706" />
           <StatPill label="Done" value={`${stats.doneCount}/${stats.taskCount}`} accent="#2563EB" />
@@ -233,28 +250,28 @@ export default function WeeklyPlanner() {
       </div>
 
       {/* WEEK NAV */}
-      <div style={{ padding: "0 36px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={() => navigateWeek(-1)} style={navBtnStyle}>
+      <div className="wp-nav" style={{ padding: "0 36px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="wp-weeknav" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={() => navigateWeek(-1)} style={navBtnStyle} aria-label="Poprzedni tydzień">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#737373" strokeWidth="2.5" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
-          <div style={{ textAlign: "center", minWidth: 240 }}>
+          <div className="wp-weeklabel" style={{ textAlign: "center", minWidth: 240 }}>
             <div style={{ fontSize: 17, fontWeight: 600, color: "#171717" }}>
-              {formatDate(week.start)} — {formatDate(week.end)}
+              {weekStart ? `${formatDayMonthPl(weekStart)} — ${formatDayMonthPl(weekEnd)}` : "…"}
             </div>
             <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#A3A3A3", letterSpacing: 1, marginTop: 2 }}>
-              W{weekNum} · {week.start.getFullYear()}
+              {weekStart ? `W${weekNum} · ${weekStart.slice(0, 4)}` : "\u00A0"}
             </div>
           </div>
-          <button onClick={() => navigateWeek(1)} style={navBtnStyle}>
+          <button onClick={() => navigateWeek(1)} style={navBtnStyle} aria-label="Następny tydzień">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#737373" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
           </button>
-          {!isCurrentWeek() && (
-            <button onClick={() => setCurrentDate(new Date())} style={{ ...navBtnStyle, padding: "6px 14px", width: "auto", fontSize: 11, fontFamily: "'Space Mono', monospace", color: "#16A34A", borderColor: "#BBF7D0", background: "#F0FDF4" }}>{"Dziś"}</button>
+          {weekStart && !isCurrentWeek() && (
+            <button onClick={() => setWeekStart(currentWeekStart())} style={{ ...navBtnStyle, padding: "6px 14px", width: "auto", fontSize: 11, fontFamily: "'Space Mono', monospace", color: "#16A34A", borderColor: "#BBF7D0", background: "#F0FDF4" }}>{"Dziś"}</button>
           )}
         </div>
 
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        <div className="wp-chips" style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
           <FilterChip label="Wszystko" active={filter === "all"} onClick={() => setFilter("all")} color="#525252" />
           {Object.entries(PILLARS).map(([name, p]) => (
             <FilterChip key={name} label={`${p.icon} ${name}`} active={filter === name} onClick={() => setFilter(name)} color={p.color} />
@@ -263,18 +280,18 @@ export default function WeeklyPlanner() {
       </div>
 
       {/* PROGRESS BAR */}
-      <div style={{ padding: "0 36px", marginBottom: 20 }}>
+      <div className="wp-progress" style={{ padding: "0 36px", marginBottom: 20 }}>
         <div style={{ height: 3, background: "#EDEDED", borderRadius: 2, overflow: "hidden" }}>
           <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg, #16A34A, #4ADE80)", borderRadius: 2, transition: "width 0.5s ease" }} />
         </div>
       </div>
 
       {/* MAIN CONTENT */}
-      <div style={{ padding: "0 36px 40px", display: "flex", gap: 28 }}>
+      <div className="wp-main" style={{ padding: "0 36px 40px", display: "flex", gap: 28 }}>
         {/* TASK LIST */}
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           {error && (
-            <div style={{ padding: "14px 18px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
+            <div role="alert" style={{ position: "sticky", top: 8, zIndex: 5, padding: "14px 18px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#DC2626" }}>{error}</div>
               </div>
@@ -301,7 +318,7 @@ export default function WeeklyPlanner() {
                       <span style={{ fontSize: 11, color: "#C4C4C4", fontFamily: "'Space Mono', monospace" }}>{meta.pts} pkt</span>
                     </div>
                     {groupGoals.map((t) => (
-                      <TaskRow key={t.id} task={t} meta={meta} isFrog={t.priority === "A" && t.subPriority === 1} onToggle={() => toggleGoal(t.id)} expanded={expandedTask === t.id} onExpand={() => setExpandedTask(expandedTask === t.id ? null : t.id)} onDelete={() => deleteGoal(t.id)} onUpdate={(updated) => setGoals(prev => prev.map(g => g.id === updated.id ? { ...g, task: updated.task, project: updated.project, priority: updated.priority, points: updated.points } : g))} />
+                      <TaskRow key={t.id} onError={setError} task={t} meta={meta} isFrog={t.priority === "A" && t.subPriority === 1} onToggle={() => toggleGoal(t.id)} expanded={expandedTask === t.id} onExpand={() => setExpandedTask(expandedTask === t.id ? null : t.id)} onDelete={() => deleteGoal(t.id)} onUpdate={(updated) => setGoals(prev => prev.map(g => g.id === updated.id ? { ...g, task: updated.task, project: updated.project, priority: updated.priority, points: updated.points } : g))} />
                     ))}
                   </div>
                 );
@@ -340,7 +357,7 @@ export default function WeeklyPlanner() {
         </div>
 
         {/* SIDEBAR */}
-        <div style={{ width: 272, flexShrink: 0 }}>
+        <div className="wp-sidebar" style={{ width: 272, flexShrink: 0 }}>
           <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 24, border: "1px solid #E5E5E5", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
             <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 16 }}>W{weekNum} Score</div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
@@ -431,7 +448,7 @@ export default function WeeklyPlanner() {
   );
 }
 
-function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog, onUpdate }) {
+function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog, onUpdate, onError }) {
   const [rolloverStatus, setRolloverStatus] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editTask, setEditTask] = useState(task.task);
@@ -446,38 +463,48 @@ function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog, o
 
   const handleSave = async () => {
     setSaving(true);
+    let message = null;
     try {
       const res = await fetch("/api/weekly/update", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: task.id, task: editTask, project: editProject, priority: editPriority }),
       });
-      const data = await res.json();
-      if (data.status === "ok") {
+      const data = res.ok ? await res.json().catch(() => ({})) : null;
+      if (data?.status === "ok") {
         onUpdate(data.updated);
         setIsEditing(false);
+      } else {
+        message = data ? data.error || "nieoczekiwana odpowiedź serwera" : await apiError(res);
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      message = e.message || "brak połączenia";
+    }
     setSaving(false);
+    if (message) onError(`Nie zapisano edycji „${task.task}”: ${message}`);
   };
 
   const handleRollover = async () => {
     if (rolloverStatus) return;
     setRolloverStatus("loading");
+    let message = null;
     try {
       const res = await fetch("/api/weekly/rollover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task_id: task.id }),
       });
-      const data = await res.json();
-      if (data.status === "already_exists") {
-        setRolloverStatus("duplicate");
-      } else {
-        setRolloverStatus("done");
+      if (!res.ok) message = await apiError(res);
+      else {
+        const data = await res.json();
+        setRolloverStatus(data.status === "already_exists" ? "duplicate" : "done");
       }
-    } catch {
+    } catch (e) {
+      message = e.message || "brak połączenia";
+    }
+    if (message) {
       setRolloverStatus(null);
+      onError(`Nie przeniesiono „${task.task}” na następny tydzień: ${message}`);
       return;
     }
     setTimeout(() => setRolloverStatus(null), 1500);
@@ -485,7 +512,7 @@ function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog, o
 
   return (
     <div style={{ marginBottom: 4 }}>
-      <div onClick={onExpand} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", background: isDone ? "#F7FDF7" : "#FFFFFF", borderRadius: expanded ? "12px 12px 0 0" : 12, cursor: "pointer", border: `1px solid ${expanded ? "#D4D4D4" : "#EDEDED"}`, transition: "all 0.15s", opacity: isDone ? 0.5 : 1, ...frogStyle }}>
+      <div className="wp-row" onClick={onExpand} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", background: isDone ? "#F7FDF7" : "#FFFFFF", borderRadius: expanded ? "12px 12px 0 0" : 12, cursor: "pointer", border: `1px solid ${expanded ? "#D4D4D4" : "#EDEDED"}`, transition: "all 0.15s", opacity: isDone ? 0.5 : 1, ...frogStyle }}>
         <div onClick={(e) => { e.stopPropagation(); onToggle(); }} style={{ width: 20, height: 20, borderRadius: 6, border: isDone ? "none" : `2px solid ${meta.border}`, background: isDone ? meta.color : "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.2s" }}>
           {isDone && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>}
         </div>
@@ -495,7 +522,7 @@ function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog, o
           {task.priority}{task.subPriority ? `-${task.subPriority}` : ""}
         </div>
 
-        <div style={{ flex: 1, fontSize: 14, fontWeight: 450, textDecoration: isDone ? "line-through" : "none", color: isDone ? "#A3A3A3" : "#262626" }}>{task.task}</div>
+        <div className="wp-row-title" style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontSize: 14, fontWeight: 450, textDecoration: isDone ? "line-through" : "none", color: isDone ? "#A3A3A3" : "#262626" }}>{task.task}</div>
 
         {pillar && (
           <div style={{ padding: "3px 10px", borderRadius: 6, background: `${pillar.color}0C`, color: pillar.color, fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>
@@ -533,7 +560,7 @@ function TaskRow({ task, meta, onToggle, expanded, onExpand, onDelete, isFrog, o
               {wig && <DetailChip label="WIG" value={wig.name} color="#D97706" />}
               {task.deadline && <DetailChip label="Deadline" value={new Date(task.deadline).toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} color="#DC2626" />}
               {task.person && <DetailChip label="Osoba" value={task.person} color="#2563EB" />}
-              <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              <div className="wp-row-actions" style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 <button onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} style={{ padding: "5px 14px", background: "#FFFFFF", border: "1px solid #D4D4D4", borderRadius: 7, color: "#737373", fontSize: 11, cursor: "pointer", fontFamily: "'Space Mono', monospace" }}>Edytuj</button>
                 {!isDone && (
                   <button onClick={(e) => { e.stopPropagation(); handleRollover(); }} disabled={rolloverStatus === "loading"} style={{ padding: "5px 14px", background: "#FFFFFF", border: "1px solid #D4D4D4", borderRadius: 7, color: rolloverStatus === "done" ? "#16A34A" : rolloverStatus === "duplicate" ? "#D97706" : "#737373", fontSize: 11, cursor: rolloverStatus ? "default" : "pointer", fontFamily: "'Space Mono', monospace" }}>

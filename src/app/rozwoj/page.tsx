@@ -7,6 +7,7 @@ import { monthlyGoals, sportAreas } from "@/lib/data";
 import { ReadingWigCard } from "@/components/rozwoj/reading-wig-card";
 import { DEFAULT_READING_SETTINGS, booklyMonthReading, type BooklyReport, type ReadingSettings } from "@/lib/reading";
 import { toDateStr } from "@/lib/rehab";
+import { monthStartIso, todayWarsaw, weekStartIso } from "@/lib/dates";
 
 /* ── Types ──────────────────────────────────────── */
 type Entry = {
@@ -101,21 +102,15 @@ const AREAS: {
 
 /* ── Helpers ───────────────────────────────────── */
 function today() {
-  return new Date().toISOString().split("T")[0];
+  return todayWarsaw();
 }
 
 function getMonthStart() {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}-01`;
+  return monthStartIso(todayWarsaw());
 }
 
 function getWeekStart() {
-  const d = new Date();
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.getFullYear(), d.getMonth(), diff).toISOString().split("T")[0];
+  return weekStartIso(todayWarsaw());
 }
 
 function formatDate(dateStr: string) {
@@ -124,12 +119,12 @@ function formatDate(dateStr: string) {
 }
 
 function getDaysInMonth() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const t = todayWarsaw();
+  return new Date(Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)), 0)).getUTCDate();
 }
 
 function getDayOfMonth() {
-  return new Date().getDate();
+  return Number(todayWarsaw().slice(8, 10));
 }
 
 const MONTH_NAMES_UPPER = ["STYCZEN", "LUTY", "MARZEC", "KWIECIEN", "MAJ", "CZERWIEC", "LIPIEC", "SIERPIEN", "WRZESIEN", "PAZDZIERNIK", "LISTOPAD", "GRUDZIEN"];
@@ -1651,7 +1646,7 @@ export default function RozwojPage() {
         <ReadingWigCard settings={readingSettings} onSettingsChange={setReadingSettings} onReportsChange={setBooklyReports} />
 
         {/* Area Cards */}
-        <div className="mt-6 grid gap-4 sm:gap-6">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:gap-6">
 
           {/* Sluchanie — audiobook card */}
           <SluchanieCard

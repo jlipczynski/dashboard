@@ -8,6 +8,7 @@ import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage"
 import { calcAllScores, calcOverallScore, type RozwojData, type PracaData, type RehabScoreInput } from "@/lib/scores";
 import { DEFAULT_REHAB_PLAN, averagePercent, isPlanActive, monthStartStr, toDateStr, type RehabEntry } from "@/lib/rehab";
 import { calorieRangeScore, type CalorieEntry } from "@/lib/calories";
+import { monthStartIso, todayWarsaw, weekStartsOfMonthUpTo } from "@/lib/dates";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_READING_SETTINGS, booklyMonthReading, type BooklyReport } from "@/lib/reading";
 
@@ -80,13 +81,11 @@ export default function Home() {
 
   // Load rozwoj entries from Supabase for pillar score
   useEffect(() => {
-    const monthStart = new Date();
-    monthStart.setDate(1);
     fetch("/api/rozwoj?days=31")
       .then((r) => r.json())
       .then((d) => {
         if (!d.entries) return;
-        const ms = monthStart.toISOString().split("T")[0];
+        const ms = monthStartIso(todayWarsaw());
         const monthEntries = (d.entries as { area: string; date: string; amount: number }[])
           .filter((e) => e.date >= ms);
         const sum = (area: string) => monthEntries.filter((e) => e.area === area).reduce((s, e) => s + e.amount, 0);
@@ -108,24 +107,15 @@ export default function Home() {
       .then((r) => r.json())
       .then((d) => {
         if (!d.checkins) return;
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-        const todayStr = now.toISOString().split("T")[0];
+        const todayStr = todayWarsaw();
+        const monthStart = monthStartIso(todayStr);
         const monthCheckins = (d.checkins as { date: string; dailyPlan: boolean }[])
           .filter((c) => c.date >= monthStart && c.date <= todayStr);
-        const daysElapsed = now.getDate();
+        const daysElapsed = Number(todayStr.slice(8, 10));
         const dailyPlanDays = monthCheckins.filter((c) => c.dailyPlan).length;
 
-        // Calculate weeks elapsed this month
-        const weekStarts = new Set<string>();
-        for (let day = 1; day <= daysElapsed; day++) {
-          const dt = new Date(now.getFullYear(), now.getMonth(), day);
-          const dow = dt.getDay();
-          const diff = dow === 0 ? -6 : 1 - dow;
-          const ws = new Date(dt);
-          ws.setDate(ws.getDate() + diff);
-          weekStarts.add(ws.toISOString().split("T")[0]);
-        }
+        // Weeks elapsed this month (Mondays, Europe/Warsaw)
+        const weekStarts = new Set<string>(weekStartsOfMonthUpTo(todayStr));
         const weeksElapsed = weekStarts.size;
         const weeksWithGoals = (d.weeksWithGoals as string[]) || [];
         const weeksReviewed = Array.from(weekStarts).filter((ws) => weeksWithGoals.includes(ws)).length;

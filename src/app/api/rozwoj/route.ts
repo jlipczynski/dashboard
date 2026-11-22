@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { addDaysIso, todayWarsaw } from "@/lib/dates";
 
 let tableReady = false;
 
@@ -31,9 +32,7 @@ export async function GET(request: Request) {
   const area = searchParams.get("area");
   const days = parseInt(searchParams.get("days") || "90");
 
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString().split("T")[0];
+  const sinceStr = addDaysIso(todayWarsaw(), -days);
 
   let query = supabase
     .from("rozwoj_entries")

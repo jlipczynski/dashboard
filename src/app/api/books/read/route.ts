@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { addDaysIso, todayWarsaw } from "@/lib/dates";
 
 // POST /api/books/read — log a reading session
 // Body: { book_id, page_number, date }
@@ -108,9 +109,7 @@ export async function GET(request: Request) {
   const bookId = searchParams.get("book_id");
   const days = parseInt(searchParams.get("days") || "90");
 
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString().split("T")[0];
+  const sinceStr = addDaysIso(todayWarsaw(), -days);
 
   let query = supabase
     .from("book_readings")

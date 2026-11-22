@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { isoDayOfWeek, monthDatesUpTo, monthStartIso, todayWarsaw, weekStartsOfMonthUpTo } from "@/lib/dates";
 
 type CheckIn = {
   date: string;
@@ -10,35 +11,9 @@ type CheckIn = {
   notes: string;
 };
 
-/** Get all dates from month start to today */
-function getMonthDates(): string[] {
-  const now = new Date();
-  const dates: string[] = [];
-  for (let d = 1; d <= now.getDate(); d++) {
-    const dt = new Date(now.getFullYear(), now.getMonth(), d);
-    dates.push(dt.toISOString().split("T")[0]);
-  }
-  return dates;
-}
-
-/** Get Monday of the week for a given date */
-function getWeekStart(d: Date): string {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diff);
-  return date.toISOString().split("T")[0];
-}
-
-/** Get week starts that fall in this month */
-function getMonthWeekStarts(): string[] {
-  const monthDates = getMonthDates();
-  const weekStarts = new Set<string>();
-  for (const ds of monthDates) {
-    weekStarts.add(getWeekStart(new Date(ds)));
-  }
-  return Array.from(weekStarts).sort();
-}
+/** Dates (Europe/Warsaw): month start → today, and the Mondays of those weeks. One source: lib/dates. */
+const getMonthDates = (today: string): string[] => monthDatesUpTo(today);
+const getMonthWeekStarts = (today: string): string[] => weekStartsOfMonthUpTo(today);
 
 const DAY_NAMES = ["Pn", "Wt", "Sr", "Cz", "Pt", "So", "Nd"];
 
@@ -47,9 +22,9 @@ export default function PracaPage() {
   const [weeksWithGoals, setWeeksWithGoals] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const today = new Date().toISOString().split("T")[0];
-  const monthDates = getMonthDates();
-  const monthWeekStarts = getMonthWeekStarts();
+  const today = todayWarsaw();
+  const monthDates = getMonthDates(today);
+  const monthWeekStarts = getMonthWeekStarts(today);
 
   const loadData = useCallback(async () => {
     try {
@@ -274,7 +249,7 @@ export default function PracaPage() {
               </div>
             ))}
             {/* Offset for first day of month (Monday=0) */}
-            {Array.from({ length: (new Date(new Date().getFullYear(), new Date().getMonth(), 1).getDay() + 6) % 7 }).map((_, i) => (
+            {Array.from({ length: isoDayOfWeek(monthStartIso(today)) - 1 }).map((_, i) => (
               <div key={`pad-${i}`} />
             ))}
             {monthDates.map((ds) => {

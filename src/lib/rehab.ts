@@ -1,4 +1,5 @@
 // Rehabilitation (physiotherapy) goals — replaces sport goals while active.
+import { weekStartIso } from "./dates";
 // Daily entry = % of prescribed rehab exercises done that day (0-100).
 
 export type RehabPlan = {
@@ -50,11 +51,9 @@ export function monthStartStr(today: string): string {
   return today.slice(0, 8) + "01";
 }
 
+/** Monday of the week of `today` — the one shared implementation (lib/dates). */
 export function weekStartStr(today: string): string {
-  const d = parseDate(today);
-  const dow = d.getDay();
-  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-  return toDateStr(d);
+  return weekStartIso(today);
 }
 
 export function isPlanActive(plan: RehabPlan, today: string): boolean {
