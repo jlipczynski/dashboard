@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer, CartesianGrid } from "recharts";
 import { addDaysIso, formatDayMonthPl, isoWeekNumber, todayWarsaw, weekStartIso } from "@/lib/dates";
+import WigPlanPanel from "@/components/wig/WigPlanPanel";
 
 const PILLARS = {
   "Ovoc Malinovi": { color: "#DC2626", icon: "🫐", type: "praca" },
@@ -358,6 +359,7 @@ export default function WeeklyPlanner() {
 
         {/* SIDEBAR */}
         <div className="wp-sidebar" style={{ width: 272, flexShrink: 0 }}>
+          <WigPlanPanel weekStart={weekStart} />
           <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 24, border: "1px solid #E5E5E5", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
             <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: 2, color: "#A3A3A3", textTransform: "uppercase", marginBottom: 16 }}>W{weekNum} Score</div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>

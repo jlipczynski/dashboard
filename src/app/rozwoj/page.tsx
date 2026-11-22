@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { BackButton } from "@/components/dashboard/back-button";
+import { WigAreaLink } from "@/components/wig/WigAreaLink";
 import { useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { monthlyGoals, sportAreas } from "@/lib/data";
 import { ReadingWigCard } from "@/components/rozwoj/reading-wig-card";
@@ -1597,6 +1598,7 @@ export default function RozwojPage() {
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <BackButton />
+        <WigAreaLink area="rozwoj" />
 
         {/* Header */}
         <div className="mt-6 text-center">

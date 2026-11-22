@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { unzipSync, strFromU8 } from "fflate";
 import { BackButton } from "@/components/dashboard/back-button";
+import { WigAreaLink } from "@/components/wig/WigAreaLink";
 import { monthlyGoals, sportAreas } from "@/lib/data";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { DEFAULT_REHAB_PLAN, isPlanActive, toDateStr } from "@/lib/rehab";
@@ -1501,6 +1502,7 @@ export default function ZdrowiePage() {
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         <BackButton />
+        <WigAreaLink area="zdrowie" />
 
         <div className="mt-4 flex items-center gap-3">
           <span className="text-3xl">&#10084;&#65039;</span>

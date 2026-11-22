@@ -4,6 +4,7 @@ import Link from "next/link";
 import { pillars, monthlyGoals, sportAreas } from "@/lib/data";
 import { TopNav } from "@/components/dashboard/top-nav";
 import { ExpensesByCategoryCard } from "@/components/finanse/ExpensesByCategoryCard";
+import { WigScoreCard } from "@/components/wig/WigScoreCard";
 import { useGarminSync, useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { calcAllScores, calcOverallScore, type RozwojData, type PracaData, type RehabScoreInput } from "@/lib/scores";
 import { DEFAULT_REHAB_PLAN, averagePercent, isPlanActive, monthStartStr, toDateStr, type RehabEntry } from "@/lib/rehab";
@@ -176,10 +177,13 @@ export default function Home() {
       <div className="mx-auto max-w-3xl px-4 pb-10 sm:px-6 lg:px-8">
         <TopNav />
 
-        {/* ── Main score ─────────────────────────────────────── */}
+        {/* ── WIG score 1–6 (weekly sessions, 4 closed weeks) ── */}
+        <WigScoreCard />
+
+        {/* ── Monthly score 0–100 (legacy, unchanged) ─────────── */}
         <section className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm sm:mt-8 sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Wynik główny · {monthLabel}
+            Wynik miesięczny (dotychczasowy) · {monthLabel}
           </p>
           <div className="mt-2 flex items-end gap-3">
             <span className="text-7xl font-black leading-none tracking-tight tabular-nums sm:text-8xl" style={{ color: scoreColor(overall.score) }}>

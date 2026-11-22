@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { WigAreaLink } from "@/components/wig/WigAreaLink";
 import { isoDayOfWeek, monthDatesUpTo, monthStartIso, todayWarsaw, weekStartsOfMonthUpTo } from "@/lib/dates";
 
 type CheckIn = {
@@ -113,12 +114,15 @@ export default function PracaPage() {
           <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
             ← Dashboard
           </Link>
+          <span className="flex items-center gap-1">
+          <WigAreaLink area="praca" />
           <Link
             href="/weekly"
             className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             Weekly Planner
           </Link>
+          </span>
         </div>
 
         <h1 className="mt-6 text-2xl font-bold text-foreground flex items-center gap-2">
