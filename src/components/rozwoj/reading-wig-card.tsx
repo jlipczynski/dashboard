@@ -6,6 +6,7 @@ import { monthStartStr, toDateStr } from "@/lib/rehab";
 import { dailyValues, rangeStats, yearSummary, yearTitles, type BooklyReport, type ReadingSettings } from "@/lib/reading";
 import { dedupeSessions, type BooklySession } from "@/lib/bookly-sessions";
 import { BooklySessionsPreview } from "./bookly-sessions-preview";
+import { ReadingLog, spineColor } from "./reading-log";
 
 type SyncState =
   | { kind: "idle" }
@@ -49,13 +50,6 @@ function color(v: number | null): string {
 
 const MONTHS_PL = ["styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec", "lipiec", "sierpień", "wrzesień", "październik", "listopad", "grudzień"];
 const monthName = (d: string) => MONTHS_PL[Number(d.slice(5, 7)) - 1];
-
-/** Stable muted color per title for books without a cover image. */
-function spineColor(title: string): string {
-  let h = 0;
-  for (const ch of title) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return `linear-gradient(160deg, hsl(${h} 45% 45%), hsl(${(h + 30) % 360} 45% 32%))`;
-}
 
 function BigRing({ value, color: c, label, size = 132 }: { value: number; color: string; label: string; size?: number }) {
   const stroke = 12;
@@ -155,6 +149,7 @@ export function ReadingWigCard({
   const [showReports, setShowReports] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [sessions, setSessions] = useState<BooklySession[]>([]);
+  const [sessionsLoads, setSessionsLoads] = useState(0);
 
   const loadReports = useCallback(async () => {
     try {
@@ -168,7 +163,10 @@ export function ReadingWigCard({
   const loadSessions = useCallback(async () => {
     try {
       const d = await (await fetch("/api/bookly/sessions")).json();
-      if (d.sessions) setSessions(d.sessions);
+      if (d.sessions) {
+        setSessions(d.sessions);
+        setSessionsLoads((n) => n + 1);
+      }
     } catch {
       // ignore
     }
@@ -487,6 +485,9 @@ export function ReadingWigCard({
           )}
         </section>
       )}
+
+      {/* ── Reading log (Bookly sessions) ──────────────────── */}
+      <ReadingLog today={today} reloadKey={sessionsLoads} onChanged={loadSessions} />
 
       {/* ── Bookly reports: import + list ──────────────────── */}
       <section className="rounded-2xl border border-border bg-card px-5 py-3 shadow-sm sm:px-6">
