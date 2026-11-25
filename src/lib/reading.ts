@@ -10,6 +10,7 @@
 //     left after subtracting the days already covered.
 
 import { addDays, daysInclusive } from "./rehab";
+import { normTitle } from "./bookly-sessions";
 
 export const READING_DAILY_MINUTES = 30;
 export const BOOKS_PER_YEAR = 50;
@@ -220,4 +221,32 @@ export function booklyMonthReading(
   const s = rangeStats(dailyValues(reports), today.slice(0, 8) + "01", today, today, dailyMinutes);
   if (s.coveredDays === 0) return null;
   return { minutes: s.minutes, target: dailyMinutes * s.coveredDays, coveredDays: s.coveredDays };
+}
+
+/**
+ * Finished titles of a year for the shelf: union of all reports in the year
+ * (widest report first, so its order is kept), without duplicates —
+ * overlapping reports repeat the same books, spelled slightly differently.
+ */
+export function yearTitles(reports: BooklyReport[], year: number): string[] {
+  const key = (t: string) =>
+    t.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[łŁ]/g, "l").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const inYear = reports
+    .filter((r) => r.period_from.startsWith(String(year)) || r.period_to.startsWith(String(year)))
+    .sort(
+      (a, b) =>
+        daysInclusive(b.period_from, b.period_to) - daysInclusive(a.period_from, a.period_to) ||
+        a.period_from.localeCompare(b.period_from)
+    );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of inYear) {
+    for (const t of r.finished_titles ?? []) {
+      const k = normTitle(t);
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(t);
+    }
+  }
+  return out;
 }

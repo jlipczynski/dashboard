@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import { monthStartStr, toDateStr } from "@/lib/rehab";
-import { dailyValues, rangeStats, yearSummary, type BooklyReport, type ReadingSettings } from "@/lib/reading";
+import { dailyValues, rangeStats, yearSummary, yearTitles, type BooklyReport, type ReadingSettings } from "@/lib/reading";
+import type { BooklySession } from "@/lib/bookly-sessions";
+import { BooklySessionsReview } from "./bookly-sessions-review";
 
 type SyncState =
   | { kind: "idle" }
@@ -133,7 +135,9 @@ export function ReadingWigCard({
   const year = Number(today.slice(0, 4));
   const [reports, setReports] = useState<BooklyReport[]>([]);
   const [sync, setSync] = useState<SyncState>({ kind: "idle" });
-  const [parsing, setParsing] = useState(false);
+  const [parsing, setParsing] = useState<{ done: number; total: number } | null>(null);
+  const [sessionImport, setSessionImport] = useState<BooklySession[] | null>(null);
+  const [fileErrors, setFileErrors] = useState<{ name: string; error: string }[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -176,14 +180,7 @@ export function ReadingWigCard({
   const days = useMemo(() => dailyValues(reports), [reports]);
   const month = rangeStats(days, monthStartStr(today), today, today, settings.dailyMinutes);
   const y = yearSummary(days, year, today, settings);
-  const titles = useMemo(() => {
-    // Titles from the widest report of this year
-    const inYear = reports.filter((r) => r.period_from.startsWith(String(year)));
-    const widest = [...inYear].sort(
-      (a, b) => a.period_from.localeCompare(b.period_from) || b.period_to.localeCompare(a.period_to)
-    )[0];
-    return widest?.finished_titles ?? [];
-  }, [reports, year]);
+  const titles = useMemo(() => yearTitles(reports, year), [reports, year]);
 
   const booksOnTrack = y.books >= y.booksExpected;
   const booksBehind = Math.round(y.booksExpected - y.books);
@@ -205,15 +202,54 @@ export function ReadingWigCard({
   }, [titlesKey]);
   const [showImport, setShowImport] = useState(false);
 
-  const onFile = async (file: File) => {
-    setParsing(true);
+  /**
+   * One or many screenshots. A single "Reading Report" opens the report form;
+   * "Reading Sessions" screenshots are merged into one sessions review.
+   */
+  const onFiles = async (fileList: FileList) => {
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
     setDraftError(null);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      const d = await (await fetch("/api/bookly/parse", { method: "POST", body: form })).json();
-      if (d.error) throw new Error(d.error);
-      const r = d.report;
+    setFileErrors([]);
+    setDraft(null);
+    setSessionImport(null);
+    setParsing({ done: 0, total: files.length });
+
+    type Result = { name: string; kind?: "report" | "sessions"; report?: Record<string, unknown>; sessions?: BooklySession[]; error?: string };
+    const results: Result[] = new Array(files.length);
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      while (next < files.length) {
+        const i = next++;
+        const file = files[i];
+        try {
+          const form = new FormData();
+          form.append("file", file);
+          const d = await (await fetch("/api/bookly/parse", { method: "POST", body: form })).json();
+          if (d.error) throw new Error(d.error);
+          results[i] = { name: file.name, ...d };
+        } catch (err) {
+          results[i] = { name: file.name, error: err instanceof Error ? err.message : "Błąd odczytu" };
+        }
+        setParsing({ done: ++done, total: files.length });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, files.length) }, worker));
+
+    const errors: { name: string; error: string }[] = [];
+    const sessions: BooklySession[] = [];
+    const reportsRead: Result[] = [];
+    for (const r of results) {
+      if (r.error) errors.push({ name: r.name, error: r.error });
+      else if (r.kind === "sessions") sessions.push(...(r.sessions ?? []));
+      else if (r.kind === "report") reportsRead.push(r);
+    }
+    if (reportsRead.length === 1 && sessions.length === 0) {
+      const r = reportsRead[0].report as {
+        period_from: string; period_to: string; minutes: number; pages: number;
+        reading_days: number; books_finished: number; finished_titles?: string[];
+      };
       setDraft({
         period_from: r.period_from,
         period_to: r.period_to,
@@ -223,10 +259,12 @@ export function ReadingWigCard({
         books_finished: String(r.books_finished),
         finished_titles: r.finished_titles ?? [],
       });
-    } catch (err) {
-      setDraftError(err instanceof Error ? err.message : "Błąd odczytu");
+    } else {
+      for (const r of reportsRead) errors.push({ name: r.name, error: "Raport podsumowujący — wgraj go osobno" });
+      if (sessions.length > 0) setSessionImport(sessions);
     }
-    setParsing(false);
+    setFileErrors(errors);
+    setParsing(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -415,17 +453,19 @@ export function ReadingWigCard({
             </button>
             <button
               onClick={() => fileRef.current?.click()}
-              disabled={parsing}
+              disabled={parsing !== null}
               className="rounded-lg border border-border bg-background px-3 py-1.5 font-medium hover:bg-muted disabled:opacity-50"
+              title="Raport podsumowujący albo zrzuty listy sesji (można zaznaczyć wiele)"
             >
-              {parsing ? "Odczytuję raport..." : "⬆ Wgraj raport"}
+              {parsing ? `Odczytuję ${parsing.done}/${parsing.total}...` : "⬆ Wgraj raport lub zrzuty sesji"}
             </button>
             <input
               ref={fileRef}
               type="file"
+              multiple
               accept="image/jpeg,image/png,image/webp"
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+              onChange={(e) => e.target.files && e.target.files.length > 0 && onFiles(e.target.files)}
             />
             <span className="text-muted-foreground">
               {sync.kind === "login" && (
@@ -453,6 +493,26 @@ export function ReadingWigCard({
 
           {/* Review parsed report before saving */}
           {draftError && <p className="mt-2 text-xs text-red-600">{draftError}</p>}
+          {fileErrors.length > 0 && (
+            <ul className="mt-2 text-[11px] text-red-600">
+              {fileErrors.map((e, i) => (
+                <li key={`${e.name}-${i}`}>
+                  {e.name}: {e.error}
+                </li>
+              ))}
+            </ul>
+          )}
+          {sessionImport && (
+            <BooklySessionsReview
+              rawSessions={sessionImport}
+              existing={reports}
+              onSaved={() => {
+                setSessionImport(null);
+                loadReports();
+              }}
+              onCancel={() => setSessionImport(null)}
+            />
+          )}
           {draft && (
             <div className="mt-3 rounded-xl border border-border p-3">
               <p className="text-xs font-medium text-foreground">Sprawdź odczytane dane i zapisz</p>
@@ -503,6 +563,7 @@ export function ReadingWigCard({
                           <td className="whitespace-nowrap py-1 pr-2">
                             {fmtDate(r.period_from)} – {fmtDate(r.period_to)}
                             {r.source === "drive" && <span className="ml-1 text-muted-foreground">(Drive)</span>}
+                            {r.source === "sessions" && <span className="ml-1 text-muted-foreground">(sesje)</span>}
                           </td>
                           <td className="whitespace-nowrap py-1 pr-2 tabular-nums">{hm(r.minutes)}</td>
                           <td className="py-1 pr-2 tabular-nums">{fmt(r.pages)}</td>
@@ -534,6 +595,7 @@ export function ReadingWigCard({
               <p><span className="font-medium text-foreground">Lead (wynik filaru):</span> średnia minut czytania na dzień w tym miesiącu ÷ {settings.dailyMinutes} min, max 100%. Liczą się tylko dni objęte raportami.</p>
               <p><span className="font-medium text-foreground">Lag:</span> ukończone książki od 1 stycznia vs {settings.booksPerYear}/rok. „Powinno być” = równe tempo do celu.</p>
               <p><span className="font-medium text-foreground">Raporty mogą się nakładać</span> (np. od początku roku i od początku miesiąca) — nic się nie dubluje. Raporty z tym samym początkiem dają dokładne dane dla każdego odcinka; wewnątrz odcinka minuty i strony są rozłożone równo na dni.</p>
+              <p><span className="font-medium text-foreground">Zrzuty sesji:</span> w Bookly Stats → Reading Sessions przewijaj listę i rób zrzuty (mogą się nakładać — duplikaty są pomijane). Wgraj je wszystkie naraz; każdy dzień zapisuje się jako dokładny raport dzienny i ma pierwszeństwo przed raportami z dłuższego okresu.</p>
               <p><span className="font-medium text-foreground">Rytm:</span> raz w tygodniu wygeneruj w Bookly raport „od 1 stycznia do dziś” i zapisz go w folderze „Bookly Reports” na Google Drive — strona sama go pobierze.</p>
             </div>
           </details>

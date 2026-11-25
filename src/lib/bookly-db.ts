@@ -25,10 +25,8 @@ export function validateReport(b: Partial<BooklyReportInput>): string | null {
   return null;
 }
 
-/** Upsert by period (same range imported again replaces the previous one). */
-export async function saveReport(b: BooklyReportInput) {
-  const supabase = getSupabaseAdmin();
-  const row = {
+function toRow(b: BooklyReportInput) {
+  return {
     period_from: b.period_from,
     period_to: b.period_to,
     minutes: b.minutes,
@@ -40,6 +38,17 @@ export async function saveReport(b: BooklyReportInput) {
     ...(b.drive_file_id ? { drive_file_id: b.drive_file_id } : {}),
     updated_at: new Date().toISOString(),
   };
-  const { error } = await supabase.from("bookly_reports").upsert(row, { onConflict: "period_from,period_to" });
+}
+
+/** Upsert by period (same range imported again replaces the previous one). */
+export async function saveReport(b: BooklyReportInput) {
+  await saveReports([b]);
+}
+
+/** Batch upsert by period (one-day reports from session screenshots). */
+export async function saveReports(list: BooklyReportInput[]) {
+  if (list.length === 0) return;
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from("bookly_reports").upsert(list.map(toRow), { onConflict: "period_from,period_to" });
   if (error) throw new Error(error.message);
 }

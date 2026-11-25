@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { isSupportedImage, parseBooklyImage } from "@/lib/bookly-parse";
+import { isSupportedImage, readBooklyImage } from "@/lib/bookly-parse";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
  * POST /api/bookly/parse (multipart, field "file")
- * Reads a Bookly report image and returns the extracted numbers for review — does not save.
+ * Reads a Bookly screenshot and returns the extracted data for review — does not save.
+ * Response: { kind: "report", report } or { kind: "sessions", sessions }.
  */
 export async function POST(request: Request) {
   const form = await request.formData();
@@ -20,8 +21,7 @@ export async function POST(request: Request) {
 
   try {
     const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-    const report = await parseBooklyImage(base64, file.type);
-    return NextResponse.json({ report });
+    return NextResponse.json(await readBooklyImage(base64, file.type));
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Blad odczytu" }, { status: 500 });
   }
