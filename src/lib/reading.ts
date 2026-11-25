@@ -1,4 +1,5 @@
-// Reading WIG fed by Bookly reading reports (aggregates for a date range).
+// Reading WIG fed by Bookly: single reading sessions (exact, per day) and
+// reading reports (aggregates for a date range).
 // Lead: >= 30 min of reading per day. Lag: books finished per year (50).
 //
 // Reports may cover any range and may overlap (month-to-date, year-to-date…).
@@ -8,9 +9,15 @@
 //  2. Segments are spread evenly over their days, shortest (most precise)
 //     first; a longer segment only fills days not yet covered, with what is
 //     left after subtracting the days already covered.
+//  3. Sessions win: a day with at least one session takes minutes, pages and
+//     the reading day from its sessions; reports only fill days without
+//     sessions (report total minus what sessions already cover).
+//  4. Finished books come only from reports (sessions don't say when a book
+//     ends), spread exactly as without sessions — so covering days with
+//     sessions never lowers the book count.
 
 import { addDays, daysInclusive } from "./rehab";
-import { normTitle } from "./bookly-sessions";
+import { normTitle, type BooklySession } from "./bookly-sessions";
 
 export const READING_DAILY_MINUTES = 30;
 export const BOOKS_PER_YEAR = 50;
@@ -91,9 +98,9 @@ export function reportSegments(reports: BooklyReport[]): Segment[] {
 
 export type DayValues = Map<string, Totals>;
 
-/** Spread segments over days, shortest first, without double counting. */
-export function dailyValues(reports: BooklyReport[]): DayValues {
-  const days: DayValues = new Map();
+/** Spread segments over days, shortest first, without double counting; `preset` days are already covered. */
+function spread(reports: BooklyReport[], preset: DayValues): DayValues {
+  const days: DayValues = new Map(preset);
   const segments = reportSegments(reports).sort(
     (a, b) => daysInclusive(a.from, a.to) - daysInclusive(b.from, b.to) || a.from.localeCompare(b.from)
   );
@@ -118,6 +125,25 @@ export function dailyValues(reports: BooklyReport[]): DayValues {
   return days;
 }
 
+type SessionLike = Pick<BooklySession, "date" | "pages" | "seconds">;
+
+/** Per-day values: sessions exact where present, reports fill the rest; books from reports only. */
+export function dailyValues(reports: BooklyReport[], sessions: SessionLike[] = []): DayValues {
+  if (sessions.length === 0) return spread(reports, new Map());
+
+  const sessionDays: DayValues = new Map();
+  for (const s of sessions) {
+    const v = sessionDays.get(s.date) ?? { minutes: 0, pages: 0, readingDays: 1, books: 0 };
+    sessionDays.set(s.date, { ...v, minutes: v.minutes + s.seconds / 60, pages: v.pages + s.pages });
+  }
+  const values = spread(reports, sessionDays); // minutes, pages, reading days
+  const books = spread(reports, new Map()); // finished books, as if there were no sessions
+
+  const days: DayValues = new Map();
+  for (const [d, v] of values) days.set(d, { ...v, books: books.get(d)?.books ?? 0 });
+  return days;
+}
+
 export type RangeStats = {
   from: string;
   to: string;
@@ -131,6 +157,9 @@ export type RangeStats = {
   avgMinutesPerDay: number | null; // over covered days
   leadScore: number | null; // avg / 30 min, capped at 100
 };
+
+/** Round a sum of fractional day shares; drops float noise first (1181.4999999 → 1181.5 → 1182). */
+const roundSum = (x: number) => Math.round(Math.round(x * 1e6) / 1e6);
 
 export function rangeStats(
   days: DayValues,
@@ -162,9 +191,9 @@ export function rangeStats(
     days: n,
     coveredDays: covered,
     coveredUntil,
-    minutes: Math.round(t.minutes),
-    pages: Math.round(t.pages),
-    readingDays: Math.round(t.readingDays),
+    minutes: roundSum(t.minutes),
+    pages: roundSum(t.pages),
+    readingDays: roundSum(t.readingDays),
     books: Math.round(t.books * 10) / 10,
     avgMinutesPerDay: avg === null ? null : Math.round(avg),
     leadScore: avg === null || dailyMinutes <= 0 ? null : Math.round(Math.min(avg / dailyMinutes, 1) * 100),
@@ -210,15 +239,16 @@ export function yearSummary(
 }
 
 /**
- * This month's reading for pillar scoring, or null when no report covers it.
+ * This month's reading for pillar scoring, or null when no session or report covers it.
  * Expressed as minutes done vs a target of 30 min × covered days.
  */
 export function booklyMonthReading(
   reports: BooklyReport[],
+  sessions: SessionLike[],
   today: string,
   dailyMinutes: number = READING_DAILY_MINUTES
 ): { minutes: number; target: number; coveredDays: number } | null {
-  const s = rangeStats(dailyValues(reports), today.slice(0, 8) + "01", today, today, dailyMinutes);
+  const s = rangeStats(dailyValues(reports, sessions), today.slice(0, 8) + "01", today, today, dailyMinutes);
   if (s.coveredDays === 0) return null;
   return { minutes: s.minutes, target: dailyMinutes * s.coveredDays, coveredDays: s.coveredDays };
 }
@@ -229,8 +259,6 @@ export function booklyMonthReading(
  * overlapping reports repeat the same books, spelled slightly differently.
  */
 export function yearTitles(reports: BooklyReport[], year: number): string[] {
-  const key = (t: string) =>
-    t.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[łŁ]/g, "l").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const inYear = reports
     .filter((r) => r.period_from.startsWith(String(year)) || r.period_to.startsWith(String(year)))
     .sort(

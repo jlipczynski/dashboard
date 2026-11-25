@@ -432,10 +432,14 @@ export async function getSources(db: Queryable, week: string, today: string): Pr
   await safe("reading_minutes", async () => {
     const { rows } = await db.query(`select to_char(period_from,'YYYY-MM-DD') as period_from, to_char(period_to,'YYYY-MM-DD') as period_to, minutes, pages, reading_days, books_finished from bookly_reports where period_to >= $1 and period_from <= $2`, [addDaysIso(week, -400), end]);
     const reports = rows.map((r) => ({ period_from: r.period_from as string, period_to: r.period_to as string, minutes: Number(r.minutes), pages: Number(r.pages), reading_days: Number(r.reading_days), books_finished: Number(r.books_finished) })) as BooklyReport[];
-    const dv = dailyValues(reports);
-    let sum = 0, covered = 0;
-    for (let d = week; d <= end; d = addDaysIso(d, 1)) { const v = dv.get(d); if (v) { sum += v.minutes; covered++; } }
-    return { value: covered ? Math.round(sum) : null, evidence: covered ? `Bookly: ${Math.round(sum)} min (raporty okresowe rozłożone na dni; pokrycie ${covered}/7 dni)` : "Bookly: brak raportu obejmującego ten tydzień", complete: covered === 7 };
+    // Sessions of the week are exact; reports fill days without sessions
+    const { rows: srows } = await db.query(`select to_char(date,'YYYY-MM-DD') as date, pages, seconds from bookly_sessions where date between $1 and $2`, [week, end]);
+    const sessions = srows.map((x) => ({ date: x.date as string, pages: Number(x.pages), seconds: Number(x.seconds) }));
+    const sessionDates = new Set(sessions.map((x) => x.date));
+    const dv = dailyValues(reports, sessions);
+    let sum = 0, covered = 0, fromSessions = 0;
+    for (let d = week; d <= end; d = addDaysIso(d, 1)) { const v = dv.get(d); if (v) { sum += v.minutes; covered++; if (sessionDates.has(d)) fromSessions++; } }
+    return { value: covered ? Math.round(sum) : null, evidence: covered ? `Bookly: ${Math.round(sum)} min (sesje: ${fromSessions} dni, raporty: ${covered - fromSessions} dni; pokrycie ${covered}/7)` : "Bookly: brak sesji i raportu obejmującego ten tydzień", complete: covered === 7 };
   });
   await safe("audiobook_minutes", async () => {
     const { rows } = await db.query(`select coalesce(sum(amount),0)::int as m, count(*)::int as c from rozwoj_entries where area='sluchanie' and date between $1 and $2`, [week, end]);

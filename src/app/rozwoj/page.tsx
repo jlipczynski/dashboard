@@ -7,6 +7,7 @@ import { useGoalsSync, type GoalsSyncState } from "@/lib/storage";
 import { monthlyGoals, sportAreas } from "@/lib/data";
 import { ReadingWigCard } from "@/components/rozwoj/reading-wig-card";
 import { DEFAULT_READING_SETTINGS, booklyMonthReading, type BooklyReport, type ReadingSettings } from "@/lib/reading";
+import type { BooklySession } from "@/lib/bookly-sessions";
 import { toDateStr } from "@/lib/rehab";
 import { monthStartIso, todayWarsaw, weekStartIso } from "@/lib/dates";
 
@@ -1439,6 +1440,7 @@ function AreaCard({
 /* ── Main Page ──────────────────────────────────── */
 export default function RozwojPage() {
   const [booklyReports, setBooklyReports] = useState<BooklyReport[]>([]);
+  const [booklySessions, setBooklySessions] = useState<BooklySession[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1571,7 +1573,7 @@ export default function RozwojPage() {
   const monthStart = getMonthStart();
   const monthEntries = entries.filter((e) => e.date.slice(0, 10) >= monthStart);
 
-  const booklyMonth = booklyMonthReading(booklyReports, toDateStr(new Date()), readingSettings.dailyMinutes);
+  const booklyMonth = booklyMonthReading(booklyReports, booklySessions, toDateStr(new Date()), readingSettings.dailyMinutes);
   const areaTotals = AREAS.map((a) => {
     // Czytanie: Bookly minutes vs daily-minutes goal × days covered by reports
     if (a.key === "czytanie") {
@@ -1645,7 +1647,7 @@ export default function RozwojPage() {
         </div>
 
         {/* Reading WIG from Bookly reports */}
-        <ReadingWigCard settings={readingSettings} onSettingsChange={setReadingSettings} onReportsChange={setBooklyReports} />
+        <ReadingWigCard settings={readingSettings} onSettingsChange={setReadingSettings} onReportsChange={setBooklyReports} onSessionsChange={setBooklySessions} />
 
         {/* Area Cards */}
         <div className="mt-6 grid grid-cols-1 gap-4 sm:gap-6">

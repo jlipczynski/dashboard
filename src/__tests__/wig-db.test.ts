@@ -22,6 +22,9 @@ create table nutrition_log (date date primary key, calories integer, created_at 
 create table bookly_reports (id uuid primary key default gen_random_uuid(), period_from date not null, period_to date not null, minutes integer not null default 0,
   pages integer not null default 0, reading_days integer not null default 0, books_finished integer not null default 0, finished_titles jsonb not null default '[]');
 create table rozwoj_entries (id uuid primary key default gen_random_uuid(), area text not null, date date not null, amount integer not null default 0);
+create table bookly_sessions (id uuid primary key default gen_random_uuid(), date date not null, title text not null, author text,
+  pages integer not null check (pages >= 0), seconds integer not null check (seconds >= 0), source text, drive_file_id text,
+  created_at timestamptz default now(), unique (date, title, pages, seconds));
 insert into weekly_tasks (task, project, priority, sub_priority, wig_id, week_start, status, points) values
   ('Stary cel', 'Ovoc Malinovi', 'A', 1, 'WIG: sprzedaż', '2026-11-16', 'done', 4),
   ('Rozmowa z dostawcą', 'Plantacja', 'B', 1, '', '2026-11-23', 'todo', 3);
@@ -110,13 +113,16 @@ describe("full flow for 23–29.11.2026", () => {
   it("sources are suggestions with evidence (rehab, calories with incomplete logging, Bookly)", async () => {
     await pgl.exec(`insert into rehab_entries (date, percent) values ('2026-11-23',100),('2026-11-24',80),('2026-11-25',0),('2026-11-26',100),('2026-11-27',100),('2026-11-28',60);
       insert into nutrition_log (date, calories) values ('2026-11-23',1900),('2026-11-24',2100),('2026-11-25',2000);
-      insert into bookly_reports (period_from, period_to, minutes, pages, reading_days) values ('2026-11-23','2026-11-29',245,90,6);`);
+      insert into bookly_reports (period_from, period_to, minutes, pages, reading_days) values ('2026-11-23','2026-11-29',245,90,6);
+      insert into bookly_sessions (date, title, pages, seconds) values ('2026-11-23','Flow',12,3600);`);
     const s = await getSources(db, MON, NEXT_SUN);
     expect(s.rehab_days).toMatchObject({ value: 5, complete: true });
     expect(s.calories_week.value).toBe(6000);
     expect(s.calories_week.complete).toBe(false);
     expect(s.calories_week.evidence).toMatch(/3\/7/);
     expect(s.reading_minutes.value).toBe(245);
+    // 23.11 exact from the session (60 min); the report fills the other 6 days with 245 − 60
+    expect(s.reading_minutes.evidence).toMatch(/sesje: 1 dni, raporty: 6 dni; pokrycie 7\/7/);
   });
 
   it("closing: blocked before Sunday and while data is missing; then closes with an immutable snapshot", async () => {

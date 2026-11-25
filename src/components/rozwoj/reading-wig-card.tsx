@@ -133,13 +133,13 @@ export function ReadingWigCard({
   settings,
   onSettingsChange,
   onReportsChange,
-  onSessionsSaved,
+  onSessionsChange,
 }: {
   settings: ReadingSettings;
   onSettingsChange: (s: ReadingSettings) => void;
   onReportsChange?: (reports: BooklyReport[]) => void;
-  /** Called after new Bookly sessions were saved (Drive sync or manual upload). */
-  onSessionsSaved?: () => void;
+  /** This year's Bookly sessions, whenever they are (re)loaded. */
+  onSessionsChange?: (sessions: BooklySession[]) => void;
 }) {
   const today = toDateStr(new Date());
   const year = Number(today.slice(0, 4));
@@ -154,11 +154,21 @@ export function ReadingWigCard({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showReports, setShowReports] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [sessions, setSessions] = useState<BooklySession[]>([]);
 
   const loadReports = useCallback(async () => {
     try {
       const d = await (await fetch("/api/bookly/reports")).json();
       if (d.reports) setReports(d.reports);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      const d = await (await fetch("/api/bookly/sessions")).json();
+      if (d.sessions) setSessions(d.sessions);
     } catch {
       // ignore
     }
@@ -197,22 +207,27 @@ export function ReadingWigCard({
       }
       setSync({ kind: "done", imported, sessionsInserted, sessionsDuplicates, errors, pending });
       if (imported > 0) loadReports();
-      if (sessionsInserted > 0) onSessionsSaved?.();
+      if (sessionsInserted > 0) loadSessions();
     } catch (err) {
       setSync({ kind: "error", message: err instanceof Error ? err.message : "Błąd synchronizacji" });
     }
-  }, [loadReports, onSessionsSaved]);
+  }, [loadReports, loadSessions]);
 
   useEffect(() => {
     loadReports();
+    loadSessions();
     runSync();
-  }, [loadReports, runSync]);
+  }, [loadReports, loadSessions, runSync]);
+
+  useEffect(() => {
+    onSessionsChange?.(sessions);
+  }, [sessions, onSessionsChange]);
 
   useEffect(() => {
     onReportsChange?.(reports);
   }, [reports, onReportsChange]);
 
-  const days = useMemo(() => dailyValues(reports), [reports]);
+  const days = useMemo(() => dailyValues(reports, sessions), [reports, sessions]);
   const month = rangeStats(days, monthStartStr(today), today, today, settings.dailyMinutes);
   const y = yearSummary(days, year, today, settings);
   const titles = useMemo(() => yearTitles(reports, year), [reports, year]);
@@ -567,7 +582,7 @@ export function ReadingWigCard({
               onSaved={(msg) => {
                 setSessionImport(null);
                 setSessionsMsg(msg);
-                onSessionsSaved?.();
+                loadSessions();
               }}
               onCancel={() => setSessionImport(null)}
             />

@@ -12,6 +12,7 @@ import { calorieRangeScore, type CalorieEntry } from "@/lib/calories";
 import { monthStartIso, todayWarsaw, weekStartsOfMonthUpTo } from "@/lib/dates";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_READING_SETTINGS, booklyMonthReading, type BooklyReport } from "@/lib/reading";
+import type { BooklySession } from "@/lib/bookly-sessions";
 
 const MONTHS_PL = [
   "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec",
@@ -65,6 +66,7 @@ export default function Home() {
   // Bookly reading reports (czytanie lead: daily minutes goal, default 30)
   const readingMinutes = (goals.reading ?? DEFAULT_READING_SETTINGS).dailyMinutes;
   const [booklyReports, setBooklyReports] = useState<BooklyReport[]>([]);
+  const [booklySessions, setBooklySessions] = useState<BooklySession[]>([]);
   useEffect(() => {
     fetch("/api/bookly/reports")
       .then((r) => r.json())
@@ -72,10 +74,21 @@ export default function Home() {
         if (d.reports) setBooklyReports(d.reports);
       })
       .catch(() => {});
+    // This month's sessions (exact days; reports fill the rest)
+    const today = toDateStr(new Date());
+    fetch(`/api/bookly/sessions?from=${today.slice(0, 8)}01&to=${today}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.sessions) setBooklySessions(d.sessions);
+      })
+      .catch(() => {});
   }, []);
-  const booklyKey = booklyReports.map((r) => `${r.period_from}${r.period_to}${r.minutes}`).join("|");
+  const booklyKey =
+    booklyReports.map((r) => `${r.period_from}${r.period_to}${r.minutes}`).join("|") +
+    "#" +
+    booklySessions.map((s) => `${s.date}${s.pages}${s.seconds}`).join("|");
   const booklyMonth = useMemo(
-    () => booklyMonthReading(booklyReports, toDateStr(new Date()), readingMinutes),
+    () => booklyMonthReading(booklyReports, booklySessions, toDateStr(new Date()), readingMinutes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [booklyKey, readingMinutes]
   );
