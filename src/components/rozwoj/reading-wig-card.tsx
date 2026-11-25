@@ -4,15 +4,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import { monthStartStr, toDateStr } from "@/lib/rehab";
 import { dailyValues, rangeStats, yearSummary, yearTitles, type BooklyReport, type ReadingSettings } from "@/lib/reading";
-import type { BooklySession } from "@/lib/bookly-sessions";
-import { BooklySessionsReview } from "./bookly-sessions-review";
+import { dedupeSessions, type BooklySession } from "@/lib/bookly-sessions";
+import { BooklySessionsPreview } from "./bookly-sessions-preview";
 
 type SyncState =
   | { kind: "idle" }
-  | { kind: "syncing" }
+  | { kind: "syncing"; done: number; total: number }
   | { kind: "login" }
   | { kind: "noFolder" }
-  | { kind: "done"; imported: number; errors: { name: string; error: string }[]; pending: number }
+  | {
+      kind: "done";
+      imported: number;
+      sessionsInserted: number;
+      sessionsDuplicates: number;
+      errors: { name: string; error: string }[];
+      pending: number;
+    }
   | { kind: "error"; message: string };
 
 type Draft = {
@@ -126,10 +133,13 @@ export function ReadingWigCard({
   settings,
   onSettingsChange,
   onReportsChange,
+  onSessionsSaved,
 }: {
   settings: ReadingSettings;
   onSettingsChange: (s: ReadingSettings) => void;
   onReportsChange?: (reports: BooklyReport[]) => void;
+  /** Called after new Bookly sessions were saved (Drive sync or manual upload). */
+  onSessionsSaved?: () => void;
 }) {
   const today = toDateStr(new Date());
   const year = Number(today.slice(0, 4));
@@ -137,6 +147,7 @@ export function ReadingWigCard({
   const [sync, setSync] = useState<SyncState>({ kind: "idle" });
   const [parsing, setParsing] = useState<{ done: number; total: number } | null>(null);
   const [sessionImport, setSessionImport] = useState<BooklySession[] | null>(null);
+  const [sessionsMsg, setSessionsMsg] = useState<string | null>(null);
   const [fileErrors, setFileErrors] = useState<{ name: string; error: string }[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -153,20 +164,44 @@ export function ReadingWigCard({
     }
   }, []);
 
+  /**
+   * Drive sync reads 3 new screenshots per call (60 s limit), so while files
+   * are pending it is called again — at most 10 rounds.
+   */
   const runSync = useCallback(async () => {
-    setSync({ kind: "syncing" });
+    setSync({ kind: "syncing", done: 0, total: 0 });
+    let total = 0;
+    let processed = 0;
+    let imported = 0;
+    let sessionsInserted = 0;
+    let sessionsDuplicates = 0;
+    let pending = 0;
+    const errors: { name: string; error: string }[] = [];
     try {
-      const res = await fetch("/api/bookly/sync", { method: "POST" });
-      const d = await res.json();
-      if (res.status === 401 || d.needsLogin) return setSync({ kind: "login" });
-      if (d.error) return setSync({ kind: "error", message: d.error });
-      if (!d.folderFound) return setSync({ kind: "noFolder" });
-      setSync({ kind: "done", imported: d.imported.length, errors: d.errors ?? [], pending: d.pending ?? 0 });
-      if (d.imported.length > 0) loadReports();
+      for (let round = 0; round < 10; round++) {
+        const res = await fetch("/api/bookly/sync", { method: "POST" });
+        const d = await res.json();
+        if (res.status === 401 || d.needsLogin) return setSync({ kind: "login" });
+        if (d.error) return setSync({ kind: "error", message: d.error });
+        if (!d.folderFound) return setSync({ kind: "noFolder" });
+        if (round === 0) total = d.total ?? 0;
+        const n = (d.total ?? 0) - (d.pending ?? 0);
+        processed += n;
+        imported += d.imported?.length ?? 0;
+        sessionsInserted += d.sessions?.inserted ?? 0;
+        sessionsDuplicates += d.sessions?.duplicates ?? 0;
+        errors.push(...(d.errors ?? []));
+        pending = d.pending ?? 0;
+        if (pending === 0 || n === 0) break;
+        setSync({ kind: "syncing", done: processed, total });
+      }
+      setSync({ kind: "done", imported, sessionsInserted, sessionsDuplicates, errors, pending });
+      if (imported > 0) loadReports();
+      if (sessionsInserted > 0) onSessionsSaved?.();
     } catch (err) {
       setSync({ kind: "error", message: err instanceof Error ? err.message : "Błąd synchronizacji" });
     }
-  }, [loadReports]);
+  }, [loadReports, onSessionsSaved]);
 
   useEffect(() => {
     loadReports();
@@ -213,9 +248,17 @@ export function ReadingWigCard({
     setFileErrors([]);
     setDraft(null);
     setSessionImport(null);
+    setSessionsMsg(null);
     setParsing({ done: 0, total: files.length });
 
-    type Result = { name: string; kind?: "report" | "sessions"; report?: Record<string, unknown>; sessions?: BooklySession[]; error?: string };
+    type Result = {
+      name: string;
+      kind?: "report" | "sessions";
+      report?: Record<string, unknown>;
+      sessions?: BooklySession[];
+      rejected?: { session: Partial<BooklySession>; error: string }[];
+      error?: string;
+    };
     const results: Result[] = new Array(files.length);
     let next = 0;
     let done = 0;
@@ -242,7 +285,10 @@ export function ReadingWigCard({
     const reportsRead: Result[] = [];
     for (const r of results) {
       if (r.error) errors.push({ name: r.name, error: r.error });
-      else if (r.kind === "sessions") sessions.push(...(r.sessions ?? []));
+      else if (r.kind === "sessions") {
+        sessions.push(...(r.sessions ?? []));
+        for (const x of r.rejected ?? []) errors.push({ name: r.name, error: `odrzucono kartę ${x.session.date ?? "?"} ${x.session.title ?? ""}: ${x.error}` });
+      }
       else if (r.kind === "report") reportsRead.push(r);
     }
     if (reportsRead.length === 1 && sessions.length === 0) {
@@ -261,7 +307,7 @@ export function ReadingWigCard({
       });
     } else {
       for (const r of reportsRead) errors.push({ name: r.name, error: "Raport podsumowujący — wgraj go osobno" });
-      if (sessions.length > 0) setSessionImport(sessions);
+      if (sessions.length > 0) setSessionImport(dedupeSessions(sessions));
     }
     setFileErrors(errors);
     setParsing(null);
@@ -434,7 +480,9 @@ export function ReadingWigCard({
           <span className="font-semibold text-foreground">Raporty Bookly</span>
           <span className="truncate text-xs text-muted-foreground">
             {reports.length} zaimportowane
+            {sync.kind === "syncing" && sync.total > 0 && ` · Importuję zrzuty… ${sync.done} z ${sync.total}`}
             {sync.kind === "done" && sync.imported > 0 && ` · ${sync.imported} nowe z Drive`}
+            {sync.kind === "done" && sync.sessionsInserted > 0 && ` · ${sync.sessionsInserted} nowych sesji z Drive`}
             {sync.kind === "login" && " · zaloguj Google, aby pobierać z Drive"}
             {sync.kind === "noFolder" && " · brak folderu na Drive"}
             {sync.kind === "error" && " · błąd synchronizacji"}
@@ -449,7 +497,11 @@ export function ReadingWigCard({
               disabled={sync.kind === "syncing"}
               className="rounded-lg border border-border bg-background px-3 py-1.5 font-medium hover:bg-muted disabled:opacity-50"
             >
-              {sync.kind === "syncing" ? "Sprawdzam Drive..." : "↻ Synchronizuj z Drive"}
+              {sync.kind === "syncing"
+                ? sync.total > 0
+                  ? `Importuję zrzuty… ${sync.done} z ${sync.total}`
+                  : "Sprawdzam Drive..."
+                : "↻ Synchronizuj z Drive"}
             </button>
             <button
               onClick={() => fileRef.current?.click()}
@@ -475,16 +527,22 @@ export function ReadingWigCard({
               )}
               {sync.kind === "noFolder" && <>Drive: brak folderu „Bookly Reports” — utwórz go i zapisuj tam raporty</>}
               {sync.kind === "done" &&
-                (sync.imported > 0
-                  ? `Drive: zaimportowano ${sync.imported} raport(y)${sync.pending > 0 ? `, ${sync.pending} czeka — kliknij ponownie` : ""}`
-                  : "Drive: brak nowych raportów")}
+                (sync.imported > 0 || sync.sessionsInserted > 0 || sync.sessionsDuplicates > 0
+                  ? `Drive: ${[
+                      sync.imported > 0 && `zaimportowano ${sync.imported} raport(y)`,
+                      (sync.sessionsInserted > 0 || sync.sessionsDuplicates > 0) &&
+                        `zapisano ${sync.sessionsInserted} sesji, ${sync.sessionsDuplicates} już było`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}${sync.pending > 0 ? `, ${sync.pending} czeka — kliknij ponownie` : ""}`
+                  : "Drive: brak nowych zrzutów")}
               {sync.kind === "error" && <span className="text-red-600">Drive: {sync.message}</span>}
             </span>
           </div>
           {sync.kind === "done" && sync.errors.length > 0 && (
             <ul className="mt-1 text-[11px] text-red-600">
-              {sync.errors.map((e) => (
-                <li key={e.name}>
+              {sync.errors.map((e, i) => (
+                <li key={`${e.name}-${i}`}>
                   {e.name}: {e.error}
                 </li>
               ))}
@@ -502,13 +560,14 @@ export function ReadingWigCard({
               ))}
             </ul>
           )}
+          {sessionsMsg && <p className="mt-2 text-xs text-green-700">{sessionsMsg}</p>}
           {sessionImport && (
-            <BooklySessionsReview
-              rawSessions={sessionImport}
-              existing={reports}
-              onSaved={() => {
+            <BooklySessionsPreview
+              sessions={sessionImport}
+              onSaved={(msg) => {
                 setSessionImport(null);
-                loadReports();
+                setSessionsMsg(msg);
+                onSessionsSaved?.();
               }}
               onCancel={() => setSessionImport(null)}
             />
@@ -595,7 +654,7 @@ export function ReadingWigCard({
               <p><span className="font-medium text-foreground">Lead (wynik filaru):</span> średnia minut czytania na dzień w tym miesiącu ÷ {settings.dailyMinutes} min, max 100%. Liczą się tylko dni objęte raportami.</p>
               <p><span className="font-medium text-foreground">Lag:</span> ukończone książki od 1 stycznia vs {settings.booksPerYear}/rok. „Powinno być” = równe tempo do celu.</p>
               <p><span className="font-medium text-foreground">Raporty mogą się nakładać</span> (np. od początku roku i od początku miesiąca) — nic się nie dubluje. Raporty z tym samym początkiem dają dokładne dane dla każdego odcinka; wewnątrz odcinka minuty i strony są rozłożone równo na dni.</p>
-              <p><span className="font-medium text-foreground">Zrzuty sesji:</span> w Bookly Stats → Reading Sessions przewijaj listę i rób zrzuty (mogą się nakładać — duplikaty są pomijane). Wgraj je wszystkie naraz; każdy dzień zapisuje się jako dokładny raport dzienny i ma pierwszeństwo przed raportami z dłuższego okresu.</p>
+              <p><span className="font-medium text-foreground">Zrzuty sesji:</span> w Bookly Stats → Reading Sessions przewijaj listę i rób zrzuty (mogą się nakładać — ta sama sesja zapisze się raz). Wrzuć je do folderu „Bookly Reports” albo wgraj tutaj. Dni z sesjami liczą się dokładnie z sesji; raporty uzupełniają pozostałe dni, a ukończone książki biorą się tylko z raportów.</p>
               <p><span className="font-medium text-foreground">Rytm:</span> raz w tygodniu wygeneruj w Bookly raport „od 1 stycznia do dziś” i zapisz go w folderze „Bookly Reports” na Google Drive — strona sama go pobierze.</p>
             </div>
           </details>

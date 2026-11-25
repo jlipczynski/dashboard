@@ -1,15 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getGoogleAccessToken } from "@/lib/google-token";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { isSupportedImage, parseBooklyImage } from "@/lib/bookly-parse";
-import { saveReport } from "@/lib/bookly-db";
+import { isSupportedImage, readBooklyImage } from "@/lib/bookly-parse";
+import { saveReport, saveSessions } from "@/lib/bookly-db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const FOLDER_NAME = "Bookly Reports";
-/** Max new images read per sync (each is one Claude call). Processed files are
- * remembered in bookly_drive_skipped (reason "imported" or the error). */
+/** Max new images read per sync (each is one Claude call, 60 s limit on Vercel).
+ * The card calls sync again while `pending` > 0. Processed files are remembered
+ * in bookly_drive_skipped (reason "imported", "imported-sessions" or the error). */
 const MAX_PER_SYNC = 3;
 
 type DriveFile = { id: string; name: string; mimeType: string; createdTime: string };
@@ -23,8 +24,9 @@ async function drive(path: string, token: string) {
 /**
  * POST /api/bookly/sync
  * Finds the "Bookly Reports" folder in the signed-in user's Google Drive,
- * reads new report images with Claude and saves them. Already imported
- * (or unreadable) files are skipped.
+ * reads new images with Claude and saves them: a Reading Report as a report,
+ * a Reading Sessions list as single sessions (duplicates skipped). Already
+ * imported (or unreadable) files are skipped.
  */
 export async function POST(req: NextRequest) {
   const token = await getGoogleAccessToken(req);
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
   }
   const folders: { id: string }[] = (await folderRes.json()).files ?? [];
   if (folders.length === 0) {
-    return NextResponse.json({ folderFound: false, imported: [], pending: 0, errors: [] });
+    return NextResponse.json({ folderFound: false, imported: [], sessions: { inserted: 0, duplicates: 0 }, pending: 0, total: 0, errors: [] });
   }
 
   // 2. List images in the folder(s)
@@ -74,6 +76,7 @@ export async function POST(req: NextRequest) {
   const fresh = files.filter((f) => !known.has(f.id));
 
   const imported: { name: string; period_from: string; period_to: string }[] = [];
+  const sessions = { files: 0, inserted: 0, duplicates: 0 };
   const errors: { name: string; error: string }[] = [];
 
   for (const f of fresh.slice(0, MAX_PER_SYNC)) {
@@ -82,7 +85,19 @@ export async function POST(req: NextRequest) {
       const media = await drive(`files/${f.id}?alt=media`, token);
       if (!media.ok) throw new Error(`Pobieranie: ${media.status}`);
       const base64 = Buffer.from(await media.arrayBuffer()).toString("base64");
-      const report = await parseBooklyImage(base64, f.mimeType);
+      const parsed = await readBooklyImage(base64, f.mimeType);
+      if (parsed.kind === "sessions") {
+        const r = await saveSessions(parsed.sessions, { source: "drive", drive_file_id: f.id });
+        sessions.files++;
+        sessions.inserted += r.inserted;
+        sessions.duplicates += r.duplicates;
+        if (parsed.rejected.length > 0) {
+          errors.push({ name: f.name, error: `Odrzucono ${parsed.rejected.length} kart: ${parsed.rejected.map((x) => x.error).join(", ")}` });
+        }
+        await supabase.from("bookly_drive_skipped").upsert({ file_id: f.id, name: f.name, reason: "imported-sessions" });
+        continue;
+      }
+      const report = parsed.report;
       await saveReport({
         period_from: report.period_from,
         period_to: report.period_to,
@@ -107,7 +122,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     folderFound: true,
     imported,
+    sessions,
     errors,
     pending: Math.max(fresh.length - MAX_PER_SYNC, 0),
+    total: fresh.length,
   });
 }

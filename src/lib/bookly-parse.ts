@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { isValidSession, type BooklySession } from "./bookly-sessions";
+import { dedupeSessions, sessionError, type BooklySession } from "./bookly-sessions";
+import { todayWarsaw } from "./dates";
 
 // Reads a Bookly screenshot with Claude vision. Two kinds are recognised:
 //  - "Reading Report" infographic (aggregates for a date range)
@@ -17,7 +18,7 @@ export type ParsedBooklyReport = {
 
 export type ParsedBooklyImage =
   | { kind: "report"; report: ParsedBooklyReport }
-  | { kind: "sessions"; sessions: BooklySession[] };
+  | { kind: "sessions"; sessions: BooklySession[]; rejected: { session: Partial<BooklySession>; error: string }[] };
 
 const SUPPORTED = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type SupportedMediaType = (typeof SUPPORTED)[number];
@@ -62,8 +63,8 @@ const SCHEMA = {
         required: ["date", "title", "author", "pages", "seconds"],
         properties: {
           date: { type: "string", description: "card date, YYYY-MM-DD" },
-          title: { type: "string", description: "book title exactly as shown" },
-          author: { type: "string", description: "author as shown (may be truncated); empty if not visible" },
+          title: { type: "string", description: "book title exactly as shown, including a subtitle after ':'" },
+          author: { type: "string", description: "author exactly as shown (may be truncated, e.g. 'Mih'); empty if not visible" },
           pages: { type: "integer", description: "PAGES READ" },
           seconds: { type: "integer", description: "READ TIME in seconds (e.g. 0h 31m 34s = 1894)" },
         },
@@ -84,11 +85,15 @@ kind = "report": a "Reading Report" infographic. Extract exactly as shown:
 Leave sessions empty.
 
 kind = "sessions": a "READING SESSIONS" list of cards. For every card return date, book title, author, PAGES READ and READ TIME (in seconds).
+- date "25 Nov 2026" → "2026-11-25"; READ TIME "0h 31m 34s" → seconds = 1894
+- title and author exactly as written on the card (same capitalisation, subtitle after ":" included; a truncated author like "Mih" stays as shown)
 Include ONLY cards where the date, the title, the PAGES READ number and the READ TIME value are all fully visible.
 Skip cards cut off at the top or bottom of the screen (e.g. only numbers without a date, or a date and title without the numbers, or partially hidden by the bottom tab bar).
 Several cards may share the same date — list each one. Use 0 / empty values for the report fields.
 
 kind = "other": anything else. Use 0 / empty values everywhere.`;
+
+export const NOT_BOOKLY = "To nie jest raport ani lista sesji Bookly";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -125,13 +130,19 @@ export async function readBooklyImage(base64: string, mediaType: SupportedMediaT
   };
 
   if (parsed.kind === "sessions") {
-    const sessions = (parsed.sessions ?? [])
-      .map((s) => ({ ...s, title: (s.title ?? "").trim(), author: (s.author ?? "").trim() }))
-      .filter(isValidSession);
-    if (sessions.length === 0) throw new Error("Nie znaleziono pełnych kart sesji na zrzucie");
-    return { kind: "sessions", sessions };
+    const today = todayWarsaw();
+    const ok: BooklySession[] = [];
+    const rejected: { session: Partial<BooklySession>; error: string }[] = [];
+    for (const raw of parsed.sessions ?? []) {
+      const s = { ...raw, title: (raw.title ?? "").trim(), author: (raw.author ?? "").trim() };
+      const err = sessionError(s, today);
+      if (err) rejected.push({ session: s, error: err });
+      else ok.push(s as BooklySession);
+    }
+    if (ok.length === 0 && rejected.length === 0) throw new Error("Nie znaleziono pełnych kart sesji na zrzucie");
+    return { kind: "sessions", sessions: dedupeSessions(ok), rejected };
   }
-  if (parsed.kind !== "report") throw new Error("To nie wyglada na raport ani liste sesji Bookly");
+  if (parsed.kind !== "report") throw new Error(NOT_BOOKLY);
   if (!DATE_RE.test(parsed.period_from) || !DATE_RE.test(parsed.period_to)) {
     throw new Error("Nie udalo sie odczytac zakresu dat");
   }
@@ -140,13 +151,4 @@ export async function readBooklyImage(base64: string, mediaType: SupportedMediaT
     kind: "report",
     report: { period_from, period_to, minutes, pages, reading_days, books_finished, finished_titles: finished_titles ?? [] },
   };
-}
-
-/** Report screenshots only (Drive sync saves without review, sessions need it). */
-export async function parseBooklyImage(base64: string, mediaType: SupportedMediaType): Promise<ParsedBooklyReport> {
-  const res = await readBooklyImage(base64, mediaType);
-  if (res.kind !== "report") {
-    throw new Error("Zrzut listy sesji — wgraj go recznie na /rozwoj (wymaga sprawdzenia przed zapisem)");
-  }
-  return res.report;
 }

@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { dedupeSessions, type BooklySession } from "@/lib/bookly-sessions";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -42,13 +43,36 @@ function toRow(b: BooklyReportInput) {
 
 /** Upsert by period (same range imported again replaces the previous one). */
 export async function saveReport(b: BooklyReportInput) {
-  await saveReports([b]);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from("bookly_reports").upsert(toRow(b), { onConflict: "period_from,period_to" });
+  if (error) throw new Error(error.message);
 }
 
-/** Batch upsert by period (one-day reports from session screenshots). */
-export async function saveReports(list: BooklyReportInput[]) {
-  if (list.length === 0) return;
+/**
+ * Insert sessions; ones already stored (same date, title, pages, seconds —
+ * e.g. the card repeated on the next screenshot) are skipped.
+ */
+export async function saveSessions(
+  sessions: BooklySession[],
+  opts: { source: "drive" | "upload"; drive_file_id?: string }
+): Promise<{ inserted: number; duplicates: number }> {
+  const unique = dedupeSessions(sessions);
+  if (unique.length === 0) return { inserted: 0, duplicates: sessions.length };
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("bookly_reports").upsert(list.map(toRow), { onConflict: "period_from,period_to" });
+  const rows = unique.map((s) => ({
+    date: s.date,
+    title: s.title,
+    author: s.author || null,
+    pages: s.pages,
+    seconds: s.seconds,
+    source: opts.source,
+    drive_file_id: opts.drive_file_id ?? null,
+  }));
+  const { data, error } = await supabase
+    .from("bookly_sessions")
+    .upsert(rows, { onConflict: "date,title,pages,seconds", ignoreDuplicates: true })
+    .select("id");
   if (error) throw new Error(error.message);
+  const inserted = data?.length ?? 0;
+  return { inserted, duplicates: sessions.length - inserted };
 }
